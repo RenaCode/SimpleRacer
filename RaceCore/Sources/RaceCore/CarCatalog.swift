@@ -85,11 +85,6 @@ public enum CarCatalog {
         all = defs
     }
 
-    /// Dopisuje auta (np. z LocalModels/cars.json); auta o istniejącym id są pomijane.
-    public static func register(_ defs: [CarDef]) {
-        for d in defs where !all.contains(where: { $0.id == d.id }) { all.append(d) }
-    }
-
     public static let builtIn: [CarDef] = [
         CarDef(
             id: "strzala", name: "Strzała", description: "Wszechstronna — dobra na każdą trasę.",

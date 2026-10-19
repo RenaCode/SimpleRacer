@@ -81,7 +81,7 @@ struct RacePostEffect: PostProcessEffect {
             #if DEBUG || FAMILY
             if !loggedFormat {
                 loggedFormat = true
-                debugLog("obróbka obrazu: źródło \(source.pixelFormat.rawValue), cel \(target.pixelFormat.rawValue), głębia \(depth.pixelFormat.rawValue), \(source.width)×\(source.height)")
+                debugLog("obróbka obrazu: źródło \(source.pixelFormat.rawValue) typ \(source.textureType.rawValue) próbki \(source.sampleCount), cel \(target.pixelFormat.rawValue) typ \(target.textureType.rawValue), głębia \(depth.pixelFormat.rawValue) typ \(depth.textureType.rawValue) próbki \(depth.sampleCount), \(source.width)×\(source.height) / głębia \(depth.width)×\(depth.height)")
             }
             #endif
             guard let pipelines, let bright = pipelines.bright, let blur = pipelines.blur,

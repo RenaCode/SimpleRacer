@@ -20,7 +20,6 @@ final class ModelLibrary {
     private var loaded: [String: Loaded] = [:]
     private var images: [URL: CGImage] = [:]
     private var textures: [URL: TextureResource] = [:]
-    private var templates: [String: Entity] = [:]
 
     /// Przetwarza wszystkie modele OBJ w tle (poza wątkiem głównym), żeby pierwszy wyścig nie czekał.
     func prefetch() async {
@@ -105,35 +104,6 @@ final class ModelLibrary {
         if !part.uvs.isEmpty { desc.textureCoordinates = MeshBuffers.TextureCoordinates(part.uvs) }
         desc.primitives = .triangles(part.indices)
         return try? MeshResource.generate(from: [desc])
-    }
-
-    /// Model do ustawienia na scenie: wyśrodkowany w X/Z, stoi na y = 0, przeskalowany jednolicie o `scale`.
-    /// Wzorzec jest budowany raz; każde wywołanie zwraca klon, który współdzieli siatki i materiały.
-    func prop(_ path: String, scale: Float = 1) -> Entity? {
-        if let t = templates[path] { return Self.scaled(t.clone(recursive: true), scale) }
-        guard let l = load(path) else { return nil }
-        let b = l.model.bounds
-        let center = SIMD3<Float>((b.min.x + b.max.x) / 2, b.min.y, (b.min.z + b.max.z) / 2)
-        let template = Entity()
-        for g in l.model.groups {
-            for p in g.parts {
-                guard let mesh = mesh(p, offset: center) else { continue }
-                template.addChild(ModelEntity(mesh: mesh, materials: [material(l.materials[p.material] ?? ObjMaterial(), folder: l.folder)]))
-            }
-        }
-        templates[path] = template
-        return Self.scaled(template.clone(recursive: true), scale)
-    }
-
-    /// Rozmiar modelu po wyśrodkowaniu (szerokość X, wysokość Y, głębokość Z) w jednostkach pliku.
-    func size(_ path: String) -> SIMD3<Float>? {
-        guard let b = load(path)?.model.bounds else { return nil }
-        return b.max - b.min
-    }
-
-    private static func scaled(_ e: Entity, _ s: Float) -> Entity {
-        e.scale = [s, s, s]
-        return e
     }
 
     /// Paleta z przemalowanym polem lakieru. Zachowuje cieniowanie pola (gradient), zmienia tylko barwę.

@@ -105,35 +105,6 @@ enum Materials {
         }
     }
 
-    static let grass: CGImage = image(width: 256, height: 256) { g in
-        g.setFillColor(UIColor(red: 0.3, green: 0.45, blue: 0.24, alpha: 1).cgColor)
-        g.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
-        var rng = SystemRandomNumberGenerator()
-        for _ in 0..<3000 {
-            let k = CGFloat.random(in: 0.8...1.2, using: &rng)
-            g.setFillColor(UIColor(red: 0.28 * k, green: 0.48 * k, blue: 0.22 * k, alpha: 0.7).cgColor)
-            g.fill(CGRect(x: .random(in: 0..<256, using: &rng), y: .random(in: 0..<256, using: &rng), width: 3, height: 3))
-        }
-    }
-
-    /// Elewacja z oknami; `floors`/`columns` dobiera się do proporcji budynku.
-    static func facade(wall: UIColor, floors: Int, columns: Int) -> CGImage {
-        image(width: columns * 32, height: floors * 32) { g in
-            g.setFillColor(wall.cgColor)
-            g.fill(CGRect(x: 0, y: 0, width: columns * 32, height: floors * 32))
-            var rng = SystemRandomNumberGenerator()
-            for f in 0..<floors {
-                for c in 0..<columns {
-                    let lit = Double.random(in: 0...1, using: &rng) < 0.12
-                    let tone = CGFloat.random(in: 0.0...0.12, using: &rng)
-                    g.setFillColor((lit ? UIColor(red: 0.95, green: 0.88, blue: 0.65, alpha: 1)
-                                        : UIColor(red: 0.16 + tone, green: 0.24 + tone, blue: 0.34 + tone, alpha: 1)).cgColor)
-                    g.fill(CGRect(x: c * 32 + 6, y: f * 32 + 7, width: 20, height: 19))
-                }
-            }
-        }
-    }
-
     /// Niebo w rzucie równoprostokątnym: zenit u góry obrazu, horyzont w połowie, słońce i chmury.
     static let sky: CGImage = image(width: 1024, height: 512) { g in
         let space = CGColorSpaceCreateDeviceRGB()
@@ -161,8 +132,6 @@ enum Materials {
         ] as CFArray, locations: [0, 1])!
         g.drawRadialGradient(glow, startCenter: sun, startRadius: 6, endCenter: sun, endRadius: 90, options: [])
     }
-
-    static let grassMaterial = tiled(grass, roughness: 1)
 
     /// Podłoże w kolorze krainy (trawa, piasek, śnieg…): ziarnista faktura w odcieniach `color`.
     static func ground(_ color: UIColor) -> PhysicallyBasedMaterial {

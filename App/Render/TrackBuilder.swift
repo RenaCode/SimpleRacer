@@ -168,15 +168,10 @@ enum TrackBuilder {
         // Budynki: fasady ze zdjęć (impostory), jeśli są; krainy bez fasad zostają bez kanciastych brył.
         let library = ImpostorLibrary.shared
         let facades = library.items("building", region: region)
-        let realBuildings = LocalAssets.shared.scenery("building", region: region)
         if theme.buildings > 0 && Buildings.available {
             root.addChild(pbrBuildings(track, theme: theme))
         } else if !facades.isEmpty {
             root.addChild(impostorBuildings(track, theme: theme, items: facades))
-        } else if !realBuildings.isEmpty {
-            root.addChild(realisticBuildings(track, theme: theme, pieces: realBuildings))
-        } else if !library.has("building") {
-            root.addChild(buildings(track, theme: theme))
         }
         debugLog("trasa: grunt i budynki gotowe")
         root.addChild(roadside(track, theme: theme, region: region))
@@ -188,7 +183,6 @@ enum TrackBuilder {
         withProps = !ProcessInfo.processInfo.arguments.contains("-noRoadside")
         #endif
         if withProps { root.addChild(RoadsideProps.build(track, region: region)) }
-        root.addChild(backdrop(track, region: region))
         return root
     }
 
@@ -245,154 +239,9 @@ enum TrackBuilder {
         Float(heading) + (side > 0 ? -.pi / 2 : .pi / 2)
     }
 
-    private static let cityModels = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n"]
-        .map { "City/building-\($0)" }
-    private static let skyscrapers = ["a", "b", "c", "d", "e"].map { "City/building-skyscraper-\($0)" }
-
     /// Strefa przy linii startu zarezerwowana na trybuny i namioty (bez budynków).
     private static func isStartArea(_ s: Double, _ track: Track) -> Bool {
         s > track.length - 110 || s < 15
-    }
-
-    private static func buildings(_ track: Track, theme: TrackTheme) -> Entity {
-        guard theme.buildings > 0 else { return Entity() }
-        let lib = ModelLibrary.shared
-        let regular = cityModels.filter { lib.size($0) != nil }
-        let tall = skyscrapers.filter { lib.size($0) != nil }
-        guard !regular.isEmpty else { return boxBuildings(track) }
-
-        let batch = PropBatcher()
-        let rng = SeededRandom(seed: 1234)
-        let hw = track.halfWidth
-        for side in [1.0, -1.0] {
-            var s = 0.0
-            while s < track.length {
-                let path = (!tall.isEmpty && rng.next() < 0.25 * theme.buildings) ? rng.pick(tall) : rng.pick(regular)
-                let size = lib.size(path)!
-                let scale = Float(12 + rng.next() * 6)
-                let footprint = Double(max(size.x, size.z) * scale)
-                let offset = side * (hw + 9 + footprint / 2 + rng.next() * 12)
-                let pos = track.toWorld(s: s + footprint / 2, d: offset)
-                let skip = isStartArea(s, track) || rng.next() > theme.buildings
-                    || track.distanceToAxis(x: pos.x, z: pos.z) < hw + 6 + footprint * 0.6
-                if !skip {
-                    batch.add(path, scale: scale, yaw: facingAxis(heading: pos.heading, side: side),
-                              position: [Float(pos.x), 0, Float(pos.z)])
-                }
-                s += footprint + 3 + rng.next() * 6
-            }
-        }
-        return batch.build()
-    }
-
-    /// Zapas, gdy modeli budynków nie ma w paczce: bryły z elewacją z oknami.
-    private static func boxBuildings(_ track: Track) -> Entity {
-        let root = Entity()
-        let rng = SeededRandom(seed: 1234)
-        let mesh = MeshResource.generateBox(size: 1)
-        let walls: [UIColor] = [
-            UIColor(red: 0.78, green: 0.76, blue: 0.72, alpha: 1), UIColor(red: 0.55, green: 0.6, blue: 0.66, alpha: 1),
-            UIColor(red: 0.82, green: 0.7, blue: 0.62, alpha: 1), UIColor(red: 0.36, green: 0.39, blue: 0.43, alpha: 1),
-        ]
-        // Kilka wariantów elewacji; budynek dostaje ten, którego liczba pięter pasuje do wysokości.
-        let floorsOptions = [3, 6, 10, 14]
-        let facades: [[PhysicallyBasedMaterial]] = floorsOptions.map { floors in
-            walls.map { Materials.tiled(Materials.facade(wall: $0, floors: floors, columns: 5), roughness: 0.6, metallic: 0.1) }
-        }
-
-        var s = 0.0
-        while s < track.length {
-            for side in [1.0, -1.0] {
-                let off = side * (track.halfWidth + 10 + rng.next() * 25)
-                let w = 8 + rng.next() * 10
-                let pos = track.toWorld(s: s, d: off)
-                let h = 10 + rng.next() * 42
-                let depth = 8 + rng.next() * 10
-                let floorsIdx = floorsOptions.indices.min { abs(Double(floorsOptions[$0]) * 3.4 - h) < abs(Double(floorsOptions[$1]) * 3.4 - h) }!
-                let material = rng.pick(facades[floorsIdx])
-                // Nie stawiaj budynku na innym odcinku trasy.
-                if track.distanceToAxis(x: pos.x, z: pos.z) < track.halfWidth + 4 + w * 0.75 { continue }
-                let b = ModelEntity(mesh: mesh, materials: [material])
-                b.scale = [Float(w), Float(h), Float(depth)]
-                b.position = [Float(pos.x), Float(h / 2), Float(pos.z)]
-                b.orientation = simd_quatf(angle: Float(pos.heading), axis: [0, 1, 0])
-                root.addChild(b)
-            }
-            s += 22
-        }
-        return root
-    }
-
-
-    /// Drzewa i latarnie między bandą a budynkami.
-    /// Klon obiektu otoczenia przeskalowany do wysokości `height` m, obrócony i postawiony w `position`.
-    private static func place(_ piece: SceneryPiece, height: Float, yaw: Float, position: SIMD3<Float>) -> Entity {
-        let e = piece.template.clone(recursive: true)
-        let k = height / piece.height
-        e.scale = [k, k, k]
-        e.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0])
-        e.position = position
-        return e
-    }
-
-    private static func randomHeight(_ piece: SceneryPiece, _ rng: SeededRandom) -> Float {
-        let lo = piece.entry.height.first ?? 10, hi = piece.entry.height.last ?? lo
-        return Float(lo + (hi - lo) * rng.next())
-    }
-
-    /// Realistyczne budynki (modele lokalne) wzdłuż trasy, frontem do niej; limit sztuk dla ciężkich modeli.
-    private static func realisticBuildings(_ track: Track, theme: TrackTheme, pieces: [SceneryPiece]) -> Entity {
-        let root = Entity()
-        let rng = SeededRandom(seed: 4321)
-        let hw = track.halfWidth
-        var used: [String: Int] = [:]
-        for side in [1.0, -1.0] {
-            var s = 0.0
-            while s < track.length {
-                let available = pieces.filter { ($0.entry.max ?? .max) > (used[$0.entry.file] ?? 0) }
-                guard let piece = available.isEmpty ? nil : rng.pick(available) else { break }
-                let height = randomHeight(piece, rng)
-                let footprint = Double(piece.footprint * height / piece.height)
-                let offset = side * (hw + 8 + footprint / 2 + rng.next() * 8)
-                let pos = track.toWorld(s: s + footprint / 2, d: offset)
-                let skip = isStartArea(s, track) || rng.next() > theme.buildings
-                    || track.distanceToAxis(x: pos.x, z: pos.z) < hw + 5 + footprint * 0.55
-                if !skip {
-                    let e = place(piece, height: height, yaw: facingAxis(heading: pos.heading, side: side),
-                                  position: [Float(pos.x), 0, Float(pos.z)])
-                    root.addChild(e)
-                    cullables.append((e, s + footprint / 2))
-                    used[piece.entry.file, default: 0] += 1
-                }
-                s += footprint + 4 + rng.next() * 8
-            }
-        }
-        return root
-    }
-
-    /// Daleki pierścień tła (np. góry w krainie Śnieg) wokół całej trasy — zawsze widoczny.
-    private static func backdrop(_ track: Track, region: Region) -> Entity {
-        let root = Entity()
-        let pieces = LocalAssets.shared.scenery("backdrop", region: region)
-        guard !pieces.isEmpty else { return root }
-        var cx = 0.0, cz = 0.0, n = 0.0
-        var s = 0.0
-        while s < track.length { let p = track.toWorld(s: s, d: 0); cx += p.x; cz += p.z; n += 1; s += 20 }
-        cx /= n; cz /= n
-        var radius = 0.0
-        s = 0
-        while s < track.length { let p = track.toWorld(s: s, d: 0); radius = max(radius, hypot(p.x - cx, p.z - cz)); s += 20 }
-        let rng = SeededRandom(seed: 77)
-        let count = 8
-        for i in 0..<count {
-            let a = Double(i) / Double(count) * 2 * .pi + rng.next() * 0.3
-            let r = radius + 260 + rng.next() * 120
-            let piece = pieces[i % pieces.count]
-            let e = place(piece, height: randomHeight(piece, rng), yaw: Float(-a + .pi / 2),
-                          position: [Float(cx + cos(a) * r), -0.5, Float(cz + sin(a) * r)])
-            root.addChild(e)
-        }
-        return root
     }
 
     /// Budynki z materiałów PBR: pierwsza linia — kamienice i bloki jeden przy drugim, frontem do drogi;
@@ -539,74 +388,11 @@ enum TrackBuilder {
         return batch.build()
     }
 
+    /// Drzewa i krzaki przy drodze — zdjęcia drzew (impostory). Bez nich krainy zostają bez drzew
+    /// (dawne zapasowe drzewa z brył wyglądały kanciasto).
     private static func roadside(_ track: Track, theme: TrackTheme, region: Region) -> Entity {
-        let root = Entity()
-        if ImpostorLibrary.shared.has("tree") {
-            root.addChild(impostorPlants(track, theme: theme, region: region))
-            return root
-        }
-        let batch = PropBatcher()
-        defer { root.addChild(batch.build()) }
-        let realTrees = LocalAssets.shared.scenery("tree", region: region)
-        let realBushes = LocalAssets.shared.scenery("bush", region: region)
-        let rng = SeededRandom(seed: 99)
-        let hw = track.halfWidth
-
-        let trunk = MeshResource.generateCylinder(height: 2.6, radius: 0.22)
-        let crown = MeshResource.generateSphere(radius: 1)
-        let bark = Materials.matte(UIColor(red: 0.36, green: 0.25, blue: 0.17, alpha: 1))
-        let leaves = [(0.22, 0.42, 0.18), (0.28, 0.5, 0.2), (0.18, 0.36, 0.16)]
-            .map { Materials.matte(UIColor(red: $0.0, green: $0.1, blue: $0.2, alpha: 1), roughness: 0.95) }
-        var s = 6.0
-        while s < track.length {
-            for side in [1.0, -1.0] where rng.next() < theme.trees {
-                let off = side * (hw + 5 + rng.next() * 4)
-                let pos = track.toWorld(s: s, d: off)
-                guard track.distanceToAxis(x: pos.x, z: pos.z) > hw + 3.5 else { continue }
-                // Realistyczne drzewa i krzaki (modele lokalne), jeśli są; inaczej scalone drzewa Kenney.
-                if !realTrees.isEmpty {
-                    let pos3 = SIMD3<Float>(Float(pos.x), 0, Float(pos.z))
-                    let yaw = Float(rng.next() * 2 * .pi)
-                    let piece = rng.pick(realTrees)
-                    let tree = place(piece, height: randomHeight(piece, rng), yaw: yaw, position: pos3)
-                    root.addChild(tree)
-                    cullables.append((tree, s))
-                    if !realBushes.isEmpty && rng.next() < 0.6 {
-                        let bp = track.toWorld(s: s + 6, d: side * (hw + 3.5 + rng.next() * 2))
-                        let bush = rng.pick(realBushes)
-                        let b = place(bush, height: randomHeight(bush, rng), yaw: yaw,
-                                      position: [Float(bp.x), 0, Float(bp.z)])
-                        root.addChild(b)
-                        cullables.append((b, s + 6))
-                    }
-                    continue
-                }
-                let treePath = rng.next() < theme.largeTrees ? "Track/treeLarge" : "Track/treeSmall"
-                let treeScale = Float(5.5 + rng.next() * 2.5)
-                let treeYaw = Float(rng.next() * 2 * .pi)
-                let treePos = SIMD3<Float>(Float(pos.x), 0, Float(pos.z))
-                if batch.add(treePath, scale: treeScale, yaw: treeYaw, position: treePos) {
-                    continue
-                }
-                let tree = Entity()
-                tree.position = [Float(pos.x), 0, Float(pos.z)]
-                let t = ModelEntity(mesh: trunk, materials: [bark])
-                t.position.y = 1.3
-                tree.addChild(t)
-                let size = Float(1.6 + rng.next() * 1.0)
-                for (k, dy) in [Float(0), 1.1].enumerated() {
-                    let c = ModelEntity(mesh: crown, materials: [rng.pick(leaves)])
-                    let sc = size * (k == 0 ? 1 : 0.7)
-                    c.scale = [sc, sc * 1.1, sc]
-                    c.position.y = 2.6 + size * 0.6 + dy * size
-                    tree.addChild(c)
-                }
-                root.addChild(tree)
-            }
-            s += 16
-        }
-
-        return root
+        guard ImpostorLibrary.shared.has("tree") else { return Entity() }
+        return impostorPlants(track, theme: theme, region: region)
     }
 }
 
