@@ -52,7 +52,7 @@ struct MenuView: View {
 }
 
 /// Żółty baner z logo przy lewej krawędzi ekranu, z liniami pędu.
-private struct LogoBanner: View {
+struct LogoBanner: View {
     var body: some View {
         HStack(spacing: 14) {
             VStack(alignment: .trailing, spacing: 7) {

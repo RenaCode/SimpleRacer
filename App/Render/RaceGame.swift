@@ -33,8 +33,19 @@ final class RaceGame {
 
     private(set) var phase: Phase = .countdown
     private(set) var countdownText: String?
-    /// Scena wyrenderowała pierwsze klatki (do zasłonięcia startowego przycięcia).
-    private(set) var sceneShown = false
+    /// Gra czeka pod ekranem ładowania: scena się renderuje (rozgrzewka shaderów i efektów),
+    /// ale odliczanie jeszcze nie biegnie. `release()` zdejmuje blokadę.
+    @ObservationIgnored private(set) var holdStart = true
+    /// Ile klatek wyrenderowano pod ekranem ładowania.
+    @ObservationIgnored private(set) var warmFrames = 0
+
+    func release() {
+        holdStart = false
+        #if DEBUG || FAMILY
+        frameTimes = []
+        raceClock = 0
+        #endif
+    }
     private(set) var hud = HudState()
     private(set) var toasts: [Toast] = []
     private(set) var result: RaceResult?
@@ -129,6 +140,7 @@ final class RaceGame {
         root.addChild(sun)
 
         let panorama = SkyEnvironment.panorama(spec.region)
+        debugLog("wyścig: panorama…")
         skyDome = SkyEnvironment.panoramaDome(named: LocalAssets.regionKey(spec.region), radius: 2000)
             ?? SkyEnvironment.skyDome(radius: 2000)
         root.addChild(skyDome)
@@ -146,6 +158,7 @@ final class RaceGame {
         camera.camera.fieldOfViewInDegrees = Float(fov)
         root.addChild(camera)
 
+        debugLog("wyścig: panorama gotowa")
         SkyEnvironment.applyLighting(to: root, image: panorama ?? Materials.sky)
         #if DEBUG || FAMILY
         // Do zrzutów ekranu wyników: `-finishSoon` stawia gracza 150 m przed metą.
@@ -233,10 +246,18 @@ final class RaceGame {
             AudioManager.shared.setEngine(speed: 0, nitro: false, running: false)
             return
         }
+        if holdStart {
+            // Pod ekranem ładowania: auta na starcie, płomień i dym włączone (rozgrzewka efektów), zegar stoi.
+            warmFrames += 1
+            _ = input.consumeNitro()
+            AudioManager.shared.setEngine(speed: 0, nitro: false, running: false)
+            updateEntities()
+            updateCamera(dt: dt)
+            return
+        }
         let p = player
         AudioManager.shared.setEngine(speed: p.speed / p.def.topSpeed, nitro: p.nitro.mode != .off, running: !p.wrecked)
         clock += dt
-        if !sceneShown && clock > 0.5 { sceneShown = true }
 
         switch phase {
         case .countdown:

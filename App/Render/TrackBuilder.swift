@@ -8,6 +8,9 @@ enum TrackBuilder {
     /// Obiekty otoczenia rozstawione wzdłuż trasy (do ukrywania tych daleko od gracza) — `s` to ich miejsce na trasie.
     static var cullables: [(entity: Entity, s: Double)] = []
 
+    /// Wysokość gruntu poza jezdnią — na niej stoją drzewa i budynki (wcześniej wisiały 30 cm nad trawą).
+    static let groundY: Float = -0.3
+
     /// Grunt zanikający w oddali (do przesuwania środka zanikania za kamerą); `nil`, gdy grunt jest zwykły.
     static var ground: (entity: ModelEntity, material: GroundMaterial)?
 
@@ -40,8 +43,9 @@ enum TrackBuilder {
         let matte = { (c: UIColor) in Materials.matte(c) }
 
         var road = MeshBuilder()
-        strip(&road, -hw, hw, 0, track.length, y: 0.02)
-        try add(road, "road", Materials.roadSurfaceMaterial)
+        // Asfalt ze zdjęcia (CC0 Poly Haven) z mapą normalnych i chropowatości — kafel 4 m; bez plików proceduralny.
+        strip(&road, -hw, hw, 0, track.length, y: 0.02, tile: 4)
+        try add(road, "road", Materials.photoAsphalt() ?? Materials.roadSurfaceMaterial)
 
         // Linie: ciągłe przy krawędziach, przerywane między pasami.
         var lines = MeshBuilder()
@@ -65,30 +69,51 @@ enum TrackBuilder {
         try add(red, "kerb-red", matte(UIColor(red: 0.84, green: 0.16, blue: 0.16, alpha: 1)))
         try add(white, "kerb-white", matte(UIColor(white: 0.96, alpha: 1)))
 
+        // Mur wzdłuż trasy: bryła z grubością i daszkiem, z teksturą krainy (cegła, piaskowiec, kamień, deski).
+        // Kafel 2 m — tyle ma zdjęcie ściany w rzeczywistości. Grunt poza jezdnią leży niżej (groundY).
         var walls = MeshBuilder()
+        let wallH = 1.2, thick = 0.35, base = Float(groundY)
+        let v1 = Float((wallH - Double(groundY)) / 2)
         for side in [1.0, -1.0] {
-            let d = side * (hw + 1.4)
+            let inner = side * (hw + 1.4), outer = side * (hw + 1.4 + thick)
             var s = 0.0
             while s < track.length {
                 let e = min(track.length, s + track.ds)
-                // Tekstura betonu co 4 m wzdłuż trasy; 1,2 m wysokości to ok. 0,3 wysokości zdjęcia.
-                let u0 = Float(s / 4), u1 = Float(e / 4)
-                walls.quad(p(s, d, 0), p(e, d, 0), p(e, d, 1.2), p(s, d, 1.2),
-                           uv: [[u0, 0], [u1, 0], [u1, 0.3], [u0, 0.3]], doubleSided: true)
+                let u0 = Float(s / 2), u1 = Float(e / 2)
+                let top = Float(wallH)
+                // Lico od strony drogi, tył od strony trawy, daszek — każde widoczne z zewnątrz.
+                let (a, b) = side > 0 ? (inner, outer) : (outer, inner)
+                walls.quad(p(s, a, base), p(e, a, base), p(e, a, top), p(s, a, top),
+                           uv: [[u0, 0], [u1, 0], [u1, v1], [u0, v1]], doubleSided: true)
+                walls.quad(p(e, b, base), p(s, b, base), p(s, b, top), p(e, b, top),
+                           uv: [[u1, 0], [u0, 0], [u0, v1], [u1, v1]], doubleSided: true)
+                let w = Float(thick / 2)
+                walls.quad(p(s, inner, top), p(e, inner, top), p(e, outer, top), p(s, outer, top),
+                           uv: [[u0, 0], [u1, 0], [u1, w], [u0, w]], doubleSided: true)
                 s = e
             }
         }
-        let concrete = UIImage(named: "barrier-concrete.jpg")?.cgImage
-        try add(walls, "walls", concrete.map { Materials.tiled($0, roughness: 0.9) }
-                ?? matte(UIColor(red: 0.72, green: 0.74, blue: 0.78, alpha: 1)))
+        let regionKey = LocalAssets.regionKey(region)
+        func wallTexture(_ suffix: String) -> TextureResource? {
+            Bundle.main.url(forResource: "wall-\(regionKey)\(suffix)", withExtension: "jpg").flatMap(SkyEnvironment.texture)
+        }
+        var wallMaterial: any Material = matte(UIColor(red: 0.72, green: 0.74, blue: 0.78, alpha: 1))
+        if let color = wallTexture("") {
+            var m = Materials.tiled(color, roughness: 0.92)
+            if let normal = wallTexture("-normal") { m.normal = .init(texture: .init(normal)) }
+            wallMaterial = m
+        }
+        try add(walls, "walls", wallMaterial)
 
         // Grunt: jeden duży czworokąt z kafelkowaną teksturą — zdjęcie krainy (CC0 Poly Haven, App/Ground)
         // co 5 m, a bez niego proceduralny kolor co 6 m.
-        let photo = UIImage(named: "ground-\(LocalAssets.regionKey(region)).jpg")?.cgImage
+        let photo = Bundle.main.url(forResource: "ground-\(LocalAssets.regionKey(region))", withExtension: "jpg")
+            .flatMap(SkyEnvironment.texture)
         var grass = MeshBuilder()
         let g: Float = 2000, reps = g / (photo == nil ? 6 : 5)
-        grass.quad([-g, -0.3, g], [g, -0.3, g], [g, -0.3, -g], [-g, -0.3, -g], uv: [[0, 0], [reps, 0], [reps, reps], [0, reps]])
+        grass.quad([-g, groundY, g], [g, groundY, g], [g, groundY, -g], [-g, groundY, -g], uv: [[0, 0], [reps, 0], [reps, reps], [0, reps]])
         ground = nil
+        debugLog("trasa: jezdnia, krawężniki, bariery gotowe")
         if let photo, let fading = GroundMaterial.make(photo) {
             // Grunt zanika w oddali i przechodzi w grunt ze zdjęcia panoramy (RaceGame przesuwa środek za kamerą).
             let e = ModelEntity(mesh: try grass.mesh(name: "grass"), materials: [fading.material])
@@ -111,7 +136,9 @@ enum TrackBuilder {
         } else if !library.has("building") {
             root.addChild(buildings(track, theme: theme))
         }
+        debugLog("trasa: grunt i budynki gotowe")
         root.addChild(roadside(track, theme: theme, region: region))
+        debugLog("trasa: drzewa gotowe")
         root.addChild(backdrop(track, region: region))
         return root
     }
@@ -319,7 +346,7 @@ enum TrackBuilder {
                 for c in corners where track.distanceToAxis(x: c.x, z: c.y) < hw + 4 { tooClose = true }
                 let skip = isStartArea(s, track) || rng.next() > theme.buildings || tooClose
                 if !skip {
-                    batch.building(item, height: height, at: [Float(pos.x), 0, Float(pos.z)],
+                    batch.building(item, height: height, at: [Float(pos.x), groundY, Float(pos.z)],
                                    facing: [Float(f.x), 0, Float(f.y)])
                     used[item.def.name, default: 0] += 1
                 }
@@ -342,7 +369,7 @@ enum TrackBuilder {
             let pos = track.toWorld(s: s, d: d)
             guard track.distanceToAxis(x: pos.x, z: pos.z) > hw + clearance else { return }
             let item = rng.pick(items)
-            batch.plant(item, height: item.randomHeight(rng), at: [Float(pos.x), 0, Float(pos.z)],
+            batch.plant(item, height: item.randomHeight(rng), at: [Float(pos.x), groundY, Float(pos.z)],
                         heading: pos.heading + (rng.next() - 0.5) * 0.6)
         }
         var s = 6.0

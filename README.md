@@ -161,7 +161,7 @@ Debug builds accept launch arguments for testing in the simulator:
 - `-holdDrift` holds DRIFT from 8 seconds after launch,
 - `-finishSoon` puts the player 150 m before the finish line (to reach the results screen quickly),
 - `-track <n>` picks the campaign track, `-screen campaign|garage` opens a screen,
-- `-showCredits` opens Settings on the credits list,
+- `-showCredits` opens Settings on the credits list, `-raceAfter N` presses "Ścigaj się" after N seconds in the menu,
 - `-mute` turns music and sound effects off (simulator tests play through the Mac speakers),
 - `-rich` gives coins and stars (to look at the shop and unlocks), `-car <id>` picks and owns a car,
 - `-autoNitro` presses nitro every 4 s, `-toggleMuteAt N` toggles sound after N seconds.
@@ -263,7 +263,8 @@ Like most mobile racers, the scenery is built from photos rather than heavy 3D m
   8K photo (`sky-<region>-band.jpg`). The horizon stays sharp without the memory cost of a whole 8K
   texture. The small copy also lights the scene and gives the cars their reflections. The garage and
   menu use a photo of an indoor karting hall (`sky-garage*.jpg`) the same way, turned so the camera
-  faces the tyre barriers.
+  faces the tyre barriers. A concrete floor under the turntable covers the tyres standing right next
+  to the camera in the photo and fades into the photo's floor.
 - **Ground:** a tiled photo texture per region (`App/Ground/`) drawn by a small Metal shader
   (`App/Render/Ground.metal`). It fades out with distance from the camera, so the 3D ground blends
   into the ground in the panorama with no visible edge on the horizon.
@@ -272,6 +273,8 @@ Like most mobile racers, the scenery is built from photos rather than heavy 3D m
   wrapped in its facade photos, and buildings stand side by side with their fronts in one line, like
   a real street. All impostors that share a photo are merged into one mesh, so the whole roadside is
   a few dozen draw calls.
+- **Road and walls:** photo asphalt with normal and roughness maps; the track edge is a wall with
+  thickness and a coping, textured per region (brick, sandstone, stone, wooden planks).
 - No Kenney props are left along the track (no lamps, grandstands or start gantry); the start is a
   line on the road.
 
@@ -296,11 +299,26 @@ looked out of place and made frame times worse.
 | Region panoramas: Wide Street 01, Spiaggia di Mondello, Goegap, Je Gray 02, Snowy Hillside | [Poly Haven HDRIs](https://polyhaven.com/hdris) | CC0 |
 | Garage panorama: Kart Club | [Poly Haven HDRIs](https://polyhaven.com/hdris) | CC0 |
 | Trees: Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium | [Poly Haven models](https://polyhaven.com/models) | CC0 |
-| Ground and barrier textures: Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Concrete Wall 004 | [Poly Haven textures](https://polyhaven.com/textures) | CC0 |
+| Ground, asphalt, floor and wall textures: Concrete Floor Worn 001, Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Asphalt Track, Large Red Bricks, White Sandstone Bricks, Stacked Stone Wall, Wood Plank Wall, Red Sandstone Wall | [Poly Haven textures](https://polyhaven.com/textures) | CC0 |
 | Building facades (local only): Buildings Pack 1 by G. (gunn24), Old Residential Building by Andrej Grave | Sketchfab | CC BY 4.0, credited in the app |
 
 CC0 assets need no attribution; the app lists them on the credits screen anyway. CC BY assets are
 credited in the app (Settings → "Autorzy i licencje"), as the licence requires.
+
+## Loading
+
+Loading works the way game engines do it:
+
+- The system launch screen is dark with the logo (`App/Info.plist`), then the app's splash covers
+  the menu until the garage photo and the player's car are ready (about 1.5 s).
+- While the child is in the menu, `ScenePreloader` prepares the region of the next track in the
+  background. Images are decoded off the main thread, and textures are created with RealityKit's
+  async API.
+- A race starts on a light loading screen right away: region photo, track name, a tip with a
+  pictogram and a real progress bar. The scene is built from the ready textures and renders its first
+  frames under the cover (shader and effect warm-up). Only then does the countdown start, so there
+  are no black screens and no hitches at the start.
+- Memory: the garage and one region at a time; preparing another region frees the previous one.
 
 ## Project layout
 

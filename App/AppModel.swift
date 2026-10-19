@@ -134,6 +134,15 @@ final class AppModel {
                 self?.profile.soundOn.toggle()
             }
         }
+        // `-raceAfter <s>` naciska „Ścigaj się” po <s> sekundach w menu (pomiar ładowania jak u dziecka).
+        if let i = args.firstIndex(of: "-raceAfter"), i + 1 < args.count, let t = Double(args[i + 1]) {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(t))
+                guard let self else { return }
+                debugLog("test: Ścigaj się")
+                self.startRace(track: Campaign.nextTrack(self.campaign).id)
+            }
+        }
         if let i = args.firstIndex(of: "-screen"), i + 1 < args.count {
             screen = ["campaign": .campaign, "garage": .garage][args[i + 1]] ?? .menu
         }

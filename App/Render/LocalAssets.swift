@@ -217,12 +217,18 @@ final class LocalAssets {
 
     private func load(_ e: LocalCarEntry, from folder: URL) async {
         guard templates[e.file] == nil else { return }
-        if let entity = try? await Entity(contentsOf: folder.appendingPathComponent(e.file)) {
-            templates[e.file] = Self.normalized(entity, yawDegrees: e.yaw)
-            loadedCount += 1
-            debugLog("model: \(e.file) wczytany")
-        } else {
-            debugLog("model: \(e.file) — błąd wczytania")
+        // Druga próba po chwili: przy dużym obciążeniu wczytywanie USDZ potrafi się nie udać za pierwszym razem.
+        for attempt in 1...2 {
+            do {
+                let entity = try await Entity(contentsOf: folder.appendingPathComponent(e.file))
+                templates[e.file] = Self.normalized(entity, yawDegrees: e.yaw)
+                loadedCount += 1
+                debugLog("model: \(e.file) wczytany")
+                return
+            } catch {
+                debugLog("model: \(e.file) — błąd wczytania (próba \(attempt)): \(error)")
+                if attempt == 1 { try? await Task.sleep(for: .milliseconds(400)) }
+            }
         }
     }
 
@@ -252,7 +258,7 @@ final class LocalAssets {
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/hdris"),
             Credit(title: "Drzewa (Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/models"),
-            Credit(title: "Tekstury gruntu i betonu (Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Concrete Wall 004)",
+            Credit(title: "Tekstury gruntu, asfaltu, posadzki i murów (Concrete Floor Worn 001, Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Asphalt Track, Large Red Bricks, White Sandstone Bricks, Stacked Stone Wall, Wood Plank Wall, Red Sandstone Wall)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/textures"),
         ]
         out += cars.map { Credit(title: $0.name, author: $0.author, license: $0.license, source: $0.source) }

@@ -27,19 +27,12 @@ final class GaragePreview {
         carShadow.isEnabled = false
         root.addChild(turntable)
 
-        // Tło: zdjęcie panoramiczne prawdziwego warsztatu (CC0) — ono też oświetla lakier i daje odbicia.
-        let photo = SkyEnvironment.panorama(named: "garage")
-        // Kamera patrzy na niebieską ścianę z barierami z opon (zdjęcie obrócone o −90°).
-        if let dome = SkyEnvironment.panoramaDome(named: "garage", radius: 80, yaw: -.pi / 2) {
-            backdrop = dome
-        } else {
-            var bg = UnlitMaterial(color: UIColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 1))
-            bg.faceCulling = .front
-            backdrop = ModelEntity(mesh: .generateSphere(radius: 80), materials: [bg])
-        }
+        // Tło: do czasu wczytania panoramy (w tle, `loadBackdrop`) ciemna kula — start aplikacji nie czeka na 8K.
+        var bg = UnlitMaterial(color: UIColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 1))
+        bg.faceCulling = .front
+        backdrop = ModelEntity(mesh: .generateSphere(radius: 80), materials: [bg])
         root.addChild(backdrop)
 
-        SkyEnvironment.applyLighting(to: root, image: photo ?? Materials.sky, intensity: photo == nil ? 0.4 : 0.8)
         let key = DirectionalLight()
         key.light.intensity = 3000
         key.look(at: .zero, from: [3, 9, 6], relativeTo: nil)
@@ -55,6 +48,46 @@ final class GaragePreview {
     }
 
     private var realisticShown = false
+    /// Scena podpięta do RealityView — od tej chwili RealityKit jest zainicjalizowany i można tworzyć tekstury w tle.
+    var attached = false
+    private var eye: SIMD3<Float> = [0, 3.4, 10]
+    private var floor: (entity: ModelEntity, material: GroundMaterial)?
+
+    /// Zanikanie posadzki liczone od kamery.
+    private func placeFloor() {
+        guard var f = floor else { return }
+        f.material.follow(eye, on: f.entity)
+        floor = f
+    }
+
+    /// Zdjęcie hali (CC0) jako tło i źródło odbić — tekstury wczytane w tle przez ScenePreloader.
+    func loadBackdrop() async {
+        await ScenePreloader.shared.prepareGarage()
+        // Kamera patrzy na niebieską ścianę z barierami z opon (zdjęcie obrócone o −90°).
+        guard let dome = SkyEnvironment.panoramaDome(named: "garage", radius: 80, yaw: -.pi / 2) else { return }
+        backdrop.removeFromParent()
+        backdrop = dome
+        backdrop.position = eye
+        root.addChild(dome)
+        // Posadzka pod podestem: zasłania opony stojące na zdjęciu tuż przy aparacie (podest je przecinał)
+        // i w oddali przechodzi w posadzkę ze zdjęcia.
+        if let url = Bundle.main.url(forResource: "floor-garage", withExtension: "jpg"),
+           let tex = SkyEnvironment.texture(url),
+           let material = GroundMaterial.make(tex, tile: 3, fadeStart: 16) {
+            var b = MeshBuilder()
+            let g: Float = 120
+            b.quad([-g, -0.42, g], [g, -0.42, g], [g, -0.42, -g], [-g, -0.42, -g])
+            if let mesh = try? b.mesh(name: "garage-floor") {
+                let e = ModelEntity(mesh: mesh, materials: [material.material])
+                root.addChild(e)
+                floor = (e, material)
+                placeFloor()
+            }
+        }
+        if let photo = SkyEnvironment.panorama(named: "garage") {
+            SkyEnvironment.applyLighting(to: root, image: photo, intensity: 0.8)
+        }
+    }
 
     func show(def: CarDef, colorHex: String) {
         let realisticReady = def.realistic.map { LocalAssets.shared.templates[$0.file] != nil } ?? false
@@ -90,10 +123,11 @@ final class GaragePreview {
         let menu = layout == .menu && !narrow
         let distance: Float = narrow ? 13 : (layout == .garage ? 14 : 9)
         let target: SIMD3<Float> = narrow ? [0, -1.2, 0] : (layout == .garage ? [0.31 * distance, 0.5, 0] : [0.19 * distance, 1.0, 0])
-        let eye: SIMD3<Float> = [0, menu ? 2.1 : 3.4, distance]
+        eye = [0, menu ? 2.1 : 3.4, distance]
         camera.look(at: target, from: eye, relativeTo: nil)
         // Panorama wyśrodkowana na kamerze — perspektywa zdjęcia zgadza się z widokiem.
         backdrop.position = eye
+        placeFloor()
     }
 
     func update(dt: Double) {

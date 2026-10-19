@@ -7,19 +7,51 @@ import SwiftUI
 struct RaceScreen: View {
     let model: AppModel
     @State private var game: RaceGame?
+    @State private var revealed = false
+    @State private var progress = 0.0
 
     var body: some View {
         ZStack {
             if let game {
                 RaceContent(model: model, game: game)
-            } else {
-                Color.black.ignoresSafeArea()
+            }
+            if !revealed {
+                LoadingView(spec: model.track, progress: progress)
+                    .transition(.opacity)
             }
         }
-        .task {
-            guard game == nil else { return }
-            game = RaceGame(profile: model.profile, spec: model.track, playerCar: model.playerCar)
+        .background(Color.black)
+        .task { await load() }
+    }
+
+    /// Ładowanie jak w silnikach gier: ekran ładowania od razu, ciężka praca w tle z prawdziwym postępem,
+    /// a scena rozgrzewa się (pierwsze klatki, shadery, efekty) pod zasłoną, zanim ruszy odliczanie.
+    private func load() async {
+        guard game == nil else { return }
+        let start = ProcessInfo.processInfo.systemUptime
+        let assets = LocalAssets.shared, scenery = ScenePreloader.shared
+        let spec = model.track
+        // 1. Auta (0–45%) i 2. tekstury krainy (45–90%) — równolegle.
+        async let sceneryDone: Void = scenery.prepare(spec.region)
+        while !assets.loadingDone || !scenery.isReady(spec.region) {
+            let cars = assets.cars.isEmpty ? 1 : Double(assets.loadedCount) / Double(assets.cars.count)
+            progress = 0.45 * min(1, cars) + 0.45 * (scenery.isReady(spec.region) ? 1 : scenery.progress)
+            try? await Task.sleep(for: .milliseconds(50))
         }
+        await sceneryDone
+        progress = 0.9
+        // 3. Budowa sceny (szybka — tekstury gotowe), 4. rozgrzewka pod zasłoną.
+        try? await Task.sleep(for: .milliseconds(30)) // pasek zdąży się narysować
+        let g = RaceGame(profile: model.profile, spec: spec, playerCar: model.playerCar)
+        game = g
+        while g.warmFrames < 20 { try? await Task.sleep(for: .milliseconds(30)) }
+        progress = 1
+        // Ekran ładowania nie miga: co najmniej 0,8 s.
+        let shown = ProcessInfo.processInfo.systemUptime - start
+        if shown < 0.8 { try? await Task.sleep(for: .seconds(0.8 - shown)) }
+        debugLog(String(format: "ładowanie wyścigu: %.2f s", ProcessInfo.processInfo.systemUptime - start))
+        withAnimation(.easeOut(duration: 0.4)) { revealed = true }
+        g.release()
     }
 }
 
@@ -42,12 +74,6 @@ private struct RaceContent: View {
                 }
             }
             .ignoresSafeArea()
-            // Pierwsze klatki sceny (wgrywanie na GPU) trwają dłużej — zasłania je krótkie wejście z czerni.
-            Color.black
-                .ignoresSafeArea()
-                .opacity(game.sceneShown ? 0 : 1)
-                .animation(.easeOut(duration: 0.35), value: game.sceneShown)
-                .allowsHitTesting(false)
 
             HudView(game: game)
                 .opacity(game.result == nil ? 1 : 0.25)

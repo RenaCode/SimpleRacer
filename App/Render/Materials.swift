@@ -52,10 +52,19 @@ enum Materials {
 
     /// Materiał z powtarzaną teksturą (UV > 1 kafelkuje zamiast rozciągać).
     static func tiled(_ image: CGImage, roughness: Float = 0.9, metallic: Float = 0) -> PhysicallyBasedMaterial {
+        guard let tex = try? texture(image) else {
+            var m = PhysicallyBasedMaterial()
+            m.roughness = .init(floatLiteral: roughness)
+            m.metallic = .init(floatLiteral: metallic)
+            return m
+        }
+        return tiled(tex, roughness: roughness, metallic: metallic)
+    }
+
+    static func tiled(_ tex: TextureResource, roughness: Float = 0.9, metallic: Float = 0) -> PhysicallyBasedMaterial {
         var m = PhysicallyBasedMaterial()
         m.roughness = .init(floatLiteral: roughness)
         m.metallic = .init(floatLiteral: metallic)
-        guard let tex = try? texture(image) else { return m }
         let s = MTLSamplerDescriptor()
         s.sAddressMode = .repeat
         s.tAddressMode = .repeat
@@ -172,4 +181,25 @@ enum Materials {
         return tiled(img, roughness: 1)
     }
     static let roadSurfaceMaterial = tiled(roadSurface, roughness: 0.82)
+
+    /// Asfalt PBR: kolor, normalne (drobne kamyki łapią światło) i chropowatość — tekstury z ScenePreloader.
+    static func photoAsphalt() -> PhysicallyBasedMaterial? {
+        func tex(_ name: String) -> TextureResource? {
+            Bundle.main.url(forResource: name, withExtension: "jpg").flatMap(SkyEnvironment.texture)
+        }
+        guard let color = tex("road-asphalt") else { return nil }
+        var m = tiled(color, roughness: 1)
+        let s = MTLSamplerDescriptor()
+        s.sAddressMode = .repeat
+        s.tAddressMode = .repeat
+        s.minFilter = .linear
+        s.magFilter = .linear
+        s.mipFilter = .linear
+        s.maxAnisotropy = 16
+        if let n = tex("road-asphalt-normal") { m.normal = .init(texture: .init(n, sampler: .init(s))) }
+        if let r = tex("road-asphalt-rough") { m.roughness = .init(scale: 0.9, texture: .init(r, sampler: .init(s))) }
+        // Odrobinę ciemniej niż na zdjęciu: jasny asfalt zlewał się z betonowymi barierami.
+        m.baseColor.tint = UIColor(white: 0.82, alpha: 1)
+        return m
+    }
 }

@@ -19,7 +19,7 @@ targets:
     platform: iOS
     sources:
       - path: App
-        excludes: ["Models/**", "Impostors/**"]
+        excludes: ["Models/**", "Impostors/**", "Info.plist"]
       # Modele 3D jako katalog w paczce aplikacji (Bundle: Models/Cars, Models/City, Models/Track).
       - path: App/Models
         type: folder
@@ -65,7 +65,8 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: SimpleRacer
         INFOPLIST_KEY_UIRequiresFullScreen: YES
         INFOPLIST_KEY_UIStatusBarHidden: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # Ekran startowy (ciemne tło z logo) w App/Info.plist; Xcode dokleja do niego klucze INFOPLIST_KEY_*.
+        INFOPLIST_FILE: App/Info.plist
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.racing-games
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

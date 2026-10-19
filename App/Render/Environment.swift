@@ -15,10 +15,15 @@ enum SkyEnvironment {
 
     /// Panorama `App/Sky/sky-<name>.jpg` (krainy albo "garage").
     static func panorama(named name: String) -> CGImage? {
+        if let cached = panoramaCache[name] { return cached }
         guard let url = Bundle.main.url(forResource: "sky-\(name)", withExtension: "jpg"),
-              let image = UIImage(contentsOfFile: url.path) else { return nil }
-        return image.cgImage
+              let image = UIImage(contentsOfFile: url.path)?.cgImage else { return nil }
+        panoramaCache[name] = image
+        return image
     }
+
+    /// Małe kopie panoram (2048 px) — ten sam obraz przy każdym wyścigu, więc oświetlenie liczy się raz.
+    private static var panoramaCache: [String: CGImage] = [:]
 
     static func skyDome(radius: Float, image: CGImage = Materials.sky) -> ModelEntity {
         var m = UnlitMaterial()
@@ -39,9 +44,10 @@ enum SkyEnvironment {
     /// Panorama na własnej kuli: całość z małego zdjęcia, a pas horyzontu z osobnej tekstury 8K —
     /// ostry horyzont bez kosztu pamięci pełnej panoramy 8K. `yaw` obraca zdjęcie wokół pionu.
     static func panoramaDome(named name: String, radius: Float, yaw: Float = 0) -> Entity? {
-        guard let low = panorama(named: name) else { return nil }
-        let band = Bundle.main.url(forResource: "sky-\(name)-band", withExtension: "jpg")
-            .flatMap { UIImage(contentsOfFile: $0.path)?.cgImage }
+        // Tekstury z ScenePreloader (wczytane w tle); bez niego — wczytanie tutaj.
+        guard let lowURL = Bundle.main.url(forResource: "sky-\(name)", withExtension: "jpg"),
+              let low = texture(lowURL) else { return nil }
+        let band = Bundle.main.url(forResource: "sky-\(name)-band", withExtension: "jpg").flatMap(texture)
         let v0 = bandRange(name).lowerBound, v1 = bandRange(name).upperBound
         let columns = 128
         func point(_ u: Float, _ v: Float) -> SIMD3<Float> {
@@ -69,9 +75,8 @@ enum SkyEnvironment {
             rows(&lowMesh, from: 0, to: 1, steps: 64, uv: lowUV)
         }
         let root = Entity()
-        for (builder, image) in [(lowMesh, Optional(low)), (bandMesh, band)] {
-            guard let image, !builder.isEmpty, let mesh = try? builder.mesh(name: "sky"),
-                  let tex = try? Materials.texture(image) else { continue }
+        for (builder, tex) in [(lowMesh, Optional(low)), (bandMesh, band)] {
+            guard let tex, !builder.isEmpty, let mesh = try? builder.mesh(name: "sky") else { continue }
             var m = UnlitMaterial()
             m.color = .init(tint: .white, texture: .init(tex))
             m.faceCulling = .none
@@ -80,18 +85,45 @@ enum SkyEnvironment {
         return root
     }
 
+    /// Tekstura z pliku: gotowa z ScenePreloader albo wczytana synchronicznie (zapas).
+    static func texture(_ url: URL) -> TextureResource? {
+        if let t = ScenePreloader.shared.texture(url) { return t }
+        guard let image = UIImage(contentsOfFile: url.path)?.cgImage else { return nil }
+        if ScenePreloader.isRaw(url) {
+            return try? TextureResource(image: image, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll))
+        }
+        return try? Materials.texture(image)
+    }
+
     /// Dodaje oświetlenie z nieba do `root` i podpina pod nie wszystkie modele w drzewie.
     static func applyLighting(to root: Entity, image: CGImage = Materials.sky, intensity: Float = 0.4) {
-        Task { @MainActor in
-            // Do światła wystarczy mała kopia — pełna panorama tylko spowalnia start.
-            let source = scaled(image, width: 1024) ?? image
-            guard let env = try? await EnvironmentResource(equirectangular: source) else { return }
+        // Środowiska liczymy po kolei (jedno naraz) i pamiętamy: dwa równoczesne liczenia oświetlenia
+        // wywracały sterownik Metal w RealityKit (garaż i wyścig startujące w tej samej chwili).
+        let previous = lightingQueue
+        let task = Task { @MainActor () -> Void in
+            await previous?.value
+            let key = ObjectIdentifier(image)
+            let env: EnvironmentResource
+            if let cached = environments[key] {
+                env = cached
+            } else {
+                // Do światła wystarczy mała kopia — pełna panorama tylko spowalnia start.
+                let source = scaled(image, width: 1024) ?? image
+                guard let made = try? await EnvironmentResource(equirectangular: source) else { return }
+                environments[key] = made
+                env = made
+            }
             let ibl = Entity()
             ibl.components.set(ImageBasedLightComponent(source: .single(env), intensityExponent: intensity))
             root.addChild(ibl)
             attach(root, to: ibl)
         }
+        lightingQueue = task
     }
+
+    private static var lightingQueue: Task<Void, Never>?
+    /// Policzone środowiska wg obrazu (panoramy są trzymane przez `panoramaCache`, więc klucz jest stabilny).
+    private static var environments: [ObjectIdentifier: EnvironmentResource] = [:]
 
     private static func scaled(_ image: CGImage, width: Int) -> CGImage? {
         guard image.width > width else { return image }

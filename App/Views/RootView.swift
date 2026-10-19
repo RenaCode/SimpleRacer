@@ -1,9 +1,12 @@
+import RaceCore
 import RealityKit
 import SwiftUI
 
 struct RootView: View {
     @Bindable var model: AppModel
     @State private var preview = GaragePreview()
+    /// Splash przy starcie: zasłania menu, dopóki tło garażu i auto gracza nie są gotowe.
+    @State private var splash = true
 
     var body: some View {
         ZStack {
@@ -22,22 +25,59 @@ struct RootView: View {
             case .campaign:
                 CampaignView(model: model)
             case let .race(id):
-                // Start dopiero po wczytaniu wszystkich aut — wczytywanie w trakcie wyścigu dawało przycięcia.
-                if LocalAssets.shared.loadingDone {
-                    RaceScreen(model: model).id(id)
-                } else {
-                    VStack(spacing: 16) {
-                        ProgressView().controlSize(.large).tint(Theme.accent)
-                        Text("Ładowanie aut…").font(Theme.display(24))
-                    }
-                }
+                // Ekran wyścigu sam czeka na auta i tekstury, pokazując ekran ładowania z postępem.
+                RaceScreen(model: model).id(id)
             }
         }
+        .overlay {
+            if splash { SplashView().transition(.opacity) }
+        }
         .background(Color.black)
+        .task { await startUp() }
         .onAppear { AudioManager.shared.start() }
         .onChange(of: model.screen, initial: true) { _, screen in
             if case .race = screen { AudioManager.shared.play(.race) } else { AudioManager.shared.play(.menu) }
         }
+    }
+}
+
+extension RootView {
+    /// Start: tło garażu w tle, auto gracza (najwyżej 4 s czekania), potem zdjęcie splasha
+    /// i — w czasie, gdy dziecko jest w menu — przygotowanie krainy następnej trasy.
+    private func startUp() async {
+        let start = ProcessInfo.processInfo.systemUptime
+        // Najpierw pierwszy widok 3D: tworzenie tekstur w tle, zanim RealityKit się zainicjalizuje,
+        // psuło cały proces (żaden model się nie wczytywał, a potem awaria).
+        // Start prosto w wyścigu (argument testowy): splash znika, wyścig ma własny ekran ładowania.
+        if case .race = model.screen {
+            splash = false
+            return
+        }
+        while !preview.attached { try? await Task.sleep(for: .milliseconds(20)) }
+        await preview.loadBackdrop()
+        while !LocalAssets.shared.isLoaded(model.car), ProcessInfo.processInfo.systemUptime - start < 4 {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        try? await Task.sleep(for: .milliseconds(150)) // klatka z autem zdąży się narysować
+        debugLog(String(format: "start: menu gotowe po %.2f s", ProcessInfo.processInfo.systemUptime - start))
+        withAnimation(.easeOut(duration: 0.4)) { splash = false }
+        // Wyścig już się ładuje (np. -autostartRace) — on sam przygotuje swoją krainę.
+        if case .race = model.screen { return }
+        await ScenePreloader.shared.prepare(Campaign.nextTrack(model.campaign).region)
+    }
+}
+
+/// Ekran startowy: baner z logo na ciemnym tle i pasek, który pokazuje, że gra pracuje.
+private struct SplashView: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.07, green: 0.08, blue: 0.1), .black], startPoint: .top, endPoint: .bottom)
+            VStack(spacing: 40) {
+                LogoBanner().scaleEffect(1.3)
+                ProgressBar(value: 1).frame(width: 300).opacity(0.9)
+            }
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -51,6 +91,7 @@ private struct PreviewStage: View {
         RealityView { content in
             content.camera = .virtual
             content.add(preview.root)
+            preview.attached = true
             preview.subscription?.cancel()
             preview.subscription = content.subscribe(to: SceneEvents.Update.self) { [weak preview] event in
                 MainActor.assumeIsolated { preview?.update(dt: event.deltaTime) }

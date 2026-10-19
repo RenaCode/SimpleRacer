@@ -59,6 +59,15 @@ final class ImpostorLibrary {
 
     private var materials: [URL: UnlitMaterial] = [:]
 
+    /// Wzorzec materiału impostorów (wycinanie po progu 0,5), tworzony raz — przy pierwszej budowie trasy.
+    /// Ustawienie progu kompiluje shader; robione w chwili, gdy menu kompiluje swoje pierwsze shadery,
+    /// wywracało RealityKit, więc nie ruszamy go przy starcie aplikacji.
+    private static let template: UnlitMaterial = {
+        var m = UnlitMaterial()
+        m.opacityThreshold = 0.5
+        return m
+    }()
+
     /// Zwalnia tekstury poprzedniej krainy (wołane przed budową trasy).
     func purge() { materials.removeAll() }
 
@@ -75,35 +84,28 @@ final class ImpostorLibrary {
     /// Materiał bez cieniowania (światło jest już w zdjęciu) z wycinaniem po kanale alfa — bez sortowania przezroczystości.
     func material(_ url: URL) -> UnlitMaterial? {
         if let m = materials[url] { return m }
-        guard let image = UIImage(contentsOfFile: url.path)?.cgImage,
-              let tex = try? TextureResource(image: image, options: .init(semantic: .color, mipmapsMode: .allocateAndGenerateAll)),
-              let mask = Self.alphaMask(image),
-              let opacity = try? TextureResource(image: mask, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll))
-        else { return nil }
-        var m = UnlitMaterial()
+        // Zwykle tekstury są już gotowe (ScenePreloader wczytał je w tle); inaczej tworzymy je tu.
+        let preloaded = ScenePreloader.shared
+        let tex: TextureResource, opacity: TextureResource
+        if let t = preloaded.texture(url), let o = preloaded.mask(url) {
+            (tex, opacity) = (t, o)
+        } else {
+            guard let image = UIImage(contentsOfFile: url.path)?.cgImage,
+                  let t = try? TextureResource(image: image, options: .init(semantic: .color, mipmapsMode: .allocateAndGenerateAll)),
+                  let mask = ScenePreloader.alphaMask(image),
+                  let o = try? TextureResource(image: mask, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll))
+            else { return nil }
+            (tex, opacity) = (t, o)
+        }
+        // Kopia wzorca: próg ustawiamy raz, nie przy każdym materiale.
+        var m = Self.template
         m.color = .init(tint: .white, texture: .init(tex, sampler: Self.sampler))
         // Tekstura nieprzezroczystości czyta pierwszy kanał (czerwony), nie alfę — maskę robimy osobno.
         m.blending = .transparent(opacity: .init(scale: 1, texture: .init(opacity, sampler: Self.sampler)))
-        m.opacityThreshold = 0.5
         materials[url] = m
         return m
     }
 
-    /// Kanał alfa obrazu jako obraz w odcieniach szarości (białe = widoczne).
-    private static func alphaMask(_ image: CGImage) -> CGImage? {
-        let w = image.width, h = image.height
-        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
-                                  space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue)
-        else { return nil }
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-        guard let data = ctx.data else { return nil }
-        let provider = CGDataProvider(data: Data(bytes: data, count: w * h) as CFData)
-        return provider.flatMap {
-            CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: w,
-                    space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
-                    provider: $0, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
-        }
-    }
 }
 
 /// Zbiera czworokąty impostorów pogrupowane po teksturze i składa z nich po jednej siatce na teksturę.
@@ -111,6 +113,7 @@ final class ImpostorLibrary {
 struct ImpostorBatch {
     private var builders: [URL: MeshBuilder] = [:]
     private var roofs = MeshBuilder()
+    private var shadows = MeshBuilder()
 
     /// Drzewo/krzak: dwie skrzyżowane płaszczyzny — przód w poprzek drogi (widać go, jadąc), bok wzdłuż drogi.
     mutating func plant(_ item: Impostor, height: Double, at p: SIMD3<Float>, heading: Double) {
@@ -125,6 +128,10 @@ struct ImpostorBatch {
                                                          uv: [[0, 0], [1, 0], [1, 1], [0, 1]], doubleSided: true)
         builders[item.side, default: MeshBuilder()].quad(p + along * ws, p - along * ws, p - along * ws + up, p + along * ws + up,
                                                         uv: [[0, 0], [1, 0], [1, 1], [0, 1]], doubleSided: true)
+        // Cień korony na trawie (miękka plama), lekko przesunięty od słońca — drzewo „stoi”, a nie wisi.
+        let r = Swift.max(wf, ws) * 0.75
+        let c = p + SIMD3<Float>(-0.35 * r, 0.02, -0.2 * r)
+        shadows.quad(c + SIMD3(-r, 0, r), c + SIMD3(r, 0, r), c + SIMD3(r, 0, -r), c + SIMD3(-r, 0, -r))
     }
 
     /// Budynek: prostopadłościan, fasada (szerszy widok modelu) od strony drogi i z tyłu, boki z węższego widoku
@@ -161,10 +168,32 @@ struct ImpostorBatch {
         roofs.quad(bl + up, br + up, fr + up, fl + up)
     }
 
+    /// Miękki, okrągły cień: czarny, przezroczystość z promienistej maski.
+    private static let shadowMaterial: UnlitMaterial? = {
+        let size = 128
+        guard let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size,
+                                  space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue),
+              let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceGray(),
+                                        colors: [CGColor(gray: 1, alpha: 1), CGColor(gray: 0.5, alpha: 1), CGColor(gray: 0, alpha: 1)] as CFArray,
+                                        locations: [0, 0.5, 1])
+        else { return nil }
+        let c = CGPoint(x: size / 2, y: size / 2)
+        ctx.drawRadialGradient(gradient, startCenter: c, startRadius: 0, endCenter: c, endRadius: CGFloat(size / 2), options: [])
+        guard let image = ctx.makeImage(),
+              let tex = try? TextureResource(image: image, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll))
+        else { return nil }
+        var m = UnlitMaterial(color: .black)
+        m.blending = .transparent(opacity: .init(scale: 0.45, texture: .init(tex)))
+        return m
+    }()
+
     func build() -> Entity {
         let root = Entity()
         for (url, b) in builders where !b.isEmpty {
             guard let m = ImpostorLibrary.shared.material(url), let mesh = try? b.mesh(name: url.lastPathComponent) else { continue }
+            root.addChild(ModelEntity(mesh: mesh, materials: [m]))
+        }
+        if !shadows.isEmpty, let mesh = try? shadows.mesh(name: "tree-shadows"), let m = Self.shadowMaterial {
             root.addChild(ModelEntity(mesh: mesh, materials: [m]))
         }
         if !roofs.isEmpty, let mesh = try? roofs.mesh(name: "roofs") {
@@ -181,20 +210,22 @@ struct GroundMaterial {
     /// Rozmiar kafla tekstury (m) i odległość, od której grunt zaczyna znikać (m).
     static let tile: Float = 5, fadeStart: Float = 170
 
-    static func make(_ image: CGImage) -> GroundMaterial? {
+    static func make(_ tex: TextureResource, tile: Float = tile, fadeStart: Float = fadeStart) -> GroundMaterial? {
         guard let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary(),
-              let tex = try? Materials.texture(image),
               var m = try? CustomMaterial(surfaceShader: .init(named: "groundSurface", in: library), lightingModel: .lit)
         else { return nil }
         m.baseColor = .init(tint: .white, texture: .init(tex))
         m.blending = .transparent(opacity: 1.0)
         m.custom.value = [0, 0, tile, fadeStart]
-        return GroundMaterial(material: m)
+        return GroundMaterial(material: m, tile: tile, fadeStart: fadeStart)
     }
+
+    private(set) var tile: Float = Self.tile
+    private(set) var fadeStart: Float = Self.fadeStart
 
     /// Środek zanikania podąża za kamerą.
     mutating func follow(_ camera: SIMD3<Float>, on entity: ModelEntity) {
-        material.custom.value = [camera.x, camera.z, Self.tile, Self.fadeStart]
+        material.custom.value = [camera.x, camera.z, tile, fadeStart]
         entity.model?.materials = [material]
     }
 }
