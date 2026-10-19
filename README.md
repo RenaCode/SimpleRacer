@@ -318,7 +318,11 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
   hung on an axle at each wheel's centre. They roll with the distance driven, and the front wheels
   steer: angle ≈ wheelbase × yaw rate / speed (Ackermann), with counter-steer in a drift.
 - **Suspension:** the body leans out of corners, squats when accelerating and dives when braking,
-  smoothed like a spring.
+  smoothed like a spring. Only the body moves: it pivots around the axle height while the wheels stay
+  on the road (unsprung), with road-car angles (up to 3.5° roll, 2° pitch).
+- **Tyre contact:** cars stand on the asphalt surface (y 0.02), with the tyre bottoms aligned to it;
+  road paint is 8 mm above the asphalt. A baked contact shadow (soft patch under the body and darker
+  spots under each tyre) grounds the car where the sun's shadow map is too coarse.
 - **Skid marks:** while drifting, the rear tyres leave dark marks with soft edges. All marks are one
   mesh with a ring buffer (the oldest disappear); a small mesh with the newest segments is updated
   every frame, so the mark starts right under the tyre.

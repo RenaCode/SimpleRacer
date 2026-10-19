@@ -47,12 +47,13 @@ enum TrackBuilder {
         strip(&road, -hw, hw, 0, track.length, y: 0.02, tile: 4)
         try add(road, "road", Materials.photoAsphalt() ?? Materials.roadSurfaceMaterial)
 
-        // Linie: ciągłe przy krawędziach, przerywane między pasami.
+        // Linie: ciągłe przy krawędziach, przerywane między pasami. Farba 8 mm nad asfaltem — opona
+        // najeżdżająca na linię nie znika w niej.
         var lines = MeshBuilder()
-        for edge in [-hw + 0.3, hw - 0.3] { strip(&lines, edge - 0.12, edge + 0.12, 0, track.length, y: 0.04) }
+        for edge in [-hw + 0.3, hw - 0.3] { strip(&lines, edge - 0.12, edge + 0.12, 0, track.length, y: 0.028) }
         for lane in [-hw / 3, hw / 3] {
             var s = 0.0
-            while s < track.length { strip(&lines, lane - 0.08, lane + 0.08, s, min(track.length, s + 5), y: 0.04); s += 12 }
+            while s < track.length { strip(&lines, lane - 0.08, lane + 0.08, s, min(track.length, s + 5), y: 0.028); s += 12 }
         }
         try add(lines, "lines", matte(UIColor(white: 0.93, alpha: 1)))
 

@@ -133,6 +133,7 @@ final class RaceGame {
         debugLog("wyścig: auta…")
         for car in sim.cars {
             let e = CarEntity(def: car.def, color: UIColorHex.color(car.color))
+            e.addContactShadow()
             root.addChild(e.root)
             cars.append((car, e))
         }
@@ -367,6 +368,11 @@ final class RaceGame {
 
     /// Rywale i butle dalej niż tyle metrów (po trasie) od gracza nie są rysowane — i tak ledwo je widać.
     private static let drawDistance = 220.0
+    /// Wierzch asfaltu (TrackBuilder kładzie jezdnię na y 0,02) — na nim stoją opony.
+    static let roadSurface: Float = 0.02
+    #if DEBUG || FAMILY
+    private static let sideCam = ProcessInfo.processInfo.arguments.contains("-sideCam")
+    #endif
 
     private func setVisible(_ e: Entity, _ visible: Bool) {
         if e.isEnabled != visible { e.isEnabled = visible }
@@ -379,23 +385,17 @@ final class RaceGame {
             setVisible(e.root, near)
             guard near else { continue }
             let w = sim.track.toWorld(s: car.s, d: car.d)
-            e.root.position = [Float(w.x), 0, Float(w.z)]
+            e.root.position = [Float(w.x), Self.roadSurface, Float(w.z)]
             e.root.orientation = simd_quatf(angle: Float(w.heading + car.alphaFace), axis: [0, 1, 0])
             if car.wrecked {
-                let t = Float(1 - car.wreckTimer / Physics.wreckTime)
-                e.body.orientation = simd_quatf(angle: t * .pi * 2, axis: [0, 1, 0])
-                    * simd_quatf(angle: sin(t * .pi * 2) * 0.8, axis: [0, 0, 1])
-                    * simd_quatf(angle: sin(t * .pi) * 0.6, axis: [1, 0, 0])
-                e.body.position.y = sin(t * .pi) * 1.5
+                e.setWreck(Float(1 - car.wreckTimer / Physics.wreckTime))
             } else {
                 // Prędkość kątowa toru jazdy (do skrętu kół i przechyłu na zawieszeniu).
                 let yaw = w.heading + car.alphaVel
                 let id = ObjectIdentifier(car)
                 let yawRate = lastYaw[id].map { wrapAngle(yaw - $0) / frameDt } ?? 0
                 lastYaw[id] = yaw
-                let chassis = e.chassis(yawRate: yawRate, speed: car.speed, slide: car.slide, dt: frameDt)
-                e.body.orientation = simd_quatf(angle: Float(-car.slide * 0.12), axis: [0, 0, 1]) * chassis
-                e.body.position.y = 0
+                e.updateSuspension(yawRate: yawRate, speed: car.speed, slide: car.slide, dt: frameDt)
             }
             // Pierwsze klatki odliczania: płomień i dym pojawiają się na moment, zanim ruszy wyścig —
             // przygotowanie efektów nie wypada już na pierwsze nitro rywali po starcie.
@@ -444,8 +444,15 @@ final class RaceGame {
         shake = max(0, shake - dt)
         let sh = shake * 0.4 + (p.nitro.mode == .shockwave ? 0.08 : 0)
         let jitter = { sh > 0 ? Double.random(in: -0.5...0.5) * sh : 0 }
-        let from = SIMD3<Float>(Float(w.x - fx * back + jitter()), Float(2.1 + jitter()), Float(w.z - fz * back))
-        let at = SIMD3<Float>(Float(w.x + fx * 6), 1.15, Float(w.z + fz * 6))
+        var from = SIMD3<Float>(Float(w.x - fx * back + jitter()), Float(2.1 + jitter()), Float(w.z - fz * back))
+        var at = SIMD3<Float>(Float(w.x + fx * 6), 1.15, Float(w.z + fz * 6))
+        #if DEBUG || FAMILY
+        // `-sideCam`: kamera nisko z boku auta gracza — do sprawdzania styku opon z jezdnią.
+        if Self.sideCam {
+            at = SIMD3<Float>(Float(w.x), 0.3, Float(w.z))
+            from = at + SIMD3<Float>(Float(fz) * 4.5 + Float(fx) * 1.2, 0.35, Float(-fx) * 4.5 + Float(fz) * 1.2)
+        }
+        #endif
         camera.look(at: at, from: from, relativeTo: nil)
         // Panorama jedzie z kamerą: zdjęcie to „nieskończenie daleki” plan, horyzont się nie przesuwa.
         skyDome.position = from

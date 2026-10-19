@@ -10,8 +10,8 @@ final class SkidMarks {
 
     private static let maxSegments = 700
     private static let halfWidth: Float = 0.13
-    /// Tuż nad jezdnią i liniami (jezdnia y 0,02, linie 0,04).
-    private static let height: Float = 0.047
+    /// Tuż nad jezdnią i liniami (jezdnia y 0,02, linie 0,028).
+    private static let height: Float = 0.033
 
     private var segments: [(SIMD3<Float>, SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)] = []
     private var next = 0

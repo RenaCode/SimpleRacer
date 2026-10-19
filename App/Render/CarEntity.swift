@@ -10,7 +10,9 @@ import UIKit
 final class CarEntity {
     /// Pozycja i kierunek auta.
     let root = Entity()
-    /// Nadwozie — przechyla się w drifcie i koziołkuje przy rozbiciu.
+    /// Całe auto razem z kołami — koziołkuje przy rozbiciu (`setWreck`).
+    private let frame = Entity()
+    /// Nadwozie na zawieszeniu — przechyla się nad kołami, które zostają na jezdni.
     let body = Entity()
     private var paintParts: [ModelEntity] = []
     private var flames: [ModelEntity] = []
@@ -28,7 +30,8 @@ final class CarEntity {
         let s = def.shape
         let L = Float(s.length), W = Float(s.width)
         let hScale = Float(s.height) / 1.2
-        root.addChild(body)
+        root.addChild(frame)
+        frame.addChild(body)
         if let r = def.realistic, let template = LocalAssets.shared.templates[r.file] {
             let d = buildRealistic(template: template, ref: r, color: color)
             addEffects(width: d.width, rearZ: d.rearZ, exhaustY: d.exhaustY, backWheelX: d.backWheelX, backWheelZ: d.backWheelZ)
@@ -164,7 +167,7 @@ final class CarEntity {
                     sp.orientation = simd_quatf(angle: Float(i) * 2 * .pi / 5, axis: [1, 0, 0])
                     wheel.addChild(sp)
                 }
-                root.addChild(wheel)
+                frame.addChild(wheel)
                 wheels.append(wheel)
             }
         }
@@ -212,7 +215,7 @@ final class CarEntity {
                     guard let mesh = lib.mesh(p, offset: center) else { continue }
                     pivot.addChild(ModelEntity(mesh: mesh, materials: [lib.material(l.materials[p.material] ?? ObjMaterial(), folder: l.folder)]))
                 }
-                root.addChild(pivot)
+                frame.addChild(pivot)
                 wheels.append(pivot)
                 wheelRadius = (hi.y - lo.y) / 2 * s
                 if g.name == "wheel-back-left" { backWheel = center }
@@ -283,6 +286,84 @@ final class CarEntity {
     }
 
     /// Płomień nitro z wydechów (jasny rdzeń + strumień świecących cząsteczek) i dym spod tylnych kół.
+    // MARK: - Cień kontaktowy
+
+    /// Cień kontaktowy, jak w grach wyścigowych (zapieczone „ambient occlusion” pod autem): miękka ciemna
+    /// plama pod podwoziem i mocniej przyciemnione miejsca styku opon z asfaltem. Bez tego cień słońca
+    /// (mapa cieni o ograniczonej rozdzielczości) nie dochodzi do samych opon i auto wygląda, jakby
+    /// tonęło albo wisiało. Leży na jezdni (w `root`), nie przechyla się z nadwoziem.
+    func addContactShadow() {
+        guard let materials = Self.contactMaterials else { return }
+        let b = body.visualBounds(relativeTo: root)
+        let under = ModelEntity(mesh: .generatePlane(width: b.extents.x + 0.35, depth: b.extents.z + 0.5),
+                                materials: [materials.body])
+        under.position = [b.center.x, Self.shadowLift, b.center.z]
+        root.addChild(under)
+        let patch = MeshResource.generatePlane(width: 0.55, depth: max(0.6, wheelRadius * 1.9))
+        for w in wheels {
+            let e = ModelEntity(mesh: patch, materials: [materials.tyre])
+            e.position = [w.position.x, Self.shadowLift + 0.0005, w.position.z]
+            root.addChild(e)
+            contactShadows.append(e)
+        }
+        contactShadows.append(under)
+    }
+
+    private var contactShadows: [Entity] = []
+    /// Nad asfaltem i liniami, pod śladami opon (względem wierzchu jezdni 0,02: 0,032).
+    private static let shadowLift: Float = 0.012
+
+    private static let contactMaterials: (body: UnlitMaterial, tyre: UnlitMaterial)? = {
+        func material(_ image: CGImage?, _ opacity: Float) -> UnlitMaterial? {
+            guard let image, let tex = try? TextureResource(image: image, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll))
+            else { return nil }
+            var m = UnlitMaterial(color: .black)
+            m.blending = .transparent(opacity: .init(scale: opacity, texture: .init(tex)))
+            return m
+        }
+        guard let body = material(softBox(), 0.62), let tyre = material(softBlob(), 0.8) else { return nil }
+        return (body, tyre)
+    }()
+
+    /// Zaokrąglony prostokąt z bardzo miękkim brzegiem (ciemno pod podwoziem, zero na zewnątrz).
+    private static func softBox() -> CGImage? {
+        let w = 64, h = 128
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                  space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return nil }
+        var px = [UInt8](repeating: 0, count: w * h)
+        for y in 0..<h {
+            for x in 0..<w {
+                // Odległość od brzegu w ułamku połowy wymiaru (0 na brzegu, 1 w środku).
+                let ex = 1 - abs(Float(x) + 0.5 - Float(w) / 2) / (Float(w) / 2)
+                let ey = 1 - abs(Float(y) + 0.5 - Float(h) / 2) / (Float(h) / 2)
+                let v = smoothstep(0, 0.45, ex) * smoothstep(0, 0.3, ey)
+                px[y * w + x] = UInt8(min(255, v * 255))
+            }
+        }
+        ctx.data?.copyMemory(from: px, byteCount: px.count)
+        return ctx.makeImage()
+    }
+
+    /// Eliptyczna plamka pod oponą: najciemniej w miejscu styku.
+    private static func softBlob() -> CGImage? {
+        let n = 64
+        guard let ctx = CGContext(data: nil, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n,
+                                  space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return nil }
+        var px = [UInt8](repeating: 0, count: n * n)
+        for y in 0..<n {
+            for x in 0..<n {
+                let dx = (Float(x) + 0.5) / Float(n) * 2 - 1, dy = (Float(y) + 0.5) / Float(n) * 2 - 1
+                let r = sqrt(dx * dx + dy * dy)
+                let v = 1 - smoothstep(0.15, 1, r)
+                px[y * n + x] = UInt8(min(255, v * v * 255))
+            }
+        }
+        ctx.data?.copyMemory(from: px, byteCount: px.count)
+        return ctx.makeImage()
+    }
+
     private func addEffects(width W: Float, rearZ: Float, exhaustY: Float, backWheelX: Float, backWheelZ: Float) {
         // Rdzeń: wydłużona, świecąca „kula” tuż za wydechem; strumień cząsteczek leci z niej do tyłu.
         let coreMesh = MeshResource.generateSphere(radius: 0.08)
@@ -494,20 +575,45 @@ final class CarEntity {
     /// Ruch nadwozia na zawieszeniu: w zakręcie przechyla się na zewnątrz, przy przyspieszaniu przysiada
     /// tyłem, przy hamowaniu nurkuje przodem. Przednie koła skręcają zgodnie z torem jazdy (Ackermann:
     /// kąt ≈ rozstaw osi × prędkość kątowa / prędkość), a w poślizgu kontrują.
-    /// Zwraca obrót nadwozia (bez przechyłu w drifcie, który dokłada RaceGame).
-    func chassis(yawRate: Double, speed: Double, slide: Double, dt: Double) -> simd_quatf {
+    ///
+    /// Nadwozie obraca się wokół osi kół (środek przechyłu), a koła zostają na jezdni — jak na
+    /// prawdziwym zawieszeniu. Kąty jak w aucie drogowym przy ~1 g: przechył do 3,5°, pochylenie do 2°.
+    func updateSuspension(yawRate: Double, speed: Double, slide: Double, dt: Double) {
         let accel = lastSpeed.map { (speed - $0) / max(dt, 1e-3) } ?? 0
         lastSpeed = speed
         let lateral = speed * yawRate
         let k = Float(1 - exp(-dt * 7))
-        let rollTarget = Float(min(0.07, max(-0.07, -lateral * 0.0035)))
+        // W drifcie nadwozie dodatkowo kładzie się na zewnątrz poślizgu.
+        let rollRaw: Double = -lateral * 0.0035 - slide * 0.05
+        let rollTarget: Float = min(Self.maxRoll, max(-Self.maxRoll, Float(rollRaw)))
         let pitchTarget = Float(min(0.035, max(-0.035, -accel * 0.004)))
         roll += (rollTarget - roll) * k
         pitch += (pitchTarget - pitch) * k
         let ackermann = 2.7 * yawRate / max(speed, 3)
         let steerTarget = Float(min(0.5, max(-0.5, ackermann - slide)))
         steerAngle += (steerTarget - steerAngle) * Float(1 - exp(-dt * 10))
-        return simd_quatf(angle: roll, axis: [0, 0, 1]) * simd_quatf(angle: pitch, axis: [1, 0, 0])
+        frame.transform = .identity
+        for s in contactShadows where !s.isEnabled { s.isEnabled = true }
+        let q = simd_quatf(angle: roll, axis: [0, 0, 1]) * simd_quatf(angle: pitch, axis: [1, 0, 0])
+        let pivot = SIMD3<Float>(0, wheelRadius, 0)
+        body.orientation = q
+        body.position = pivot - q.act(pivot)
+    }
+
+    static let maxRoll: Float = 0.06
+
+    /// Przechył nadwozia względem kół (rad) — do testów.
+    var bodyRoll: Float { roll }
+
+    /// Rozbicie: koziołkuje całe auto razem z kołami. `t` — postęp 0…1.
+    func setWreck(_ t: Float) {
+        body.transform = .identity
+        frame.orientation = simd_quatf(angle: t * .pi * 2, axis: [0, 1, 0])
+            * simd_quatf(angle: sin(t * .pi * 2) * 0.8, axis: [0, 0, 1])
+            * simd_quatf(angle: sin(t * .pi) * 0.6, axis: [1, 0, 0])
+        frame.position = [0, sin(t * .pi) * 1.5, 0]
+        // Auto w powietrzu — cień styku z jezdnią znika.
+        for s in contactShadows where s.isEnabled { s.isEnabled = false }
     }
 
     /// Koła realistycznego modelu: części z „wheel/tire/rim/disc…” w nazwie (bez kierownicy i zacisków)
@@ -543,18 +649,26 @@ final class CarEntity {
             return
         }
         var radius: Float = 0
+        var bottom = Float.greatestFiniteMagnitude
         for (_, group) in groups {
             var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
             for p in group { lo = simd_min(lo, p.bounds.min); hi = simd_max(hi, p.bounds.max) }
             let pivot = Entity()
-            body.addChild(pivot)
+            frame.addChild(pivot)
             pivot.setPosition((lo + hi) / 2, relativeTo: root)
             for p in group { p.entity.setParent(pivot, preservingWorldTransform: true) }
             wheels.append(pivot)
             radius = max(radius, max(hi.y - lo.y, hi.z - lo.z) / 2)
+            bottom = min(bottom, lo.y)
         }
         wheelRadius = max(0.2, radius)
-        debugLog(String(format: "koła: %@ — 4 koła z %d części, promień %.2f m", file, parts.count, wheelRadius))
+        // Auto stoi na oponach: model wyrównano do najniższego punktu, a to bywa spojler albo osłona
+        // podwozia — wtedy opony wiszą nad jezdnią albo w nią wchodzą. Dosuwamy spód opon do zera.
+        if abs(bottom) > 0.003 {
+            car.position.y -= bottom
+            for w in wheels { w.position.y -= bottom }
+        }
+        debugLog(String(format: "koła: %@ — 4 koła z %d części, promień %.2f m, spód opon %.3f m", file, parts.count, wheelRadius, bottom))
         #if DEBUG || FAMILY
         if ProcessInfo.processInfo.arguments.contains("-logWheels") {
             debugLog("koła: \(file) części: " + Set(parts.map { String($0.entity.name.prefix(40)) }).sorted().joined(separator: ", "))
