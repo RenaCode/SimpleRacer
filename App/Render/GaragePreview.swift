@@ -50,6 +50,13 @@ final class GaragePreview {
 
     func show(def: CarDef, colorHex: String) {
         let realisticReady = def.realistic.map { LocalAssets.shared.templates[$0.file] != nil } ?? false
+        // Auto z własnym modelem pokazujemy dopiero po jego wczytaniu — bez migania modelu zastępczego.
+        if def.realistic != nil && !realisticReady {
+            car?.root.removeFromParent()
+            car = nil
+            carId = ""
+            return
+        }
         if let car, carId == def.id, realisticShown == realisticReady {
             if colorHex != self.colorHex { car.setColor(UIColorHex.color(colorHex)) }
         } else {
@@ -65,9 +72,12 @@ final class GaragePreview {
 
     /// W menu przyciski są z lewej, w garażu panel z prawej — auto staje po drugiej stronie.
     func setLayout(_ layout: Layout, narrow: Bool) {
-        // W garażu panel zajmuje ponad połowę ekranu — auto mocno w lewo.
-        let target: SIMD3<Float> = narrow ? [0, -1.2, 0] : [layout == .garage ? 3.6 : -2.2, 0.6, 0]
-        camera.look(at: target, from: [0, 3.2, narrow ? 13 : 10], relativeTo: nil)
+        // Garaż: panel zajmuje ok. 60% szerokości po prawej, więc auto (obracające się, ok. 5,2 m średnicy)
+        // musi zmieścić się w lewych 40%. Kamera dalej (14 m) i patrzy w prawo od auta, żeby stało na środku
+        // wolnej części: przesunięcie ≈ 0,31 × odległość.
+        let distance: Float = narrow ? 13 : (layout == .garage ? 14 : 10)
+        let target: SIMD3<Float> = narrow ? [0, -1.2, 0] : (layout == .garage ? [0.31 * distance, 0.5, 0] : [-2.2, 0.6, 0])
+        camera.look(at: target, from: [0, 3.4, distance], relativeTo: nil)
     }
 
     func update(dt: Double) {
