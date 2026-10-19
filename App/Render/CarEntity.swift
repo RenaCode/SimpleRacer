@@ -16,7 +16,6 @@ final class CarEntity {
     let body = Entity()
     private var paintParts: [ModelEntity] = []
     private var flames: [ModelEntity] = []
-    private var flameEmitters: [Entity] = []
     private var wheels: [Entity] = []
     private var smoke: [Entity] = []
     private var smoking = false
@@ -233,14 +232,15 @@ final class CarEntity {
                          backWheelX: abs(backWheel.x) * s, backWheelZ: backWheel.z * s)
     }
 
-    /// Realistyczny model USDZ (już znormalizowany): klon współdzielący siatki i tekstury wzorca.
-    /// Lakier to siatki o nazwach z `paintParts` (dokładne nazwy prim USD przypiętych do materiału lakieru).
+    /// Realistyczny model USDZ (już znormalizowany i scalony): klon współdzielący siatki i tekstury wzorca.
+    /// Lakier to siatki o nazwach z `paintParts` (dokładne nazwy prim USD przypiętych do materiału lakieru),
+    /// a we wzorcu scalonym — siatki `merged_paint_*` (`CarMeshMerge`).
     private func buildRealistic(template: Entity, ref: RealisticModelRef, color: UIColor) -> ModelDims {
         let car = template.clone(recursive: true)
         body.addChild(car)
         let names = Set(ref.paintParts)
         func walk(_ e: Entity, inPaint: Bool) {
-            let hit = inPaint || names.contains(e.name)
+            let hit = inPaint || names.contains(e.name) || e.name.hasPrefix(CarMeshMerge.paintPrefix)
             if hit, let m = e as? ModelEntity { paintParts.append(m) }
             for c in e.children { walk(c, inPaint: hit) }
         }
@@ -285,7 +285,6 @@ final class CarEntity {
         return m
     }
 
-    /// Płomień nitro z wydechów (jasny rdzeń + strumień świecących cząsteczek) i dym spod tylnych kół.
     // MARK: - Cień kontaktowy
 
     /// Cień kontaktowy, jak w grach wyścigowych (zapieczone „ambient occlusion” pod autem): miękka ciemna
@@ -401,22 +400,16 @@ final class CarEntity {
     }
 
     private func addEffects(width W: Float, rearZ: Float, exhaustY: Float, backWheelX: Float, backWheelZ: Float) {
-        // Rdzeń: wydłużona, świecąca „kula” tuż za wydechem; strumień cząsteczek leci z niej do tyłu.
-        let coreMesh = MeshResource.generateSphere(radius: 0.08)
+        // Płomień nitro: miękki jęzor ognia (skrzyżowane płaty + poświata dyszy) tuż za wydechem.
         for side: Float in [-1, 1] {
             let exhaust = Entity()
             exhaust.position = [side * W * 0.2, exhaustY, rearZ - 0.15]
-            let core = ModelEntity(mesh: coreMesh, materials: [Self.flame(.normal)])
-            core.scale = [1, 1, 2.2]
-            core.position.z = -0.25
+            let core = ModelEntity(mesh: Self.flameMesh, materials: [Self.flame(.normal)])
+            core.position.z = 0
             exhaust.addChild(core)
-            var emitter = Self.flameEmitter(.normal)
-            emitter.isEmitting = false
-            exhaust.components.set(emitter)
             core.isEnabled = false
             body.addChild(exhaust)
             flames.append(core)
-            flameEmitters.append(exhaust)
         }
         // Iskry przy uderzeniu w bandę: po jednym emiterze na bok, przy przednim narożniku.
         for sx: Float in [-1, 1] {
@@ -486,9 +479,8 @@ final class CarEntity {
         }
     }
 
-    /// Rdzeń płomienia: jasny kolor trybu (biel na ciemnym asfalcie wychodziła szaro), półprzezroczysty.
+    /// Rdzeń płomienia: tekstura „jęzora” w kolorze trybu, przezroczystość zanika wzdłuż i ku brzegom.
     private static var flameMaterials: [NitroMode: UnlitMaterial] = [:]
-    private static var flameEmitterCache: [NitroMode: ParticleEmitterComponent] = [:]
 
     private static func flame(_ mode: NitroMode) -> UnlitMaterial {
         if let m = flameMaterials[mode] { return m }
@@ -497,47 +489,116 @@ final class CarEntity {
         return m
     }
 
-    private static func flameEmitter(_ mode: NitroMode) -> ParticleEmitterComponent {
-        if let p = flameEmitterCache[mode] { return p }
-        let p = makeFlameEmitter(mode)
-        flameEmitterCache[mode] = p
-        return p
+
+    /// Długość jęzora i promień poświaty dyszy (m) przy skali 1.
+    private static let flameLength: Float = 1.4
+    private static let flameWidth: Float = 0.3
+
+    /// Siatka płomienia (wzdłuż −Z od dyszy w zerze): trzy skrzyżowane płaty z teksturą
+    /// jęzora — z boku i z góry widać smugę — oraz płat poprzeczny z samą „głową” tekstury: z tyłu, skąd
+    /// patrzy kamera, płomień to miękka okrągła poświata, a nie cienka kreska ani kula. Bez oświetlenia,
+    /// dwustronny. Tekstura: v = 0…0,25 to okrągła głowa (tylko płat poprzeczny), dalej ogon (płaty wzdłuż).
+    private static let flameMesh: MeshResource = {
+        var b = MeshBuilder()
+        let L = flameLength, w = flameWidth / 2
+        // Płaty od dyszy do końca jęzora, z samym ogonem tekstury (v od 0,25): z tyłu, prawie na krawędź,
+        // jasna głowa na płatach rysowała się jako gwiazdka. Głowę daje tylko płat poprzeczny.
+        let z1 = -L, z0: Float = 0
+        let uv: [SIMD2<Float>] = [[0, 0.25], [1, 0.25], [1, 1], [0, 1]]
+        // Trzy płaty co 60° wokół osi płomienia — z żadnej strony nie widać go „na krawędź”.
+        for k in 0..<3 {
+            let a = Float(k) * .pi / 3
+            let x = SIMD3<Float>(cos(a), sin(a), 0) * w
+            b.quad(SIMD3(-x.x, -x.y, z0), SIMD3(x.x, x.y, z0), SIMD3(x.x, x.y, z1), SIMD3(-x.x, -x.y, z1), uv: uv, doubleSided: true)
+        }
+        // Poprzeczny płat: głowa tekstury (v 0…0,25), kwadrat ok. 1,4 × szerokość płomienia.
+        let r = w * 1.0
+        let head: [SIMD2<Float>] = [[0, 0], [1, 0], [1, 0.25], [0, 0.25]]
+        b.quad([-r, -r, -0.02], [r, -r, -0.02], [r, r, -0.02], [-r, r, -0.02], uv: head, doubleSided: true)
+        return (try? b.mesh(name: "flame")) ?? .generateSphere(radius: 0.05)
+    }()
+
+    /// Tekstura jęzora (64 × 256, v wzdłuż): biało-niebieski żar przy dyszy, dalej kolor trybu przechodzący
+    /// w pomarańcz i zanikający ku końcowi; w poprzek miękki brzeg (gauss). `alpha` — osobna tekstura krycia (szarość).
+    private static func flameImages(_ mode: NitroMode) -> (color: CGImage, alpha: CGImage)? {
+        let w = 64, h = 256
+        let c = flameColor(mode)
+        var cr: CGFloat = 0, cg: CGFloat = 0, cb: CGFloat = 0, ca: CGFloat = 0
+        c.getRed(&cr, green: &cg, blue: &cb, alpha: &ca)
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        var alpha = [UInt8](repeating: 0, count: w * h)
+        for y in 0..<h {
+            // Wiersz 0 obrazu to góra, a v = 0 w UV RealityKit to dół obrazu — liczymy v od dołu.
+            let v = 1 - (Float(y) + 0.5) / Float(h)
+            for x in 0..<w {
+                let u = (Float(x) + 0.5) / Float(w) * 2 - 1
+                var a: Float
+                var hot: Float
+                if v < 0.25 {
+                    // Głowa: okrągła, miękka plama (64 × 64 px) — z niej też poświata dyszy.
+                    let dy = (v - 0.125) / 0.125
+                    let r = sqrt(u * u + dy * dy)
+                    // Przygaszona i mniejsza niż ogon — przy dyszy ma być żar, a nie świecąca kula.
+                    a = 0.75 * max(0, 1 - smoothstep(0.05, 0.85, r))
+                    hot = 0.8 * max(0, 1 - smoothstep(0, 0.4, r))
+                } else {
+                    // Ogon: zwęża się i zanika ku końcowi, z lekkim „szarpaniem” krawędzi.
+                    let t = (v - 0.25) / 0.75
+                    let width = 0.5 * (1 - 0.7 * t)
+                    let ripple = 1 + 0.12 * sin(t * 26 + u * 3)
+                    // Na początku ogon narasta od zera — płaty nie mają ostrej krawędzi przy dyszy.
+                    a = exp(-pow(u / (width * ripple), 2) * 2.2) * pow(1 - t, 1.9) * smoothstep(0, 0.14, t)
+                    // Niebieski rdzeń ciągnie się przez pierwszą połowę jęzora.
+                    hot = exp(-pow(u / (width * 0.45), 2) * 2) * max(0, 1 - t * 1.6)
+                }
+                a = min(1, max(0, a))
+                hot = min(1, max(0, hot))
+                // Kolor: biało-niebieski żar przy dyszy → kolor trybu → pomarańcz dopalania na końcu jęzora.
+                let warm = smoothstep(0.35, 0.75, v)
+                let fade: Float = v < 0.25 ? 1 : 1 - 0.3 * (v - 0.25) / 0.75
+                let mr = (Float(cr) * (1 - warm) + 1.0 * warm) * fade
+                let mg = (Float(cg) * (1 - warm) + 0.5 * warm) * fade
+                let mb = (Float(cb) * (1 - warm) + 0.06 * warm) * fade
+                let r = mr * (1 - hot) + (0.75 + 0.25 * Float(cr)) * hot
+                let g = mg * (1 - hot) + (0.82 + 0.18 * Float(cg)) * hot
+                let bl = mb * (1 - hot) + (0.9 + 0.1 * Float(cb)) * hot
+                let i = (y * w + x)
+                rgba[i * 4] = UInt8(min(255, r * 255))
+                rgba[i * 4 + 1] = UInt8(min(255, g * 255))
+                rgba[i * 4 + 2] = UInt8(min(255, bl * 255))
+                rgba[i * 4 + 3] = 255
+                alpha[i] = UInt8(min(255, a * 255))
+            }
+        }
+        guard let cctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
+              let actx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                   space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return nil }
+        cctx.data?.copyMemory(from: rgba, byteCount: rgba.count)
+        actx.data?.copyMemory(from: alpha, byteCount: alpha.count)
+        guard let ci = cctx.makeImage(), let ai = actx.makeImage() else { return nil }
+        return (ci, ai)
     }
 
     private static func makeFlame(_ mode: NitroMode) -> UnlitMaterial {
         let c = flameColor(mode)
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         c.getRed(&r, green: &g, blue: &b, alpha: &a)
-        var m = UnlitMaterial(color: UIColor(red: 0.35 + r * 0.65, green: 0.35 + g * 0.65, blue: 0.35 + b * 0.65, alpha: 1))
-        m.blending = .transparent(opacity: .init(floatLiteral: 0.75))
+        let fallback = UIColor(red: 0.35 + r * 0.65, green: 0.35 + g * 0.65, blue: 0.35 + b * 0.65, alpha: 1)
+        guard let img = flameImages(mode),
+              let ct = try? TextureResource(image: img.color, options: .init(semantic: .color, mipmapsMode: .allocateAndGenerateAll)),
+              let at = try? TextureResource(image: img.alpha, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll))
+        else {
+            var m = UnlitMaterial(color: fallback)
+            m.blending = .transparent(opacity: .init(floatLiteral: 0.75))
+            return m
+        }
+        var m = UnlitMaterial()
+        m.color = .init(tint: .white, texture: .init(ct))
+        m.blending = .transparent(opacity: .init(scale: 0.95, texture: .init(at)))
+        m.faceCulling = .none
         return m
-    }
-
-    /// Strumień płomienia: krótko żyjące, świecące (addytywne) cząsteczki, od białego żaru do koloru trybu.
-    private static func makeFlameEmitter(_ mode: NitroMode) -> ParticleEmitterComponent {
-        var p = ParticleEmitterComponent()
-        p.emitterShape = .point
-        p.birthDirection = .local
-        p.emissionDirection = [0, 0, -1]
-        p.speed = 13
-        p.speedVariation = 2
-        p.particlesInheritTransform = true // płomień trzyma się auta, nie zostaje na drodze
-        // Wąski u wydechu, rozszerza się i ciemnieje — smuga ognia, a nie kłęby.
-        p.mainEmitter.birthRate = 320
-        p.mainEmitter.lifeSpan = 0.11
-        p.mainEmitter.lifeSpanVariation = 0.03
-        p.mainEmitter.size = mode == .shockwave ? 0.2 : 0.14
-        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.8
-        p.mainEmitter.spreadingAngle = 0.08
-        p.mainEmitter.blendMode = .additive
-        let c = flameColor(mode)
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        c.getRed(&r, green: &g, blue: &b, alpha: &a)
-        let hot = UIColor(red: 0.5 + r * 0.5, green: 0.5 + g * 0.5, blue: 0.5 + b * 0.5, alpha: 0.9)
-        let cool = UIColor(red: r * 0.6, green: g * 0.6, blue: b * 0.8, alpha: 0.2)
-        p.mainEmitter.color = .evolving(start: .single(hot), end: .single(cool))
-        p.mainEmitter.opacityCurve = .linearFadeOut
-        return p
     }
 
     func setColor(_ color: UIColor) {
@@ -552,18 +613,35 @@ final class CarEntity {
         }
     }
 
+    #if DEBUG || FAMILY
+    /// `-previewFX`: płomień nitro stale włączony, a obok auta stoją butle nitro — do zrzutów efektów
+    /// z bliska (z `-sideCam`).
+    static let previewFX = ProcessInfo.processInfo.arguments.contains("-previewFX")
+    private var previewAdded = false
+    #endif
+
     func setFlame(_ mode: NitroMode) {
+        var mode = mode
+        #if DEBUG || FAMILY
+        if Self.previewFX {
+            if mode == .off { mode = .normal }
+            if !previewAdded {
+                previewAdded = true
+                for (x, z) in [(Float(-1.9), Float(1.6)), (Float(1.9), Float(1.6))] {
+                    let c = NitroCanister.make()
+                    c.position = [x, 0.9, z]
+                    root.addChild(c)
+                }
+            }
+        }
+        #endif
         if mode != flameMode {
-            // Emiter żyje cały wyścig; przy zmianie trybu podmieniamy gotowy (zbuforowany) komponent,
-            // a przy wyłączeniu tylko wstrzymujemy emisję — tworzenie emiterów w biegu dawało przycięcia.
+            // Materiały płomienia są zbuforowane per tryb — przy zmianie tylko je podmieniamy.
+            // Bez strumienia cząsteczek: przy dużej prędkości cząsteczki zostawały metr za jęzorem
+            // jako oderwane fioletowe kłęby; miękki jęzor sam daje płomień.
             let colourChanged = mode != .off && flameColorKey(mode) != flameColorKey(lastFlameColor)
             debugLog("efekt: nitro \(mode)")
             flameMode = mode
-            for e in flameEmitters {
-                var p = colourChanged ? Self.flameEmitter(mode) : (e.components[ParticleEmitterComponent.self] ?? Self.flameEmitter(mode))
-                p.isEmitting = mode != .off
-                e.components.set(p)
-            }
             if mode != .off {
                 lastFlameColor = mode
                 for f in flames {
@@ -575,18 +653,29 @@ final class CarEntity {
             }
         }
         guard mode != .off else { return }
-        // Migotanie rdzenia: płomień „oddycha”.
+        // Migotanie jęzora: płomień „oddycha” — grubość i długość drgają niezależnie, a płaty lekko
+        // obracają się wokół osi, więc kształt nie wygląda na sztywną geometrię.
         let base: Float = mode == .shockwave ? 1.4 : mode == .perfect ? 1.2 : 1
         for f in flames {
-            let k = Float.random(in: 0.8...1.2)
-            f.scale = [base * k, base * k, base * 2.2 * Float.random(in: 0.85...1.25)]
+            let k = Float.random(in: 0.85...1.15)
+            f.scale = [base * k, base * k, base * Float.random(in: 0.8...1.2)]
+            f.orientation = simd_quatf(angle: Float.random(in: 0...(.pi / 3)), axis: [0, 0, 1])
         }
     }
 
     private var lastFlameColor: NitroMode = .normal
     private func flameColorKey(_ m: NitroMode) -> NitroMode { m == .off ? .normal : m }
 
-    func setSmoke(_ on: Bool) {
+    /// Dalej niż tyle metrów od kamery dym nie jest emitowany — 12 emiterów po 110 cząsteczek/s to
+    /// zauważalny koszt, a z daleka smugi i tak prawie nie widać.
+    static let smokeRange: Float = 60
+
+    /// Dym spod tylnych kół. `viewer` — pozycja kamery (świat): auto dalej niż `smokeRange` nie dymi.
+    func setSmoke(_ on: Bool, viewer: SIMD3<Float>? = nil) {
+        var on = on
+        if on, let viewer, simd_distance_squared(root.position(relativeTo: nil), viewer) > Self.smokeRange * Self.smokeRange {
+            on = false
+        }
         guard on != smoking else { return }
         debugLog("efekt: dym \(on)")
         smoking = on
@@ -622,7 +711,10 @@ final class CarEntity {
     ///
     /// Nadwozie obraca się wokół osi kół (środek przechyłu), a koła zostają na jezdni — jak na
     /// prawdziwym zawieszeniu. Kąty jak w aucie drogowym przy ~1 g: przechył do 3,5°, pochylenie do 2°.
-    func updateSuspension(yawRate: Double, speed: Double, slide: Double, dt: Double) {
+    ///
+    /// `steerInput` (−1…1, dodatnie = w lewo; skręt gracza z `Car.lastSteer`) skręca przednie koła od razu
+    /// po wciśnięciu — zanim auto zdąży zmienić tor jazdy; gdy tor skręca już mocniej, wygrywa Ackermann.
+    func updateSuspension(yawRate: Double, speed: Double, slide: Double, dt: Double, steerInput: Double? = nil) {
         let accel = lastSpeed.map { (speed - $0) / max(dt, 1e-3) } ?? 0
         lastSpeed = speed
         let lateral = speed * yawRate
@@ -633,7 +725,11 @@ final class CarEntity {
         let pitchTarget = Float(min(0.035, max(-0.035, -accel * 0.004)))
         roll += (rollTarget - roll) * k
         pitch += (pitchTarget - pitch) * k
-        let ackermann = 2.7 * yawRate / max(speed, 3)
+        var ackermann = 2.7 * yawRate / max(speed, 3)
+        if let steerInput {
+            let wanted = max(-1, min(1, steerInput)) * Self.inputSteerAngle
+            if abs(wanted) > abs(ackermann) { ackermann = wanted }
+        }
         let steerTarget = Float(min(0.5, max(-0.5, ackermann - slide)))
         steerAngle += (steerTarget - steerAngle) * Float(1 - exp(-dt * 10))
         frame.transform = .identity
@@ -645,6 +741,8 @@ final class CarEntity {
     }
 
     static let maxRoll: Float = 0.06
+    /// Kąt przednich kół (rad) przy pełnym wychyleniu skrętu gracza, zanim auto zacznie skręcać.
+    static let inputSteerAngle = 0.3
 
     /// Przechył nadwozia względem kół (rad) — do testów.
     var bodyRoll: Float { roll }
@@ -661,36 +759,18 @@ final class CarEntity {
     }
 
     /// Koła realistycznego modelu: części z „wheel/tire/rim/disc…” w nazwie (bez kierownicy i zacisków)
-    /// grupujemy w cztery koła wg ćwiartki auta i podpinamy pod osie w środkach kół, żeby się kręciły.
-    /// Model, w którym koła to jedna wspólna siatka, zostaje bez zmian.
+    /// grupujemy w cztery koła wg ćwiartki auta (`realisticWheelGroups`) i podpinamy pod osie w środkach kół,
+    /// żeby się kręciły. Model, w którym koła to jedna wspólna siatka, zostaje bez zmian.
+    /// Wzorce w `LocalAssets` są już scalone (`CarMeshMerge`) — każde koło to wtedy jedna–dwie encje.
     private func rigRealisticWheels(_ car: Entity, file: String) {
-        let wheelRx = try! NSRegularExpression(pattern: "wheel|tire|tyre|(?<![a-z])rims?(?![a-z])|disc|disk|reifen|felge", options: .caseInsensitive)
-        let skipRx = try! NSRegularExpression(pattern: "steering|caliper|brake|interior|INT_", options: .caseInsensitive)
-        func has(_ rx: NSRegularExpression, _ s: String) -> Bool { rx.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil }
-        let carBounds = car.visualBounds(relativeTo: root)
-        var parts: [(entity: ModelEntity, bounds: BoundingBox)] = []
-        func walk(_ e: Entity, matched: Bool, skipped: Bool) {
-            let m = matched || has(wheelRx, e.name)
-            let sk = skipped || has(skipRx, e.name)
-            if let model = e as? ModelEntity, m, !sk {
-                let b = model.visualBounds(relativeTo: root)
-                // Siatka obejmująca kilka kół naraz (szersza niż pół auta) — nie da się jej obracać.
-                if b.extents.x < carBounds.extents.x * 0.45, b.extents.z < carBounds.extents.z * 0.35 {
-                    parts.append((model, b))
-                }
-            }
-            for c in e.children { walk(c, matched: m, skipped: sk) }
-        }
-        walk(car, matched: false, skipped: false)
-        let cz = carBounds.center.z, cx = carBounds.center.x
-        var groups: [Int: [(entity: ModelEntity, bounds: BoundingBox)]] = [:]
-        for p in parts {
-            let key = (p.bounds.center.x > cx ? 1 : 0) + (p.bounds.center.z > cz ? 2 : 0)
-            groups[key, default: []].append(p)
-        }
-        guard groups.count == 4 else {
-            debugLog("koła: \(file) — nie rozpoznano (\(parts.count) części, \(groups.count) grup)")
+        guard let found = Self.realisticWheelGroups(car, space: root) else {
+            debugLog("koła: \(file) — nie rozpoznano")
             return
+        }
+        let parts = found.flatMap { $0 }.map { (entity: $0, bounds: $0.visualBounds(relativeTo: root)) }
+        var groups: [Int: [(entity: ModelEntity, bounds: BoundingBox)]] = [:]
+        for (i, g) in found.enumerated() {
+            groups[i] = g.map { (entity: $0, bounds: $0.visualBounds(relativeTo: root)) }
         }
         var radius: Float = 0
         var bottom = Float.greatestFiniteMagnitude
@@ -718,6 +798,38 @@ final class CarEntity {
             debugLog("koła: \(file) części: " + Set(parts.map { String($0.entity.name.prefix(40)) }).sorted().joined(separator: ", "))
         }
         #endif
+    }
+
+    /// Części kół realistycznego modelu pogrupowane w cztery koła (wg ćwiartki auta w układzie `space`);
+    /// nil, gdy nie wychodzą dokładnie cztery grupy. Wspólne dla scalania wzorca (`CarMeshMerge`)
+    /// i dla osadzania kół na osiach — po scaleniu scalone koła muszą zostać rozpoznane tak samo.
+    static func realisticWheelGroups(_ car: Entity, space: Entity) -> [[ModelEntity]]? {
+        let wheelRx = try! NSRegularExpression(pattern: "wheel|tire|tyre|(?<![a-z])rims?(?![a-z])|disc|disk|reifen|felge", options: .caseInsensitive)
+        let skipRx = try! NSRegularExpression(pattern: "steering|caliper|brake|interior|INT_", options: .caseInsensitive)
+        func has(_ rx: NSRegularExpression, _ s: String) -> Bool { rx.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil }
+        let carBounds = car.visualBounds(relativeTo: space)
+        var parts: [(entity: ModelEntity, bounds: BoundingBox)] = []
+        func walk(_ e: Entity, matched: Bool, skipped: Bool) {
+            let m = matched || has(wheelRx, e.name)
+            let sk = skipped || has(skipRx, e.name)
+            if let model = e as? ModelEntity, m, !sk {
+                let b = model.visualBounds(relativeTo: space)
+                // Siatka obejmująca kilka kół naraz (szersza niż pół auta) — nie da się jej obracać.
+                if b.extents.x < carBounds.extents.x * 0.45, b.extents.z < carBounds.extents.z * 0.35 {
+                    parts.append((model, b))
+                }
+            }
+            for c in e.children { walk(c, matched: m, skipped: sk) }
+        }
+        walk(car, matched: false, skipped: false)
+        let cz = carBounds.center.z, cx = carBounds.center.x
+        var groups: [Int: [ModelEntity]] = [:]
+        for p in parts {
+            let key = (p.bounds.center.x > cx ? 1 : 0) + (p.bounds.center.z > cz ? 2 : 0)
+            groups[key, default: []].append(p.entity)
+        }
+        guard groups.count == 4 else { return nil }
+        return (0..<4).map { groups[$0]! }
     }
 }
 

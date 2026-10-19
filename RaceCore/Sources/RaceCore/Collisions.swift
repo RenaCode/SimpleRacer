@@ -3,12 +3,12 @@ public struct Takedown {
     public let victim: Car
 }
 
-/// Zderzenia aut jako prostokątów we współrzędnych trasy.
+/// Zderzenia aut jako prostokątów we współrzędnych trasy — o wymiarach z `def.shape` każdego auta
+/// (dla pary: średnia długości i szerokości, czyli styk dwóch prostokątów o połówkach La/2 i Lb/2).
 /// Mocne uderzenie bokiem albo w tył rozbija rywala (takedown), lżejsze — odpycha.
 public enum Collisions {
     public static func resolve(_ cars: [Car], trackLength: Double) -> [Takedown] {
         var out: [Takedown] = []
-        let L = Physics.carLength, W = Physics.carWidth
 
         func takedown(_ attacker: Car, _ victim: Car) {
             // Gra dla dzieci: rywal nigdy nie rozbija gracza — kończy się na odepchnięciu.
@@ -35,6 +35,8 @@ public enum Collisions {
                 if a.wrecked && b.wrecked { continue }
                 let ds = wrapDelta(a.s, b.s, trackLength)
                 let dd = a.d - b.d
+                let L = (a.def.shape.length + b.def.shape.length) / 2
+                let W = (a.def.shape.width + b.def.shape.width) / 2
                 let overS = L - abs(ds)
                 let overD = W - abs(dd)
                 if overS <= 0 || overD <= 0 { continue }

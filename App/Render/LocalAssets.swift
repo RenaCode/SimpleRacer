@@ -107,10 +107,13 @@ final class LocalAssets {
         cars = entries.filter { fm.fileExists(atPath: folder.appendingPathComponent($0.file).path) }
         let fallback = CarCatalog.builtIn[0]
         // Gdy są własne modele, gra używa tylko ich (Kenney zostaje jako zapas na czas wczytywania).
+        // Wymiary do kolizji: wzorce modeli są skalowane do długości `carLength` (`normalized`).
+        var shape = fallback.shape
+        shape.length = Double(Self.carLength)
         CarCatalog.replaceAll(with: cars.map { e in
             CarDef(id: e.id, name: e.name, description: Self.describe(topSpeed: e.topSpeed, accel: e.accel, handling: e.handling),
                    topSpeed: e.topSpeed, accel: e.accel, handling: e.handling, nitroPower: e.nitroPower,
-                   shape: fallback.shape, model: fallback.model,
+                   shape: shape, model: fallback.model,
                    realistic: RealisticModelRef(file: e.file, paintParts: e.paint, yawDegrees: e.yaw,
                                                 commercial: e.commercial, author: e.author, license: e.license,
                                                 source: e.source))
@@ -221,7 +224,20 @@ final class LocalAssets {
         for attempt in 1...2 {
             do {
                 let entity = try await Entity(contentsOf: folder.appendingPathComponent(e.file))
-                templates[e.file] = Self.normalized(entity, yawDegrees: e.yaw)
+                let normalized = Self.normalized(entity, yawDegrees: e.yaw)
+                // Setki prim USD sklejone w kilka siatek (nadwozie, lakier, cztery koła) — raz na model,
+                // klony aut współdzielą wynik. Gdy scalanie się nie uda, zostaje wzorzec bez zmian.
+                #if DEBUG || FAMILY
+                let noMerge = ProcessInfo.processInfo.arguments.contains("-noMerge")
+                #else
+                let noMerge = false
+                #endif
+                let t0 = ProcessInfo.processInfo.systemUptime
+                let merged = noMerge ? nil : CarMeshMerge.merge(normalized, paintNames: Set(e.paint), file: e.file)
+                if merged != nil {
+                    debugLog(String(format: "model: %@ scalanie %.0f ms", e.file, (ProcessInfo.processInfo.systemUptime - t0) * 1000))
+                }
+                templates[e.file] = merged ?? normalized
                 loadedCount += 1
                 debugLog("model: \(e.file) wczytany")
                 return
@@ -232,7 +248,10 @@ final class LocalAssets {
         }
     }
 
-    /// Przód w +Z, środek w X/Z w zerze, koła na y = 0, długość 4,5 m.
+    /// Długość, do której skalujemy każdy realistyczny model (m).
+    static let carLength: Float = 4.5
+
+    /// Przód w +Z, środek w X/Z w zerze, koła na y = 0, długość `carLength`.
     private static func normalized(_ model: Entity, yawDegrees: Double) -> Entity {
         let root = Entity()
         let turn = Entity()
@@ -241,7 +260,7 @@ final class LocalAssets {
         root.addChild(turn)
         let b = turn.visualBounds(relativeTo: root)
         let length = max(0.01, b.extents.z)
-        let s = 4.5 / length
+        let s = carLength / length
         turn.scale = [s, s, s]
         let b2 = turn.visualBounds(relativeTo: root)
         turn.position = [-b2.center.x, -b2.min.y, -b2.center.z]

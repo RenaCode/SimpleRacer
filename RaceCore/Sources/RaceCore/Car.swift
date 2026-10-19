@@ -64,6 +64,9 @@ public final class Car {
     public var slipstream = false
     public let nitro = Nitro()
     public var events: [CarEvent] = []
+    /// Skręt z ostatniego kroku (−1…1, dodatnie = w lewo) — do skrętu przednich kół w chwili wciśnięcia,
+    /// zanim auto zdąży zmienić tor jazdy.
+    public private(set) var lastSteer = 0.0
 
     public init(name: String, def: CarDef, color: String, isPlayer: Bool,
                 startDistance: Double, startLane: Double, trackLength: Double) {
@@ -107,6 +110,7 @@ public final class Car {
         }
 
         let steer = clamp(input.steer, -1, 1)
+        lastSteer = steer
         if !drifting && input.drift && speed > Physics.driftMinSpeed {
             // Kolejność przycisków nie ma znaczenia: DRIFT bez skrętu też wchodzi w poślizg.
             drifting = true
@@ -183,6 +187,7 @@ public final class Car {
     }
 
     private func stepWrecked(dt: Double, track: Track) {
+        lastSteer = 0
         wreckTimer -= dt
         speed = damp(speed, 0, rate: 3, dt: dt)
         advance(dt: dt, track: track)
