@@ -129,7 +129,9 @@ enum TrackBuilder {
         let library = ImpostorLibrary.shared
         let facades = library.items("building", region: region)
         let realBuildings = LocalAssets.shared.scenery("building", region: region)
-        if !facades.isEmpty {
+        if theme.buildings > 0 && Buildings.available {
+            root.addChild(pbrBuildings(track, theme: theme))
+        } else if !facades.isEmpty {
             root.addChild(impostorBuildings(track, theme: theme, items: facades))
         } else if !realBuildings.isEmpty {
             root.addChild(realisticBuildings(track, theme: theme, pieces: realBuildings))
@@ -313,6 +315,54 @@ enum TrackBuilder {
         return root
     }
 
+    /// Budynki z materiałów PBR: pierwsza linia — kamienice i bloki jeden przy drugim, frontem do drogi;
+    /// druga linia — wyższe biurowce w odstępach, dla głębi miasta.
+    private static func pbrBuildings(_ track: Track, theme: TrackTheme) -> Entity {
+        var batch = Buildings.Batch()
+        let rng = SeededRandom(seed: 4321)
+        let hw = track.halfWidth
+        func place(_ style: Buildings.Style, s: Double, offset: Double, width: Double, depth: Double, side: Double) -> Bool {
+            let pos = track.toWorld(s: s + width / 2, d: side * (offset + depth / 2))
+            let axis = track.toWorld(s: s + width / 2, d: 0)
+            let f: SIMD2<Double> = simd_normalize(SIMD2<Double>(axis.x - pos.x, axis.z - pos.z))
+            let r = SIMD2<Double>(f.y, -f.x)
+            let center = SIMD2<Double>(pos.x, pos.z)
+            let hd: SIMD2<Double> = f * (depth / 2 + 0.3)
+            let hwv: SIMD2<Double> = r * (width / 2 + 0.3)
+            let corners: [SIMD2<Double>] = [center + hd + hwv, center + hd - hwv, center - hd + hwv, center - hd - hwv,
+                                            center + hwv, center - hwv]
+            for c in corners where track.distanceToAxis(x: c.x, z: c.y) < hw + 4 { return false }
+            let span = Double(style.floors.upperBound - style.floors.lowerBound + 1)
+            let floors = style.floors.lowerBound + min(Int(rng.next() * span), style.floors.count - 1)
+            batch.add(style, floors: floors, at: [Float(pos.x), groundY, Float(pos.z)],
+                      facing: [Float(f.x), 0, Float(f.y)], width: Float(width), depth: Float(depth))
+            return true
+        }
+        for side in [1.0, -1.0] {
+            // Pierwsza linia: pierzeja.
+            var s = 0.0
+            while s < track.length {
+                let width = 12 + rng.next() * 14
+                if !isStartArea(s, track) && rng.next() < theme.buildings {
+                    // Fronty z drobnym cofnięciem (0–1,5 m) — pierzeja nie jest idealnie równa jak od linijki.
+                    _ = place(rng.pick(Buildings.street), s: s, offset: hw + 9 + rng.next() * 1.5, width: width,
+                              depth: 14 + rng.next() * 6, side: side)
+                }
+                s += width
+            }
+            // Druga linia: biurowce co ~70 m, za kamienicami.
+            s = rng.next() * 40
+            while s < track.length {
+                let width = 18 + rng.next() * 12
+                if rng.next() < theme.buildings * 0.8 {
+                    _ = place(rng.pick(Buildings.towers), s: s, offset: hw + 40 + rng.next() * 20, width: width, depth: width, side: side)
+                }
+                s += width + 40 + rng.next() * 40
+            }
+        }
+        return batch.build()
+    }
+
     /// Budynki z fasad-zdjęć wzdłuż trasy, frontem do niej; limit sztuk dla modeli oznaczonych `max`.
     private static func impostorBuildings(_ track: Track, theme: TrackTheme, items: [Impostor]) -> Entity {
         var batch = ImpostorBatch()
@@ -477,10 +527,10 @@ struct TrackTheme {
     static func of(_ region: Region) -> TrackTheme {
         switch region {
         case .city: TrackTheme(ground: UIColor(red: 0.30, green: 0.45, blue: 0.24, alpha: 1), buildings: 1, trees: 0.7, largeTrees: 0.6)
-        case .coast: TrackTheme(ground: UIColor(red: 0.86, green: 0.78, blue: 0.56, alpha: 1), buildings: 0.12, trees: 0.45, largeTrees: 0.9)
+        case .coast: TrackTheme(ground: UIColor(red: 0.86, green: 0.78, blue: 0.56, alpha: 1), buildings: 0, trees: 0.45, largeTrees: 0.9)
         case .desert: TrackTheme(ground: UIColor(red: 0.85, green: 0.62, blue: 0.36, alpha: 1), buildings: 0, trees: 0.08, largeTrees: 0.2)
         case .forest: TrackTheme(ground: UIColor(red: 0.20, green: 0.36, blue: 0.17, alpha: 1), buildings: 0, trees: 1, largeTrees: 0.8)
-        case .snow: TrackTheme(ground: UIColor(red: 0.93, green: 0.95, blue: 0.98, alpha: 1), buildings: 0.05, trees: 0.8, largeTrees: 0.15)
+        case .snow: TrackTheme(ground: UIColor(red: 0.93, green: 0.95, blue: 0.98, alpha: 1), buildings: 0, trees: 0.8, largeTrees: 0.15)
         }
     }
 }

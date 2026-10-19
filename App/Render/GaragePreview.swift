@@ -19,6 +19,7 @@ final class GaragePreview {
     private var carShadow = Entity()
 
     init() {
+        ImpostorLibrary.warmUp()
         // Obrotnica jak w salonie: cokół stoi, tarcza z autem się obraca.
         let podium = Podium.make()
         root.addChild(podium.base)

@@ -273,6 +273,10 @@ Like most mobile racers, the scenery is built from photos rather than heavy 3D m
   wrapped in its facade photos, and buildings stand side by side with their fronts in one line, like
   a real street. All impostors that share a photo are merged into one mesh, so the whole roadside is
   a few dozen draw calls.
+- **City buildings:** real-scale blocks built in code (`App/Render/Buildings.swift`): stone ground
+  floor, a cornice above it, a photo PBR facade laid out in whole 3.2 m floors, and a parapet. The
+  materials are lit (sun and sky reflections), so walls shade differently and windows reflect the sky.
+  Street blocks stand side by side; taller office towers form a second row. Textures in `App/Buildings/`.
 - **Road and walls:** photo asphalt with normal and roughness maps; the track edge is a wall with
   thickness and a coping, textured per region (brick, sandstone, stone, wooden planks).
 - No Kenney props are left along the track (no lamps, grandstands or start gantry); the start is a
@@ -300,7 +304,9 @@ looked out of place and made frame times worse.
 | Garage panorama: Kart Club | [Poly Haven HDRIs](https://polyhaven.com/hdris) | CC0 |
 | Trees: Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium | [Poly Haven models](https://polyhaven.com/models) | CC0 |
 | Ground, asphalt, floor and wall textures: Concrete Floor Worn 001, Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Asphalt Track, Large Red Bricks, White Sandstone Bricks, Stacked Stone Wall, Wood Plank Wall, Red Sandstone Wall | [Poly Haven textures](https://polyhaven.com/textures) | CC0 |
-| Building facades (local only): Buildings Pack 1 by G. (gunn24), Old Residential Building by Andrej Grave | Sketchfab | CC BY 4.0, credited in the app |
+| Building facades: Facade 018A, 019A, 020A, 006, 001 | [ambientCG](https://ambientcg.com/list?category=Facade) | CC0 |
+| Building ground floor and cornices: Stone Tile Wall, Beige Wall 001 | [Poly Haven textures](https://polyhaven.com/textures) | CC0 |
+| Building facade impostors (local only, fallback): Buildings Pack 1 by G. (gunn24), Old Residential Building by Andrej Grave | Sketchfab | CC BY 4.0, credited in the app |
 
 CC0 assets need no attribution; the app lists them on the credits screen anyway. CC BY assets are
 credited in the app (Settings → "Autorzy i licencje"), as the licence requires.
@@ -333,6 +339,7 @@ App/
   Models/             CC0 3D models (OBJ + palette textures) and their licence
   Sky/                CC0 panoramas: one per region and the garage
   Impostors/          CC0 tree impostors (front and side photos) and impostors.json
+  Buildings/          CC0 PBR facade, ground-floor and cornice textures
   Ground/             CC0 ground and barrier textures
   Render/             RealityKit: model library, cars, track, materials and textures,
                       sky lighting, race (RaceGame), garage preview

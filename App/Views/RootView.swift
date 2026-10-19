@@ -51,9 +51,14 @@ extension RootView {
         // Start prosto w wyścigu (argument testowy): splash znika, wyścig ma własny ekran ładowania.
         if case .race = model.screen {
             splash = false
+            await LocalAssets.shared.preload(first: model.profile.carId)
             return
         }
+        // Modele aut dopiero po podpięciu pierwszego widoku 3D: wczytywanie USDZ przed inicjalizacją
+        // RealityKit co kilkanaście startów psuło proces (żaden model się nie wczytywał, potem awaria).
         while !preview.attached { try? await Task.sleep(for: .milliseconds(20)) }
+        let carId = model.profile.carId
+        Task { await LocalAssets.shared.preload(first: carId) }
         await preview.loadBackdrop()
         while !LocalAssets.shared.isLoaded(model.car), ProcessInfo.processInfo.systemUptime - start < 4 {
             try? await Task.sleep(for: .milliseconds(50))

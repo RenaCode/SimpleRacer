@@ -99,8 +99,7 @@ final class AppModel {
         }
         AudioManager.shared.musicOn = profile.musicOn
         AudioManager.shared.soundOn = profile.soundOn
-        let first = profile.carId
-        Task { await LocalAssets.shared.preload(first: first) }
+        // Modele aut wczytuje RootView.startUp — dopiero po pierwszym widoku 3D (inicjalizacja RealityKit).
         Task { await ModelLibrary.shared.prefetch() }
         #if DEBUG || FAMILY
         // Do testów w symulatorze z wiersza poleceń: `simctl launch <udid> com.renacode.simpleracer -autostartRace`.

@@ -59,14 +59,17 @@ final class ImpostorLibrary {
 
     private var materials: [URL: UnlitMaterial] = [:]
 
-    /// Wzorzec materiału impostorów (wycinanie po progu 0,5), tworzony raz — przy pierwszej budowie trasy.
-    /// Ustawienie progu kompiluje shader; robione w chwili, gdy menu kompiluje swoje pierwsze shadery,
-    /// wywracało RealityKit, więc nie ruszamy go przy starcie aplikacji.
+    /// Wzorzec materiału impostorów (wycinanie po progu 0,5), tworzony raz — zanim powstanie jakikolwiek
+    /// widok 3D (`warmUp` z GaragePreview.init). Ustawienie progu kompiluje shader na wątku głównym;
+    /// gdy w tym czasie RealityKit kompilował w tle shadery menu albo budynków, proces padał.
     private static let template: UnlitMaterial = {
         var m = UnlitMaterial()
         m.opacityThreshold = 0.5
         return m
     }()
+
+    /// Wołane przed utworzeniem pierwszego widoku 3D.
+    static func warmUp() { _ = template }
 
     /// Zwalnia tekstury poprzedniej krainy (wołane przed budową trasy).
     func purge() { materials.removeAll() }

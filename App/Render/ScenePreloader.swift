@@ -40,6 +40,7 @@ final class ScenePreloader {
             groupPaths[other] = nil
             ready.remove(other)
             ImpostorLibrary.shared.purge()
+            Buildings.purge()
         }
         await prepare(group: group, jobs: Self.jobs(for: region))
     }
@@ -92,7 +93,7 @@ final class ScenePreloader {
     /// Mapy danych (normalne, chropowatość) — bez konwersji kolorów sRGB.
     nonisolated static func isRaw(_ url: URL) -> Bool {
         let name = url.deletingPathExtension().lastPathComponent
-        return name.hasSuffix("-normal") || name.hasSuffix("-rough")
+        return name.hasSuffix("-normal") || name.hasSuffix("-rough") || name.hasSuffix("-metal")
     }
 
     private static func group(_ region: Region) -> String { "region-" + LocalAssets.regionKey(region) }
@@ -110,6 +111,10 @@ final class ScenePreloader {
         // Mapy normalnych i chropowatości to dane, nie kolor — `semantic: .raw` (patrz `rawNames`).
         jobs += ["road-asphalt-normal", "road-asphalt-rough", "wall-\(key)-normal"].compactMap { Bundle.main.url(forResource: $0, withExtension: "jpg") }
             .map { Job(url: $0, mask: false) }
+        if TrackTheme.of(region).buildings > 0 {
+            jobs += Buildings.textureNames.compactMap { Bundle.main.url(forResource: $0, withExtension: "jpg") }
+                .map { Job(url: $0, mask: false) }
+        }
         let library = ImpostorLibrary.shared
         for kind in ["building", "tree", "bush"] {
             for item in library.items(kind, region: region) {
