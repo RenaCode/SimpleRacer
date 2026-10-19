@@ -21,6 +21,26 @@ public enum Physics {
     public static let driftSpeedFactor = 0.94
     /// Drift skręca ostrzej niż zwykła jazda.
     public static let driftSteerFactor = 1.7
+    /// Skręt słabnie z prędkością (stabilniej przy dużej prędkości): przy `steerFalloffSpeed` m/s
+    /// zostaje `1 - steerFalloff` pełnego skrętu.
+    public static let steerFalloff = 0.25
+    public static let steerFalloffSpeed = 80.0
+    /// Mini-turbo po drifcie: ładowanie zaczyna dawać zryw po `driftBoostMinCharge` s poślizgu;
+    /// zryw trwa do `driftBoostMaxTime` s, podnosi prędkość maks. o `driftBoostSpeed` i daje kopa `driftBoostKick` m/s.
+    public static let driftBoostMinCharge = 0.6
+    public static let driftBoostMaxTime = 1.2
+    public static let driftBoostSpeed = 1.12
+    public static let driftBoostKick = 4.0
+    /// Slipstream: jazda za rywalem w odległości `slipstreamMin…slipstreamMax` m i w pasie ±`slipstreamWidth` m.
+    public static let slipstreamMin = 5.0
+    public static let slipstreamMax = 28.0
+    public static let slipstreamWidth = 1.8
+    public static let slipstreamSpeed = 1.05
+    /// Mniejszy opór w cieniu rywala: szybsze przyspieszanie.
+    public static let slipstreamAccel = 1.3
+    public static let slipstreamNitro = 0.05
+    /// Natychmiastowy „kop” przy odpaleniu nitro (m/s).
+    public static let nitroKick = 5.0
     /// Skręt w przeciwną stronę powyżej tej wartości przekłada drift na drugą stronę.
     public static let driftSwitchSteer = 0.6
     /// Ile skrętu dokłada sam poślizg, gdy gracz nie skręca (0…1).

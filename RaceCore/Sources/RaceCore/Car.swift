@@ -7,17 +7,22 @@ public struct CarInput {
     public var drift: Bool
     /// Wciśnięcie nitro w tym kroku (zbocze, nie stan przycisku).
     public var nitro: Bool
+    /// Hamowanie przed zbyt ciasnym zakrętem (używa go kierownica komputera).
+    public var brake: Bool
 
-    public init(steer: Double = 0, drift: Bool = false, nitro: Bool = false) {
+    public init(steer: Double = 0, drift: Bool = false, nitro: Bool = false, brake: Bool = false) {
         self.steer = steer
         self.drift = drift
         self.nitro = nitro
+        self.brake = brake
     }
 }
 
 public enum CarEvent {
     case wreck
     case nitro(NitroMode)
+    /// Zryw po zakończonym drifcie (mini-turbo).
+    case driftBoost
 }
 
 /// Arkadowy model jazdy we współrzędnych trasy. `alphaVel` to kąt toru jazdy względem osi trasy,
@@ -46,6 +51,12 @@ public final class Car {
     public var takedowns = 0
     /// Mnożnik prędkości maksymalnej — poziom trudności i „gumka” rywali.
     public var speedScale = 1.0
+    /// Ile sekund trwa już bieżący drift (ładowanie mini-turbo).
+    public private(set) var driftCharge = 0.0
+    /// Pozostały czas zrywu po drifcie.
+    public private(set) var driftBoostTimer = 0.0
+    /// Ustawiane przez RaceSim: auto jedzie w cieniu aerodynamicznym rywala.
+    public var slipstream = false
     public let nitro = Nitro()
     public var events: [CarEvent] = []
 
@@ -73,6 +84,8 @@ public final class Car {
         guard !wrecked else { return }
         wreckTimer = Physics.wreckTime
         drifting = false
+        driftCharge = 0
+        driftBoostTimer = 0
         nitro.cancel()
         events.append(.wreck)
     }
@@ -83,7 +96,10 @@ public final class Car {
             return
         }
 
-        if let started = nitro.update(dt: dt, pressed: input.nitro) { events.append(.nitro(started)) }
+        if let started = nitro.update(dt: dt, pressed: input.nitro) {
+            events.append(.nitro(started))
+            speed += Physics.nitroKick * (started == .shockwave ? 2 : started == .perfect ? 1.4 : 1)
+        }
 
         let steer = clamp(input.steer, -1, 1)
         if !drifting && input.drift && speed > Physics.driftMinSpeed {
@@ -92,18 +108,31 @@ public final class Car {
             driftDir = abs(steer) > 0.25 ? (steer > 0 ? 1 : -1) : preferredDriftDir(track: track)
         } else if drifting && (!input.drift || speed < Physics.driftMinSpeed * 0.7) {
             drifting = false
+            // Mini-turbo: im dłuższy poślizg, tym dłuższy zryw.
+            if driftCharge >= Physics.driftBoostMinCharge && speed >= Physics.driftMinSpeed {
+                driftBoostTimer = min(Physics.driftBoostMaxTime, driftCharge * 0.6)
+                speed += Physics.driftBoostKick
+                events.append(.driftBoost)
+            }
+            driftCharge = 0
         } else if drifting && abs(steer) > Physics.driftSwitchSteer && (steer > 0 ? 1.0 : -1.0) != driftDir {
             // Wyraźny skręt w drugą stronę przekłada poślizg (lekki — tylko kontruje).
             driftDir = -driftDir
         }
-        let braking = input.drift && !drifting
+        let braking = (input.drift && !drifting) || input.brake
+
+        if drifting { driftCharge += dt * min(1, abs(slide) / Physics.driftSlideAngle) }
+        driftBoostTimer = max(0, driftBoostTimer - dt)
 
         let boost = self.boost
-        let top = def.topSpeed * speedScale * boost * (drifting ? Physics.driftSpeedFactor : 1)
+        // Dodatki się nie mnożą: liczy się najmocniejszy z nitro, zrywu po drifcie i slipstreamu.
+        let extra = max(boost, driftBoostTimer > 0 ? Physics.driftBoostSpeed : 1, slipstream ? Physics.slipstreamSpeed : 1)
+        let top = def.topSpeed * speedScale * extra * (drifting ? Physics.driftSpeedFactor : 1)
         if braking {
             speed = max(0, speed - Physics.brakeDecel * dt)
         } else if speed < top {
-            let accel = def.accel * (boost > 1 ? Physics.nitroAccelFactor : 1)
+            let accel = def.accel * (boost > 1 || driftBoostTimer > 0 ? Physics.nitroAccelFactor : 1)
+            * (slipstream ? Physics.slipstreamAccel : 1)
             speed = min(top, speed + accel * dt * (1 - 0.6 * speed / top))
         } else {
             speed = damp(speed, top, rate: Physics.overspeedDecay, dt: dt)
@@ -112,7 +141,7 @@ public final class Car {
         let speedFactor = clamp(speed / 15, 0, 1)
         // W poślizgu auto samo skręca w stronę driftu; skręt w przeciwną stronę je kontruje.
         let effectiveSteer = drifting ? clamp(steer + driftDir * Physics.driftAutoSteer, -1, 1) : steer
-        let yaw = effectiveSteer * def.handling * speedFactor * (drifting ? Physics.driftSteerFactor : 1)
+        let yaw = effectiveSteer * yawRatePerSteer
         alphaVel += yaw * dt
         let targetSlide = drifting ? driftDir * Physics.driftSlideAngle : 0
         slide = damp(slide, targetSlide, rate: drifting ? 6 : 8, dt: dt)
@@ -125,6 +154,15 @@ public final class Car {
         collideWalls(track: track)
 
         if drifting { nitro.add(Physics.driftNitroGain * speedFactor * dt) }
+        if slipstream { nitro.add(Physics.slipstreamNitro * dt) }
+    }
+
+    /// Szybkość obrotu (rad/s) przy pełnym skręcie w obecnym stanie auta: rośnie od postoju,
+    /// słabnie przy dużej prędkości (stabilność), w drifcie mocniejsza.
+    public var yawRatePerSteer: Double {
+        let speedFactor = clamp(speed / 15, 0, 1)
+        let falloff = 1 - Physics.steerFalloff * clamp(speed / Physics.steerFalloffSpeed, 0, 1)
+        return def.handling * speedFactor * falloff * (drifting ? Physics.driftSteerFactor : 1)
     }
 
     /// Kierunek zakrętu 20–80 m przed autem; na prostej — strona, w którą auto już jedzie.
@@ -173,8 +211,9 @@ public final class Car {
         if speed * into > Physics.wreckImpact {
             wreck()
         } else {
-            speed *= 1 - Physics.wallFriction * into
-            alphaVel *= 0.2
+            // Muśnięcie prawie nic nie kosztuje, uderzenie pod kątem — wyraźnie; auto odbija się od bandy.
+            speed *= 1 - Physics.wallFriction * into * into * 2
+            alphaVel = -alphaVel * 0.25
         }
     }
 }

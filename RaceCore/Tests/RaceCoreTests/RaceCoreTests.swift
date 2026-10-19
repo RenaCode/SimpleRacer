@@ -342,15 +342,23 @@ final class AutoSteerTests: XCTestCase {
         XCTAssertEqual(wrecks, 0)
     }
 
-    /// Auto-prowadzenie jedzie wyraźnie szybciej niż auto bez sterowania, które ociera się o bandy —
-    /// kontrola, że auto-prowadzenie naprawdę prowadzi, a nie tylko korzysta z asystenta prostowania.
-    func testAutopilotIsMuchFasterThanNoSteering() {
-        let auto = race(player: AutoSteerController(input: FakeInput()), seconds: 120, laps: 1).sim
-        let none = race(player: PlayerController(input: FakeInput()), seconds: 120, laps: 1).sim
-        let tAuto = auto.cars[0].finishTime, tNone = none.cars[0].finished ? none.cars[0].finishTime : 120
-        print(String(format: "okrążenie: auto-prowadzenie %.1f s, bez sterowania %.1f s", tAuto, tNone))
-        XCTAssertTrue(auto.cars[0].finished)
-        XCTAssertLessThan(tAuto, tNone * 0.85)
+    /// Auto-prowadzenie naprawdę prowadzi: prawie nie dotyka band, a auto bez sterowania ociera się o nie
+    /// przez dużą część okrążenia (kontrola, że pomiar coś rozróżnia).
+    func testAutopilotStaysOffTheWalls() {
+        func wallShare(_ controller: Controller) -> Double {
+            var touching = 0, total = 0
+            _ = race(player: controller, seconds: 60, laps: 1) { sim in
+                let car = sim.cars[0]
+                total += 1
+                if abs(car.d) >= sim.track.halfWidth - Physics.carWidth / 2 - 0.05 { touching += 1 }
+            }
+            return Double(touching) / Double(max(1, total))
+        }
+        let auto = wallShare(AutoSteerController(input: FakeInput()))
+        let none = wallShare(PlayerController(input: FakeInput()))
+        print(String(format: "czas przy bandzie: auto-prowadzenie %.0f%%, bez sterowania %.0f%%", auto * 100, none * 100))
+        XCTAssertLessThan(auto, 0.02)
+        XCTAssertGreaterThan(none, 0.2)
     }
 
     /// Jedno stuknięcie ◀ przestawia auto na lewy pas.
@@ -408,5 +416,82 @@ final class DriftDirectionTests: XCTestCase {
             while t < 0.2 { c.step(dt: RaceSim.step, input: CarInput(steer: dir, drift: true), track: track); t += RaceSim.step }
             XCTAssertEqual(c.slide > 0 ? 1.0 : -1.0, dir)
         }
+    }
+}
+
+final class ArcadePhysicsTests: XCTestCase {
+    let track = TrackData.makeCityLoop()
+
+    private func car(at s: Double = 50, speed: Double, lane: Double = 0) -> Car {
+        let c = Car(name: "T", def: CarCatalog.builtIn[0], color: "#FFFFFF", isPlayer: true,
+                    startDistance: s, startLane: lane, trackLength: track.length)
+        c.speed = speed
+        return c
+    }
+
+    private func drive(_ c: Car, _ seconds: Double, _ input: CarInput) {
+        var t = 0.0
+        while t < seconds { c.step(dt: RaceSim.step, input: input, track: track); t += RaceSim.step }
+    }
+
+    /// Przy dużej prędkości ten sam skręt obraca auto wolniej niż przy średniej — stabilność.
+    func testSteeringSoftensAtHighSpeed() {
+        let mid = car(speed: 30), fast = car(speed: 75)
+        XCTAssertLessThan(fast.yawRatePerSteer, mid.yawRatePerSteer)
+        XCTAssertGreaterThan(fast.yawRatePerSteer, mid.yawRatePerSteer * 0.6, "ale nadal da się skręcać")
+    }
+
+    /// Długi drift po puszczeniu daje zryw (mini-turbo); krótki — nie.
+    func testLongDriftGivesMiniTurbo() {
+        func release(after seconds: Double) -> (boost: Double, events: Int) {
+            let c = car(speed: 55)
+            drive(c, seconds, CarInput(steer: 0, drift: true))
+            c.events.removeAll()
+            drive(c, RaceSim.step, CarInput(steer: 0, drift: false))
+            let n = c.events.filter { if case .driftBoost = $0 { return true }; return false }.count
+            return (c.driftBoostTimer, n)
+        }
+        let short = release(after: 0.3), long = release(after: 1.6)
+        XCTAssertEqual(short.events, 0)
+        XCTAssertEqual(long.events, 1)
+        XCTAssertGreaterThan(long.boost, 0.5)
+    }
+
+    /// Za rywalem w tym samym pasie auto łapie slipstream i dogania go; obok — nie.
+    func testSlipstreamPullsCarBehindCloser() {
+        func gapAfter(lane: Double) -> Double {
+            let leader = AutoSteerController(input: FakeInput())
+            let sim = RaceSim(track: track, entries: [
+                Entry(name: "A", def: CarCatalog.builtIn[0], color: "#FFFFFF", isPlayer: false, controller: leader),
+                Entry(name: "B", def: CarCatalog.builtIn[0], color: "#FFFFFF", isPlayer: true, controller: AutoSteerController(input: FakeInput())),
+            ], laps: 5)
+            let a = sim.cars[0], b = sim.cars[1]
+            a.s = 120; a.distance = 120; a.d = 0; a.speed = 73
+            b.s = 105; b.distance = 105; b.d = lane; b.speed = 73
+            var t = 0.0
+            while t < 4.0 { sim.advance(); t += RaceSim.step }
+            return a.distance - b.distance
+        }
+        let behind = gapAfter(lane: 0), aside = gapAfter(lane: 5)
+        print(String(format: "odstęp po 4 s: w slipstreamie %.1f m, obok %.1f m", behind, aside))
+        XCTAssertLessThan(behind, aside - 1, "slipstream skraca odstęp")
+    }
+
+    /// Muśnięcie bandy pod małym kątem prawie nie zabiera prędkości.
+    func testGlancingWallContactIsCheap() {
+        let c = car(speed: 60, lane: track.halfWidth - Physics.carWidth / 2 - 0.05)
+        c.alphaVel = 0.08 // lekko w stronę lewej bandy
+        let before = c.speed
+        drive(c, 0.2, CarInput(steer: 0))
+        XCTAssertFalse(c.wrecked)
+        XCTAssertGreaterThan(c.speed, before * 0.93)
+    }
+
+    /// Odpalenie nitro daje natychmiastowego „kopa”.
+    func testNitroGivesInstantKick() {
+        let c = car(speed: 50)
+        c.nitro.gauge = 1
+        drive(c, RaceSim.step, CarInput(nitro: true))
+        XCTAssertGreaterThan(c.speed, 50 + Physics.nitroKick * 0.9)
     }
 }

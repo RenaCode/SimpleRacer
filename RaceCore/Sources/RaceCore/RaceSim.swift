@@ -20,6 +20,7 @@ public enum SimEvent {
     case nitro(Car, NitroMode)
     case nearMiss(Car)
     case pickup(Car)
+    case driftBoost(Car)
     case finish(Car, position: Int)
 }
 
@@ -86,6 +87,7 @@ public final class RaceSim {
         let player = self.player
         let ctx = RaceContext(track: track, playerDistance: player?.distance ?? 0)
 
+        updateSlipstream()
         for car in cars {
             let input = controllers[ObjectIdentifier(car)]!.read(car: car, dt: dt, ctx: ctx)
             if !car.isPlayer { car.nitro.add(Physics.aiPassiveNitro * dt) }
@@ -94,6 +96,7 @@ public final class RaceSim {
                 switch e {
                 case .wreck: events.append(.wreck(car))
                 case .nitro(let mode): events.append(.nitro(car, mode))
+                case .driftBoost: events.append(.driftBoost(car))
                 }
             }
             car.events.removeAll()
@@ -111,6 +114,18 @@ public final class RaceSim {
             car.finishTime = time
             finishOrder.append(car)
             events.append(.finish(car, position: finishOrder.count))
+        }
+    }
+
+    /// Slipstream: auto tuż za rywalem, w tym samym pasie, jedzie szybciej i ładuje nitro.
+    private func updateSlipstream() {
+        for car in cars {
+            car.slipstream = !car.wrecked && cars.contains { other in
+                guard other !== car, !other.wrecked else { return false }
+                let gap = wrapDelta(other.s, car.s, track.length)
+                return gap > Physics.slipstreamMin && gap < Physics.slipstreamMax
+                    && abs(other.d - car.d) < Physics.slipstreamWidth
+            }
         }
     }
 

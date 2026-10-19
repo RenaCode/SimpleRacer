@@ -214,6 +214,9 @@ final class RaceGame {
                 }
             case .nearMiss:
                 toast("NA WŁOS! +nitro", .info)
+            case let .driftBoost(car) where car === p:
+                toast("MINI-TURBO!", .good)
+                AudioManager.shared.play(.nitro)
             case let .pickup(car) where car === p:
                 toast("+NITRO", .info)
                 AudioManager.shared.play(.pickup)

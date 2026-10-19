@@ -54,6 +54,12 @@ app goes to the background (Home, a notification, Control Centre).
   **shockwave**: it burns the whole gauge, gives the biggest boost, and any contact wrecks a rival.
 - **Nitro canisters**: rows of three glowing canisters sit on one lane every 130 m. Driving through
   one adds nitro; it comes back after 6 seconds. Rivals collect them too.
+- **Mini-turbo**: the longer a drift lasts, the longer the speed burst when it ends.
+- **Slipstream**: driving right behind a rival (same lane, 5–28 m) gives faster acceleration, a
+  slightly higher top speed and some nitro — a reason to get behind someone before overtaking.
+- Speed bonuses (nitro, mini-turbo, slipstream) do not stack: the strongest one counts. Steering
+  softens at high speed for stability; glancing a wall costs little speed, and only a steep
+  high-speed hit wrecks the car.
 - **Drift**: press DRIFT at speed — with or without steering. The car slides into the drift by
   itself (towards the steering direction, or towards the next corner when not steering), turns
   tighter, smokes from the rear tyres and fills the nitro gauge; steering the other way

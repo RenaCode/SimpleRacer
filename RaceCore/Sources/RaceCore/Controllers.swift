@@ -30,16 +30,24 @@ public enum LineFollower {
     /// Skręt potrzebny, żeby jechać pasem `lane` (przesunięcie w bok, m).
     public static func steer(car: Car, track: Track, lane: Double) -> Double {
         let near = track.sample(at: car.s + clamp(car.speed * 0.25, 4, 20))
-        let handling = car.def.handling * (car.drifting ? Physics.driftSteerFactor : 1)
-        let curveSteer = near.curvature * car.speed / handling
+        let curveSteer = near.curvature * car.speed / max(0.1, car.yawRatePerSteer)
         let desiredAlpha = clamp((lane - car.d) * 0.04, -0.25, 0.25)
         return clamp(curveSteer + (desiredAlpha - car.alphaVel) * 2.5, -1, 1)
     }
 
+    /// Czy przed autem jest zakręt ciaśniejszy, niż auto zdoła pokonać nawet w drifcie przy obecnej prędkości.
+    public static func needsBrake(car: Car, track: Track) -> Bool {
+        let ahead = stride(from: 10.0, through: max(20, car.speed * 1.6), by: 8)
+        let maxK = ahead.map { abs(track.sample(at: car.s + $0).curvature) }.max() ?? 0
+        let capacity = car.yawRatePerSteer / (car.drifting ? 1 : 1 / Physics.driftSteerFactor) * 0.85
+        return maxK * car.speed > capacity
+    }
+
     /// Czy zakręt przed autem jest za ciasny na zwykły skręt (trzeba driftować).
     public static func needsDrift(car: Car, track: Track, steer: Double) -> Bool {
-        let far = track.sample(at: car.s + clamp(car.speed * 0.9, 15, 70))
-        return abs(far.curvature * car.speed) > car.def.handling * 0.9 && abs(steer) > 0.25
+        let far = track.sample(at: car.s + clamp(car.speed * 0.9, 15, 110))
+        let normalYaw = car.yawRatePerSteer / (car.drifting ? Physics.driftSteerFactor : 1)
+        return abs(far.curvature * car.speed) > normalYaw * 0.9 && abs(steer) > 0.25
     }
 }
 
@@ -69,7 +77,8 @@ public final class AutoSteerController: Controller {
         let lane = Self.lanes[laneIndex!] * track.halfWidth
         let steer = LineFollower.steer(car: car, track: track, lane: lane)
         let drift = input.drift || LineFollower.needsDrift(car: car, track: track, steer: steer)
-        return CarInput(steer: steer, drift: drift, nitro: input.consumeNitro())
+        return CarInput(steer: steer, drift: drift, nitro: input.consumeNitro(),
+                        brake: LineFollower.needsBrake(car: car, track: track))
     }
 }
 
@@ -94,12 +103,12 @@ public final class AIController: Controller {
             laneTimer = 3 + rng.next() * 4
         }
 
-        let far = track.sample(at: car.s + clamp(car.speed * 0.9, 15, 70))
         let steer = LineFollower.steer(car: car, track: track, lane: lane)
         let drift = LineFollower.needsDrift(car: car, track: track, steer: steer)
 
         var nitro = false
-        let straight = abs(far.curvature) < 0.004
+        // Nitro tylko, gdy na całym odcinku spalania (ok. 200 m) nie ma ostrego zakrętu.
+        let straight = stride(from: 10.0, through: 200, by: 10).allSatisfy { abs(track.sample(at: car.s + $0).curvature) < 0.004 }
         if car.nitro.mode == .off && car.nitro.gauge > 0.4 && straight && rng.next() < dt * 1.5 { nitro = true }
         if car.nitro.inPerfectWindow && rng.next() < skill * dt * 6 { nitro = true }
 
@@ -107,6 +116,6 @@ public final class AIController: Controller {
         let gap = ctx.playerDistance - car.distance
         car.speedScale = skill * clamp(1 + gap / 800, 0.93, 1.07)
 
-        return CarInput(steer: steer, drift: drift, nitro: nitro)
+        return CarInput(steer: steer, drift: drift, nitro: nitro, brake: LineFollower.needsBrake(car: car, track: track))
     }
 }
