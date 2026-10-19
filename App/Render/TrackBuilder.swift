@@ -304,14 +304,20 @@ enum TrackBuilder {
                 // bez widocznych boków brył między domami.
                 let pos = track.toWorld(s: s + width / 2, d: side * (hw + 9 + depth / 2))
                 let axis = track.toWorld(s: s + width / 2, d: 0)
-                let f = simd_normalize(SIMD2(axis.x - pos.x, axis.z - pos.z))
-                let r = SIMD2(f.y, -f.x)
+                let f: SIMD2<Double> = simd_normalize(SIMD2<Double>(axis.x - pos.x, axis.z - pos.z))
+                let r = SIMD2<Double>(f.y, -f.x)
+                let center = SIMD2<Double>(pos.x, pos.z)
+                let halfDepth: SIMD2<Double> = f * (depth / 2)
+                let halfWidth: SIMD2<Double> = r * (width / 2)
                 // Żaden narożnik bryły nie może wejść na trasę (także na inny jej odcinek w zakręcie).
-                let corners = [(1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0), (0, 1.0), (0, -1.0)].map { a, b in
-                    SIMD2(pos.x, pos.z) + f * (a * depth / 2) + r * (b * width / 2)
-                }
-                let skip = isStartArea(s, track) || rng.next() > theme.buildings
-                    || corners.contains { track.distanceToAxis(x: $0.x, z: $0.y) < hw + 4 }
+                let corners: [SIMD2<Double>] = [
+                    center + halfDepth + halfWidth, center + halfDepth - halfWidth,
+                    center - halfDepth + halfWidth, center - halfDepth - halfWidth,
+                    center + halfWidth, center - halfWidth,
+                ]
+                var tooClose = false
+                for c in corners where track.distanceToAxis(x: c.x, z: c.y) < hw + 4 { tooClose = true }
+                let skip = isStartArea(s, track) || rng.next() > theme.buildings || tooClose
                 if !skip {
                     batch.building(item, height: height, at: [Float(pos.x), 0, Float(pos.z)],
                                    facing: [Float(f.x), 0, Float(f.y)])
