@@ -568,6 +568,18 @@ final class CampaignTests: XCTestCase {
     let starter = CarCatalog.car(id: Campaign.starterCar)
     let maxed: [Upgrade: Int] = Dictionary(uniqueKeysWithValues: Upgrade.allCases.map { ($0, Campaign.maxLevel) })
 
+    func testNextTrackIsFirstUnplayedOpenTrack() {
+        var state = Campaign.newGame()
+        XCTAssertEqual(Campaign.nextTrack(state).id, 1)
+        state.bestStars[1] = 2
+        state.bestStars[2] = 3
+        XCTAssertEqual(Campaign.nextTrack(state).id, 3)
+        // Cała pierwsza kraina zaliczona, a na drugą brak gwiazdek: zostaje ostatnia dostępna.
+        for id in 1...TrackCatalog.perRegion { state.bestStars[id] = 1 }
+        XCTAssertLessThan(state.totalStars, Campaign.starsToUnlock[1])
+        XCTAssertEqual(Campaign.nextTrack(state).id, TrackCatalog.perRegion)
+    }
+
     func testUpgradesRaiseRating() {
         let base = Campaign.rating(starter)
         let one = Campaign.rating(Campaign.upgraded(starter, levels: [.engine: 1]))

@@ -30,3 +30,77 @@ struct RaceButtonStyle: ButtonStyle {
             .rotation3DEffect(.degrees(-8), axis: (x: 0, y: 1, z: 0))
     }
 }
+
+/// Równoległobok: lewa krawędź pochylona (`slant` pt u góry wsunięte), prawa prosta — jak przyciski z makiet.
+/// `trailing` pochyla prawą krawędź zamiast lewej (np. baner z logo przy lewym brzegu ekranu).
+struct SlantShape: Shape {
+    var slant: CGFloat = 24
+    var trailing = false
+
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        if trailing {
+            p.addLines([CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
+                        CGPoint(x: r.maxX - slant, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)])
+        } else {
+            p.addLines([CGPoint(x: r.minX + slant, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
+                        CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)])
+        }
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Duży pochylony przycisk z piktogramem w kole — dziecko rozpoznaje ikonę, rodzic czyta napis.
+/// Żółty = główna akcja (ciemne koło), ciemny = pozostałe (jasne koło).
+struct PictoButton: View {
+    let title: String
+    let icon: String
+    var primary = false
+    var height: CGFloat = 92
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 18) {
+                let badge = height * (primary ? 0.74 : 0.68)
+                ZStack {
+                    Circle().fill(primary ? Color(white: 0.07) : Color.white.opacity(0.1))
+                    Circle().stroke(primary ? Color(white: 0.07) : Color.white.opacity(0.25), lineWidth: 3)
+                    Image(systemName: icon)
+                        .font(.system(size: badge * 0.48, weight: .bold))
+                        .foregroundStyle(primary ? Theme.accent : Color.white)
+                }
+                .frame(width: badge, height: badge)
+                Text(title)
+                    .font(Theme.display(height * 0.31))
+                    .textCase(.uppercase)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(primary ? Color(white: 0.07) : Color.white)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 38)
+            .frame(height: height)
+            .frame(maxWidth: .infinity)
+            .background(
+                SlantShape().fill(LinearGradient(
+                    colors: primary ? [Theme.accent, Color(red: 1, green: 0.76, blue: 0)]
+                                    : [Color(red: 0.08, green: 0.09, blue: 0.11), Color(red: 0.12, green: 0.13, blue: 0.15)],
+                    startPoint: .leading, endPoint: .trailing))
+            )
+            .contentShape(SlantShape())
+        }
+        .buttonStyle(PressScaleStyle())
+        .accessibilityLabel(title)
+    }
+}
+
+/// Lekkie wciśnięcie przycisku.
+struct PressScaleStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1, anchor: .trailing)
+            .brightness(configuration.isPressed ? -0.06 : 0)
+    }
+}

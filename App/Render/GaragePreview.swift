@@ -85,9 +85,12 @@ final class GaragePreview {
         // Garaż: panel zajmuje ok. 60% szerokości po prawej, więc auto (obracające się, ok. 5,2 m średnicy)
         // musi zmieścić się w lewych 40%. Kamera dalej (14 m) i patrzy w prawo od auta, żeby stało na środku
         // wolnej części: przesunięcie ≈ 0,31 × odległość.
-        let distance: Float = narrow ? 13 : (layout == .garage ? 14 : 10)
-        let target: SIMD3<Float> = narrow ? [0, -1.2, 0] : (layout == .garage ? [0.31 * distance, 0.5, 0] : [-2.2, 0.6, 0])
-        let eye: SIMD3<Float> = [0, 3.4, distance]
+        // Menu: kolumna przycisków zajmuje prawe ~36%, więc auto stoi ok. 1/3 szerokości od lewej.
+        // W menu kamera niżej i bliżej — auto duże, jak na makiecie, podest tylko pod nim.
+        let menu = layout == .menu && !narrow
+        let distance: Float = narrow ? 13 : (layout == .garage ? 14 : 9)
+        let target: SIMD3<Float> = narrow ? [0, -1.2, 0] : (layout == .garage ? [0.31 * distance, 0.5, 0] : [0.19 * distance, 1.0, 0])
+        let eye: SIMD3<Float> = [0, menu ? 2.1 : 3.4, distance]
         camera.look(at: target, from: eye, relativeTo: nil)
         // Panorama wyśrodkowana na kamerze — perspektywa zdjęcia zgadza się z widokiem.
         backdrop.position = eye

@@ -131,6 +131,13 @@ public enum Campaign {
         return spec.id == first || (state.bestStars[spec.id - 1] ?? 0) > 0
     }
 
+    /// Trasa dla przycisku „Ścigaj się”: pierwsza dostępna bez gwiazdek, a gdy wszystkie dostępne są
+    /// zaliczone — ostatnia dostępna.
+    public static func nextTrack(_ state: CampaignState) -> TrackSpec {
+        let open = TrackCatalog.all.filter { isUnlocked($0, state) }
+        return open.first { (state.bestStars[$0.id] ?? 0) == 0 } ?? open.last ?? TrackCatalog.all[0]
+    }
+
     /// Czy auto ma dość mocy na trasę.
     public static func canRace(_ def: CarDef, on spec: TrackSpec, _ state: CampaignState) -> Bool {
         rating(upgraded(def, in: state)) >= requiredRating(spec)
