@@ -404,6 +404,7 @@ final class RaceGame {
                 }
                 if car === p {
                     shake = max(shake, min(0.7, 0.2 + intensity / 25))
+                    AudioManager.shared.impact(intensity: min(1, intensity / 25))
                 }
             case let .pickup(car) where car === p:
                 toast("+NITRO", .info)

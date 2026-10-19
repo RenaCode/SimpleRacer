@@ -240,6 +240,10 @@ garage), an optional yaw and the author, licence and source shown on the in-app 
 Cars whose file is present appear in the garage and among rivals; until a model has loaded, or when
 there is none, the car falls back to its Kenney model.
 
+**Licence gate:** the Release build runs `tools/check-licenses.py` on `LocalModels/Commercial` and
+fails when any car lacks `"commercial": true`, any licence is non-commercial (NC), no-derivatives (ND)
+or editorial, or a `.usdz` file has no entry with a licence.
+
 ## 3D models
 
 `App/Models` holds CC0 models (public domain, no attribution required) from three packs by
@@ -333,6 +337,19 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
 - **Tyre smoke:** many faint, growing particles born along the path the wheel travelled in the
   frame, so the smoke is a haze rather than separate puffs.
 - **Speed lines:** thin streaks at the screen edges during nitro and above 260 km/h.
+- **Smooth motion:** physics runs at a fixed 120 Hz; the render interpolates cars between the last
+  two physics steps, so motion is even at any refresh rate (no stop-then-jump frames).
+- **Post-processing (iOS 26+):** a `PostProcessEffect` adds bloom on bright spots, aerial fog read
+  from the depth buffer (tinted with the panorama's horizon colour), a gentle tone curve,
+  saturation, vignette and dither; plus MSAA 4×. Shaders compile in the background at launch.
+  `-noPostFX` / `-noMSAA` turn them off in test builds.
+- **Sun from the panorama:** the sun's direction and tint come from the brightest spot of the
+  region's sky photo, so shadows fall where the photo says.
+- **Camera:** spring distance and height, a kick on nitro, mini-turbo and wall hits; shake from
+  smooth noise scaled by "trauma" squared instead of per-frame random jitter.
+- **Wall hits:** a wall contact without a wreck sends sparks, a camera shake and a metal scrape.
+- **Collisions:** wrecked cars are obstacles (others steer around them) and restart without a speed
+  jump; rivals only push each other — takedowns are the player's.
 
 ## Loading
 
