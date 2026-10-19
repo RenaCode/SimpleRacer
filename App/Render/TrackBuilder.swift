@@ -29,6 +29,14 @@ enum TrackBuilder {
     /// Budynki postawione na tej trasie — drzewa nie mogą w nie wchodzić koroną.
     private static var footprints: [Footprint] = []
 
+    /// Zwalnia odwołania do sceny ostatniej trasy (po wyjściu z wyścigu) — bez tego statyczne pola
+    /// trzymały całą poprzednią trasę w pamięci aż do budowy następnej.
+    static func release() {
+        cullables = []
+        ground = nil
+        footprints = []
+    }
+
     static func build(_ track: Track, theme: TrackTheme = .of(.city), region: Region = .city) throws -> Entity {
         cullables = []
         footprints = []

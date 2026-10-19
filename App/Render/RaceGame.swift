@@ -62,6 +62,8 @@ final class RaceGame {
     /// Otoczenie wzdłuż trasy — rysowane tylko w pobliżu gracza.
     @ObservationIgnored private var scenery: [(entity: Entity, s: Double)] = []
     @ObservationIgnored private var skyDome = Entity()
+    /// Grunt zanikający w oddali (przesuwany za kamerą); `nil`, gdy grunt jest zwykły.
+    @ObservationIgnored private var ground: (entity: ModelEntity, material: GroundMaterial)?
     @ObservationIgnored private var groundCenter = SIMD3<Float>(repeating: .infinity)
     /// Kierunek jazdy aut w poprzedniej klatce i długość klatki — do prędkości kątowej.
     @ObservationIgnored private var lastYaw: [ObjectIdentifier: Double] = [:]
@@ -126,6 +128,9 @@ final class RaceGame {
             ImpostorLibrary.shared.purge()
             root.addChild(try TrackBuilder.build(track, theme: .of(spec.region), region: spec.region))
             scenery = TrackBuilder.cullables
+            ground = TrackBuilder.ground
+            // Wyścig trzyma swoje odwołania; statyczne pola nie przetrzymują trasy po jego końcu.
+            TrackBuilder.release()
             debugLog("wyścig: trasa zbudowana")
         } catch {
             debugLog("wyścig: BŁĄD budowy trasy: \(error)")
@@ -531,9 +536,9 @@ final class RaceGame {
         // Panorama jedzie z kamerą: zdjęcie to „nieskończenie daleki” plan, horyzont się nie przesuwa.
         skyDome.position = from
         // Środek zanikania gruntu za kamerą — co kilka metrów wystarczy (podmiana materiału kosztuje).
-        if var g = TrackBuilder.ground, simd_distance(from, groundCenter) > 4 {
+        if var g = ground, simd_distance(from, groundCenter) > 4 {
             g.material.follow(from, on: g.entity)
-            TrackBuilder.ground = g
+            ground = g
             groundCenter = from
         }
         let target = 68 + clamp(p.speed / p.def.topSpeed, 0, 1.6) * 10 + (p.nitro.mode != .off ? 8 : 0)
