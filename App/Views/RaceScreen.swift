@@ -6,10 +6,12 @@ struct RaceScreen: View {
     let model: AppModel
     @State private var game: RaceGame
     @Environment(\.scenePhase) private var scenePhase
+    /// Wynik rozliczony w kampanii (gwiazdki, monety) — raz na wyścig.
+    @State private var settled: RaceResult?
 
     init(model: AppModel) {
         self.model = model
-        _game = State(initialValue: RaceGame(profile: model.profile))
+        _game = State(initialValue: RaceGame(profile: model.profile, spec: model.track, playerCar: model.playerCar))
     }
 
     var body: some View {
@@ -42,12 +44,16 @@ struct RaceScreen: View {
                           restart: { model.startRace() },
                           menu: { model.screen = .menu })
             }
-            if let r = game.result {
+            if let r = settled {
                 ResultsView(result: r,
+                            next: r.nextTrackId.map { id in { model.startRace(track: id) } },
                             again: { model.startRace() },
                             garage: { model.screen = .garage },
-                            menu: { model.screen = .menu })
+                            campaign: { model.screen = .campaign })
             }
+        }
+        .onChange(of: game.result) { _, r in
+            if let r, settled == nil { settled = model.settle(r) }
         }
         .onAppear { game.input.onEscape = { [weak game] in game?.paused.toggle() } }
         // Wyjście z aplikacji, powiadomienie albo centrum sterowania — gra staje i czeka.

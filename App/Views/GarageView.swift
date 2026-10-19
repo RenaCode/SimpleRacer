@@ -13,18 +13,78 @@ struct GarageView: View {
         )
     }
 
+    /// Auto oglądane w garażu i jego statystyki z ulepszeniami.
+    private var shown: CarDef { model.previewCar }
+    private var stats: CarDef { Campaign.upgraded(shown, in: model.campaign) }
+    private var owned: Bool { model.campaign.ownedCars.contains(shown.id) }
+
+    /// Warsztat: ulepszenia własnego auta albo zakup cudzego.
+    @ViewBuilder private var workshop: some View {
+        HStack {
+            Text("MOC \(Campaign.rating(stats))").font(Theme.display(22)).foregroundStyle(Theme.nitro)
+            Spacer()
+            if !owned {
+                let price = Campaign.price(of: shown)
+                Button {
+                    try? Campaign.buyCar(shown, &model.campaign)
+                    if model.campaign.ownedCars.contains(shown.id) { model.profile.carId = shown.id }
+                } label: { Label("Kup za \(price)", systemImage: "cart.fill") }
+                    .buttonStyle(RaceButtonStyle(primary: true))
+                    .disabled(model.campaign.coins < price)
+            }
+        }
+        if owned {
+            VStack(spacing: 6) {
+                ForEach(Upgrade.allCases, id: \.self) { u in
+                    let level = model.campaign.level(u, car: shown.id)
+                    HStack(spacing: 8) {
+                        Text(u.name).font(.footnote.weight(.semibold)).frame(width: 110, alignment: .leading)
+                        HStack(spacing: 3) {
+                            ForEach(0..<Campaign.maxLevel, id: \.self) { i in
+                                Capsule().fill(i < level ? Theme.accent : Color.white.opacity(0.15)).frame(width: 18, height: 7)
+                            }
+                        }
+                        Spacer()
+                        if level < Campaign.maxLevel {
+                            let cost = Campaign.upgradeCost(toLevel: level + 1)
+                            Button { try? Campaign.buyUpgrade(u, car: shown.id, &model.campaign) } label: {
+                                Label("\(cost)", systemImage: "plus.circle.fill").font(.footnote.weight(.bold))
+                            }
+                            .disabled(model.campaign.coins < cost)
+                        } else {
+                            Text("MAX").font(.caption.weight(.heavy)).foregroundStyle(Theme.accent)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     var body: some View {
         HStack {
             Spacer()
             VStack(alignment: .leading, spacing: 14) {
-                Text("Garaż").font(Theme.display(32))
+                HStack {
+                    Text("Garaż").font(Theme.display(32))
+                    Spacer()
+                    StatPill(icon: "dollarsign.circle.fill", text: "\(model.campaign.coins)", color: Theme.shock)
+                }
 
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(CarCatalog.all) { car in
-                                let active = car.id == model.profile.carId
-                                Button(car.name) { model.profile.carId = car.id }
+                                let active = car.id == model.previewCar.id
+                                let owned = model.campaign.ownedCars.contains(car.id)
+                                Button {
+                                    model.garageCarId = car.id
+                                    if owned { model.profile.carId = car.id }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        if !owned { Image(systemName: "lock.fill").font(.caption) }
+                                        Text(car.name)
+                                    }
+                                }
                                     .font(.system(size: 15, weight: .bold))
                                     .lineLimit(1)
                                     .padding(.horizontal, 14)
@@ -36,24 +96,26 @@ struct GarageView: View {
                             }
                         }
                     }
-                    .onAppear { proxy.scrollTo(model.profile.carId, anchor: .center) }
+                    .onAppear { proxy.scrollTo(model.previewCar.id, anchor: .center) }
                 }
 
-                Text(model.car.description)
+                Text(shown.description)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(minHeight: 40, alignment: .topLeading)
 
                 VStack(spacing: 8) {
-                    StatRow(label: "Prędkość", value: model.car.topSpeed, range: CarCatalog.topSpeedRange,
-                            text: "\(Int((model.car.topSpeed * 3.6).rounded())) km/h")
-                    StatRow(label: "Przyspieszenie", value: model.car.accel, range: CarCatalog.accelRange,
-                            text: String(format: "%.0f", model.car.accel))
-                    StatRow(label: "Prowadzenie", value: model.car.handling, range: CarCatalog.handlingRange,
-                            text: String(format: "%.1f", model.car.handling))
-                    StatRow(label: "Nitro", value: model.car.nitroPower, range: CarCatalog.nitroRange,
-                            text: String(format: "×%.2f", model.car.nitroPower))
+                    StatRow(label: "Prędkość", value: stats.topSpeed, range: CarCatalog.topSpeedRange,
+                            text: "\(Int((stats.topSpeed * 3.6).rounded())) km/h")
+                    StatRow(label: "Przyspieszenie", value: stats.accel, range: CarCatalog.accelRange,
+                            text: String(format: "%.0f", stats.accel))
+                    StatRow(label: "Prowadzenie", value: stats.handling, range: CarCatalog.handlingRange,
+                            text: String(format: "%.1f", stats.handling))
+                    StatRow(label: "Nitro", value: stats.nitroPower, range: CarCatalog.nitroRange,
+                            text: String(format: "×%.2f", stats.nitroPower))
                 }
+
+                workshop
 
                 Text("KOLOR").font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary).padding(.top, 6)
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(40), spacing: 10), count: 5), alignment: .leading, spacing: 10) {
@@ -74,7 +136,10 @@ struct GarageView: View {
                 Button { showCredits = true } label: { Label("Autorzy", systemImage: "info.circle") }
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
-                Button { model.screen = .menu } label: { Label("Gotowe", systemImage: "checkmark") }
+                Button {
+                    model.garageCarId = nil
+                    model.screen = .menu
+                } label: { Label("Gotowe", systemImage: "checkmark") }
                     .buttonStyle(RaceButtonStyle(primary: true))
                     .frame(maxWidth: .infinity)
                     .padding(.top, 8)

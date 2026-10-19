@@ -2,9 +2,10 @@ import SwiftUI
 
 struct ResultsView: View {
     let result: RaceResult
+    let next: (() -> Void)?
     let again: () -> Void
     let garage: () -> Void
-    let menu: () -> Void
+    let campaign: () -> Void
 
     private var placeColor: Color {
         switch result.position {
@@ -24,17 +25,33 @@ struct ResultsView: View {
                     Text("/\(result.total)").font(Theme.display(28)).foregroundStyle(.secondary)
                 }
                 Text(result.position == 1 ? "Zwycięstwo!" : "Meta").font(Theme.display(32))
+                HStack(spacing: 6) {
+                    ForEach(0..<3, id: \.self) { i in
+                        Image(systemName: i < result.stars ? "star.fill" : "star")
+                            .font(.system(size: 34))
+                            .foregroundStyle(i < result.stars ? Theme.accent : .white.opacity(0.3))
+                    }
+                }
+                HStack(spacing: 16) {
+                    Label("+\(result.coins)", systemImage: "dollarsign.circle.fill").foregroundStyle(Theme.shock)
+                    if result.newBest { Label("Nowy rekord!", systemImage: "sparkles").foregroundStyle(Theme.accent) }
+                }
+                .font(.title3.weight(.bold))
                 Grid(alignment: .leading, horizontalSpacing: 40, verticalSpacing: 8) {
                     row("Czas", formatTime(result.time))
                     row("Takedowny", "\(result.takedowns)")
                     row("Auto", result.carName)
                 }
                 HStack(spacing: 12) {
+                    if let next {
+                        Button(action: next) { Label("Dalej", systemImage: "arrow.right") }
+                            .buttonStyle(RaceButtonStyle(primary: true))
+                    }
                     Button(action: again) { Label("Jeszcze raz", systemImage: "arrow.triangle.2.circlepath") }
-                        .buttonStyle(RaceButtonStyle(primary: true))
+                        .buttonStyle(RaceButtonStyle(primary: next == nil))
                     Button(action: garage) { Label("Garaż", systemImage: "door.garage.closed") }
                         .buttonStyle(RaceButtonStyle())
-                    Button(action: menu) { Label("Menu", systemImage: "house.fill") }
+                    Button(action: campaign) { Label("Kampania", systemImage: "map.fill") }
                         .buttonStyle(RaceButtonStyle())
                 }
                 .padding(.top, 8)

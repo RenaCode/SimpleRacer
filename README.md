@@ -24,6 +24,24 @@ the App Store or TestFlight. The in-game interface is in Polish.
 Not implemented yet: ramps and jumps (barrel rolls, 360s), traffic, a takedown camera, sound,
 more tracks, tilt steering.
 
+## Campaign
+
+- **40 tracks in 5 regions** — City, Coast, Desert, Forest, Snow (8 each). The first track is
+  hand-made; the rest come from a seeded generator and a validator (closed loop that never comes
+  close to itself, corners of at least 32 m radius, at most 2 laps, wide road), and a test drives
+  six AI cars around every track. Each region has its own ground, buildings and trees.
+- **Stars**: a win gives 3, a podium 2, any finish 1. Stars unlock regions (0, 10, 22, 36 and 52);
+  inside a region tracks open one after another.
+- **Coins** for every race (more for harder tracks, better places and takedowns); races can be
+  replayed.
+- **Car rating** — one number from top speed, acceleration, handling and nitro. Every track
+  needs a minimum rating (650 → 820). Four upgrades (engine, acceleration, handling, nitro),
+  five levels each, raise it; better cars cost coins.
+- **Easy, for children**: rivals are a little weaker than the track's requirement and slow down
+  when far ahead; the starter car, fully upgraded, can finish the whole campaign; one playthrough
+  pays for those upgrades; and tests check that auto-steering alone reaches the podium on tracks
+  1, 10, 20, 30 and 40.
+
 ## Gameplay
 
 | Action | Touch | Keyboard | Controller |
@@ -123,7 +141,9 @@ Debug builds accept launch arguments for testing in the simulator:
 
 - `-autostartRace` skips the menu and starts a race straight away,
 - `-holdDrift` holds DRIFT from 8 seconds after launch,
-- `-finishSoon` puts the player 150 m before the finish line (to reach the results screen quickly).
+- `-finishSoon` puts the player 150 m before the finish line (to reach the results screen quickly),
+- `-track <n>` picks the campaign track, `-screen campaign|garage` opens a screen,
+- `-rich` gives coins and stars (to look at the shop and unlocks), `-car <id>` picks and owns a car.
 
 ```sh
 xcrun simctl launch booted com.renacode.simpleracer -autostartRace -holdDrift

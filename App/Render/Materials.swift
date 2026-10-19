@@ -154,5 +154,22 @@ enum Materials {
     }
 
     static let grassMaterial = tiled(grass, roughness: 1)
+
+    /// Podłoże w kolorze krainy (trawa, piasek, śnieg…): ziarnista faktura w odcieniach `color`.
+    static func ground(_ color: UIColor) -> PhysicallyBasedMaterial {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let img = image(width: 256, height: 256) { ctx in
+            ctx.setFillColor(color.cgColor)
+            ctx.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+            var rng = SystemRandomNumberGenerator()
+            for _ in 0..<3000 {
+                let k = CGFloat.random(in: 0.85...1.15, using: &rng)
+                ctx.setFillColor(UIColor(red: min(1, r * k), green: min(1, g * k), blue: min(1, b * k), alpha: 0.7).cgColor)
+                ctx.fill(CGRect(x: .random(in: 0..<256, using: &rng), y: .random(in: 0..<256, using: &rng), width: 3, height: 3))
+            }
+        }
+        return tiled(img, roughness: 1)
+    }
     static let roadSurfaceMaterial = tiled(roadSurface, roughness: 0.82)
 }

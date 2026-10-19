@@ -36,6 +36,13 @@ struct RaceResult: Equatable {
     var time: Double
     var takedowns: Int
     var carName: String
+    var trackId: Int = 1
+    /// Rozliczenie kampanii (uzupełnia AppModel po wyścigu).
+    var stars = 0
+    var coins = 0
+    var newBest = false
+    /// Następna trasa, jeśli właśnie się odblokowała albo była już dostępna.
+    var nextTrackId: Int?
 }
 
 @MainActor
@@ -44,6 +51,7 @@ final class AppModel {
     enum Screen: Equatable {
         case menu
         case garage
+        case campaign
         /// Nowy identyfikator = nowy wyścig od zera („Jeszcze raz”).
         case race(UUID)
     }
@@ -57,7 +65,15 @@ final class AppModel {
         }
     }
 
+    /// Postęp kampanii (gwiazdki, monety, auta, ulepszenia) — zapisywany na urządzeniu.
+    var campaign: CampaignState {
+        didSet { saveCampaign() }
+    }
+    /// Trasa wybrana do najbliższego wyścigu.
+    var trackId = 1
+
     private static let key = "simpleracer.profile"
+    private static let campaignKey = "simpleracer.campaign"
 
     init() {
         LocalAssets.shared.registerCars()
@@ -69,6 +85,14 @@ final class AppModel {
         } else {
             profile = .default
         }
+        if let data = UserDefaults.standard.data(forKey: Self.campaignKey),
+           let c = try? JSONDecoder().decode(CampaignState.self, from: data) {
+            campaign = c
+        } else {
+            campaign = Campaign.newGame()
+        }
+        // Jeździ się tylko własnym autem.
+        if !campaign.ownedCars.contains(profile.carId) { profile.carId = Campaign.starterCar }
         AudioManager.shared.musicOn = profile.musicOn
         AudioManager.shared.soundOn = profile.soundOn
         Task { await LocalAssets.shared.preload() }
@@ -78,14 +102,56 @@ final class AppModel {
         // `-car <id>` wybiera auto (podgląd modeli w symulatorze).
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-car"), i + 1 < args.count, CarCatalog.all.contains(where: { $0.id == args[i + 1] }) {
+            campaign.ownedCars.insert(args[i + 1])
             profile.carId = args[i + 1]
+        }
+        // `-rich` daje monety i gwiazdki (podgląd sklepu i odblokowań).
+        if args.contains("-rich") {
+            campaign.coins = 20_000
+            for spec in TrackCatalog.all.prefix(20) { campaign.bestStars[spec.id] = 3 }
+        }
+        if let i = args.firstIndex(of: "-track"), i + 1 < args.count, let id = Int(args[i + 1]) { trackId = id }
+        if let i = args.firstIndex(of: "-screen"), i + 1 < args.count {
+            screen = ["campaign": .campaign, "garage": .garage][args[i + 1]] ?? .menu
         }
         #endif
     }
 
     var car: CarDef { CarCatalog.car(id: profile.carId) }
+    /// Auto oglądane w garażu (może być jeszcze nie kupione); nil = auto gracza.
+    var garageCarId: String?
+    var previewCar: CarDef { garageCarId.map(CarCatalog.car) ?? car }
+    /// Auto gracza z ulepszeniami — tym się jeździ.
+    var playerCar: CarDef { Campaign.upgraded(car, in: campaign) }
+    var track: TrackSpec { TrackCatalog.track(id: trackId) }
 
     func startRace() { screen = .race(UUID()) }
+
+    func startRace(track id: Int) {
+        trackId = id
+        startRace()
+    }
+
+    /// Rozlicza wyścig w kampanii: gwiazdki, monety, następna trasa.
+    func settle(_ r: RaceResult) -> RaceResult {
+        var out = r
+        let spec = TrackCatalog.track(id: r.trackId)
+        let reward = Campaign.record(spec, place: r.position, takedowns: r.takedowns, &campaign)
+        out.stars = reward.stars
+        out.coins = reward.coins
+        out.newBest = reward.newBest
+        if r.trackId < TrackCatalog.count {
+            let next = TrackCatalog.track(id: r.trackId + 1)
+            if Campaign.isUnlocked(next, campaign) { out.nextTrackId = next.id }
+        }
+        return out
+    }
+
+    private func saveCampaign() {
+        if let data = try? JSONEncoder().encode(campaign) {
+            UserDefaults.standard.set(data, forKey: Self.campaignKey)
+        }
+    }
 
     private func save() {
         if let data = try? JSONEncoder().encode(profile) {

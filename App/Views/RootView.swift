@@ -18,6 +18,8 @@ struct RootView: View {
                 } else {
                     GarageView(model: model)
                 }
+            case .campaign:
+                CampaignView(model: model)
             case let .race(id):
                 if LocalAssets.shared.loadingDone {
                     RaceScreen(model: model).id(id)
@@ -54,7 +56,7 @@ private struct PreviewStage: View {
         } update: { _ in
             // Odczyt licznika podpina odświeżenie, gdy dojdzie realistyczny model.
             _ = LocalAssets.shared.loadedCount
-            preview.show(def: model.car, colorHex: model.profile.colorHex)
+            preview.show(def: model.previewCar, colorHex: model.profile.colorHex)
             preview.setLayout(model.screen == .garage ? .garage : .menu, narrow: narrow)
         }
     }

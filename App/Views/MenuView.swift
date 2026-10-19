@@ -1,3 +1,4 @@
+import RaceCore
 import SwiftUI
 
 struct MenuView: View {
@@ -25,6 +26,7 @@ struct MenuView: View {
                 Circle().fill(Color(hex: model.profile.colorHex)).frame(width: 14, height: 14)
                     .overlay(Circle().stroke(.white.opacity(0.3), lineWidth: 2))
                 Text(model.car.name).textCase(.uppercase).tracking(1.5)
+                Text("· moc \(Campaign.rating(model.playerCar))  ★ \(model.campaign.totalStars)  $ \(model.campaign.coins)")
             }
             .font(.system(size: 15, weight: .bold))
             .foregroundStyle(.secondary)
@@ -39,7 +41,7 @@ struct MenuView: View {
             .padding(.bottom, 16)
 
             HStack(spacing: 14) {
-                Button { model.startRace() } label: { Label("Wyścig", systemImage: "flag.checkered") }
+                Button { model.screen = .campaign } label: { Label("Kampania", systemImage: "flag.checkered") }
                     .buttonStyle(RaceButtonStyle(primary: true))
                 Button { model.screen = .garage } label: { Label("Garaż", systemImage: "door.garage.closed") }
                     .buttonStyle(RaceButtonStyle())

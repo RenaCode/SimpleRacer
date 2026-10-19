@@ -58,23 +58,29 @@ final class RaceGame {
 
     private static let rivals = ["Kuba", "Ola", "Marek", "Zosia", "Bartek", "Ewa", "Tomek"]
 
-    init(profile: Profile) {
+    @ObservationIgnored let spec: TrackSpec
+
+    init(profile: Profile, spec: TrackSpec, playerCar: CarDef) {
+        self.spec = spec
         let rng = SeededRandom(seed: UInt64(Date().timeIntervalSince1970 * 1000))
-        let track = TrackData.makeCityLoop()
+        let track = spec.makeTrack()
         let names = Self.rivals.shuffled()
+        // Rywale: dowolny wygląd, statystyki dopasowane do trasy (lekko słabsze od wymaganych).
         var entries: [Entry] = (0..<RaceConfig.opponents).map { i in
-            Entry(name: names[i], def: rng.pick(CarCatalog.all), color: rng.pick(CarCatalog.colors), isPlayer: false,
-                  controller: AIController(skill: 0.9 + rng.next() * 0.08, rng: SeededRandom(seed: UInt64(rng.next() * 1e15))))
+            Entry(name: names[i], def: Campaign.rival(looking: rng.pick(CarCatalog.all), on: spec),
+                  color: rng.pick(CarCatalog.colors), isPlayer: false,
+                  controller: AIController(skill: Campaign.aiSkill(spec) + rng.next() * 0.04,
+                                           rng: SeededRandom(seed: UInt64(rng.next() * 1e15))))
         }
         // Gracz startuje z końca stawki i musi przebić się do przodu.
         let playerControl: Controller = profile.autoSteer ? AutoSteerController(input: input) : PlayerController(input: input)
-        entries.append(Entry(name: "Ty", def: CarCatalog.car(id: profile.carId), color: profile.colorHex,
+        entries.append(Entry(name: "Ty", def: playerCar, color: profile.colorHex,
                              isPlayer: true, controller: playerControl))
-        sim = RaceSim(track: track, entries: entries)
+        sim = RaceSim(track: track, entries: entries, laps: spec.laps)
         countdownText = String(Int(RaceConfig.countdown))
 
         do {
-            root.addChild(try TrackBuilder.build(track))
+            root.addChild(try TrackBuilder.build(track, theme: .of(spec.region)))
         } catch {
             assertionFailure("Nie udało się zbudować trasy: \(error)")
         }
@@ -227,7 +233,7 @@ final class RaceGame {
                 // Po mecie autem gracza jedzie AI, a kamera zostaje.
                 sim.setController(AIController(skill: 0.9, rng: SeededRandom(seed: 1)), for: p)
                 pendingResult = RaceResult(position: position, total: sim.cars.count, time: p.finishTime,
-                                           takedowns: p.takedowns, carName: p.def.name)
+                                           takedowns: p.takedowns, carName: p.def.name, trackId: spec.id)
             default:
                 break
             }

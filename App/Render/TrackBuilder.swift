@@ -5,7 +5,7 @@ import UIKit
 /// Buduje trasę: jezdnia, linie, krawężniki, bandy, trawa, brama startowa i budynki dla poczucia prędkości.
 @MainActor
 enum TrackBuilder {
-    static func build(_ track: Track) throws -> Entity {
+    static func build(_ track: Track, theme: TrackTheme = .of(.city)) throws -> Entity {
         let root = Entity()
         let hw = track.halfWidth
 
@@ -74,12 +74,12 @@ enum TrackBuilder {
         var grass = MeshBuilder()
         let g: Float = 2000, reps = g / 6
         grass.quad([-g, -0.3, g], [g, -0.3, g], [g, -0.3, -g], [-g, -0.3, -g], uv: [[0, 0], [reps, 0], [reps, reps], [0, reps]])
-        try add(grass, "grass", Materials.grassMaterial)
+        try add(grass, "grass", Materials.ground(theme.ground))
 
         root.addChild(startGate(track))
         root.addChild(startArea(track))
-        root.addChild(buildings(track))
-        root.addChild(roadside(track))
+        root.addChild(buildings(track, theme: theme))
+        root.addChild(roadside(track, theme: theme))
         return root
     }
 
@@ -128,7 +128,8 @@ enum TrackBuilder {
         s > track.length - 110 || s < 15
     }
 
-    private static func buildings(_ track: Track) -> Entity {
+    private static func buildings(_ track: Track, theme: TrackTheme) -> Entity {
+        guard theme.buildings > 0 else { return Entity() }
         let lib = ModelLibrary.shared
         let regular = cityModels.filter { lib.size($0) != nil }
         let tall = skyscrapers.filter { lib.size($0) != nil }
@@ -140,13 +141,14 @@ enum TrackBuilder {
         for side in [1.0, -1.0] {
             var s = 0.0
             while s < track.length {
-                let path = (!tall.isEmpty && rng.next() < 0.25) ? rng.pick(tall) : rng.pick(regular)
+                let path = (!tall.isEmpty && rng.next() < 0.25 * theme.buildings) ? rng.pick(tall) : rng.pick(regular)
                 let size = lib.size(path)!
                 let scale = Float(12 + rng.next() * 6)
                 let footprint = Double(max(size.x, size.z) * scale)
                 let offset = side * (hw + 9 + footprint / 2 + rng.next() * 12)
                 let pos = track.toWorld(s: s + footprint / 2, d: offset)
-                let skip = isStartArea(s, track) || track.distanceToAxis(x: pos.x, z: pos.z) < hw + 6 + footprint * 0.6
+                let skip = isStartArea(s, track) || rng.next() > theme.buildings
+                    || track.distanceToAxis(x: pos.x, z: pos.z) < hw + 6 + footprint * 0.6
                 if !skip, let b = lib.prop(path, scale: scale) {
                     b.position = [Float(pos.x), 0, Float(pos.z)]
                     b.orientation = simd_quatf(angle: facingAxis(heading: pos.heading, side: side), axis: [0, 1, 0])
@@ -219,7 +221,7 @@ enum TrackBuilder {
     }
 
     /// Drzewa i latarnie między bandą a budynkami.
-    private static func roadside(_ track: Track) -> Entity {
+    private static func roadside(_ track: Track, theme: TrackTheme) -> Entity {
         let root = Entity()
         let rng = SeededRandom(seed: 99)
         let hw = track.halfWidth
@@ -231,11 +233,11 @@ enum TrackBuilder {
             .map { Materials.matte(UIColor(red: $0.0, green: $0.1, blue: $0.2, alpha: 1), roughness: 0.95) }
         var s = 6.0
         while s < track.length {
-            for side in [1.0, -1.0] where rng.next() < 0.7 {
+            for side in [1.0, -1.0] where rng.next() < theme.trees {
                 let off = side * (hw + 5 + rng.next() * 4)
                 let pos = track.toWorld(s: s, d: off)
                 guard track.distanceToAxis(x: pos.x, z: pos.z) > hw + 3.5 else { continue }
-                let treePath = rng.next() < 0.6 ? "Track/treeLarge" : "Track/treeSmall"
+                let treePath = rng.next() < theme.largeTrees ? "Track/treeLarge" : "Track/treeSmall"
                 if let model = ModelLibrary.shared.prop(treePath, scale: Float(5.5 + rng.next() * 2.5)) {
                     model.position = [Float(pos.x), 0, Float(pos.z)]
                     model.orientation = simd_quatf(angle: Float(rng.next() * 2 * .pi), axis: [0, 1, 0])
@@ -266,6 +268,7 @@ enum TrackBuilder {
         let metal = Materials.matte(UIColor(white: 0.35, alpha: 1), roughness: 0.4, metallic: 0.8)
         let lamp = Materials.glow(UIColor(red: 1, green: 0.95, blue: 0.82, alpha: 1), intensity: 1.5)
         s = 20
+        guard theme.lamps else { return root }
         while s < track.length {
             for side in [1.0, -1.0] {
                 let pos = track.toWorld(s: s, d: side * (hw + 2.6))
@@ -289,5 +292,26 @@ enum TrackBuilder {
             s += 45
         }
         return root
+    }
+}
+
+/// Wygląd otoczenia trasy w danej krainie.
+struct TrackTheme {
+    var ground: UIColor
+    /// 0…1 — jaka część działek przy trasie ma budynek.
+    var buildings: Double
+    /// 0…1 — gęstość drzew; `largeTrees` — udział dużych drzew.
+    var trees: Double
+    var largeTrees: Double
+    var lamps: Bool
+
+    static func of(_ region: Region) -> TrackTheme {
+        switch region {
+        case .city: TrackTheme(ground: UIColor(red: 0.30, green: 0.45, blue: 0.24, alpha: 1), buildings: 1, trees: 0.7, largeTrees: 0.6, lamps: true)
+        case .coast: TrackTheme(ground: UIColor(red: 0.86, green: 0.78, blue: 0.56, alpha: 1), buildings: 0.35, trees: 0.45, largeTrees: 0.9, lamps: true)
+        case .desert: TrackTheme(ground: UIColor(red: 0.85, green: 0.62, blue: 0.36, alpha: 1), buildings: 0.15, trees: 0.08, largeTrees: 0.2, lamps: false)
+        case .forest: TrackTheme(ground: UIColor(red: 0.20, green: 0.36, blue: 0.17, alpha: 1), buildings: 0, trees: 1, largeTrees: 0.8, lamps: false)
+        case .snow: TrackTheme(ground: UIColor(red: 0.93, green: 0.95, blue: 0.98, alpha: 1), buildings: 0.2, trees: 0.8, largeTrees: 0.15, lamps: true)
+        }
     }
 }
