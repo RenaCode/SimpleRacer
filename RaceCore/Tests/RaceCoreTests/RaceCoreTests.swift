@@ -495,3 +495,175 @@ final class ArcadePhysicsTests: XCTestCase {
         XCTAssertGreaterThan(c.speed, 50 + Physics.nitroKick * 0.9)
     }
 }
+
+final class TrackCatalogTests: XCTestCase {
+    func testFortyValidTracksInFiveRegions() {
+        XCTAssertEqual(TrackCatalog.all.count, 40)
+        for r in Region.allCases {
+            XCTAssertEqual(TrackCatalog.all.filter { $0.region == r }.count, 8, r.name)
+        }
+        for spec in TrackCatalog.all {
+            XCTAssertEqual(TrackValidator.problems(spec.makeTrack()), [], "trasa \(spec.id) \(spec.name)")
+        }
+        XCTAssertEqual(Set(TrackCatalog.all.map(\.name)).count, 40, "nazwy unikalne")
+    }
+
+    /// Walidator naprawdę odrzuca złe trasy (kontrola, że test powyżej coś sprawdza).
+    func testValidatorRejectsBadTracks() {
+        let hairpin: [SIMD2<Double>] = [[0, 0], [300, 0], [310, 20], [0, 25]]
+        XCTAssertFalse(TrackValidator.problems(Track(points: hairpin, halfWidth: 9)).isEmpty)
+        let tiny: [SIMD2<Double>] = [[0, 0], [100, 0], [100, 100], [0, 100]]
+        XCTAssertFalse(TrackValidator.problems(Track(points: tiny, halfWidth: 9)).isEmpty)
+    }
+
+    /// Trudność rośnie łagodnie (gra dla dzieci): najwyżej 2 okrążenia, jezdnia zawsze szeroka.
+    func testDifficultyGrowsGently() {
+        let first = TrackCatalog.all.first!, last = TrackCatalog.all.last!
+        XCTAssertLessThan(first.difficulty, last.difficulty)
+        XCTAssertTrue(TrackCatalog.all.allSatisfy { $0.laps <= 2 })
+        XCTAssertTrue(TrackCatalog.all.allSatisfy { $0.halfWidth >= 8.5 })
+        XCTAssertLessThan(last.halfWidth, first.halfWidth)
+    }
+
+    /// Na każdej z 40 tras sześć aut AI przejeżdża okrążenie bez rozbicia o bandę.
+    func testAIDrivesEveryTrackCleanly() {
+        for spec in TrackCatalog.all {
+            let track = spec.makeTrack()
+            let entries = (0..<6).map { i in
+                Entry(name: "AI \(i)", def: CarCatalog.builtIn[i % 3], color: "#FFFFFF", isPlayer: i == 5,
+                      controller: AIController(skill: 0.95, rng: SeededRandom(seed: UInt64(i + spec.id * 10))))
+            }
+            let sim = RaceSim(track: track, entries: entries, laps: 1)
+            var wrecks = 0, takedowns = 0
+            while sim.finishOrder.count < 6 && sim.time < 200 {
+                sim.advance()
+                for e in sim.events {
+                    if case .wreck = e { wrecks += 1 }
+                    if case .takedown = e { takedowns += 1 }
+                }
+                sim.events.removeAll()
+            }
+            XCTAssertEqual(sim.finishOrder.count, 6, "trasa \(spec.id): nie wszyscy dojechali")
+            XCTAssertEqual(wrecks - takedowns, 0, "trasa \(spec.id) \(spec.name): rozbicia o bandę")
+        }
+    }
+}
+
+final class CampaignTests: XCTestCase {
+    let starter = CarCatalog.car(id: Campaign.starterCar)
+    let maxed: [Upgrade: Int] = Dictionary(uniqueKeysWithValues: Upgrade.allCases.map { ($0, Campaign.maxLevel) })
+
+    func testUpgradesRaiseRating() {
+        let base = Campaign.rating(starter)
+        let one = Campaign.rating(Campaign.upgraded(starter, levels: [.engine: 1]))
+        let full = Campaign.rating(Campaign.upgraded(starter, levels: maxed))
+        XCTAssertGreaterThan(one, base)
+        XCTAssertGreaterThan(full, one)
+    }
+
+    /// Łatwo dla dzieci: auto startowe po pełnym ulepszeniu przejdzie każdą trasę,
+    /// a na pierwsze trasy wystarczy bez ulepszeń.
+    func testStarterCarCanFinishWholeCampaign() {
+        let full = Campaign.rating(Campaign.upgraded(starter, levels: maxed))
+        let hardest = TrackCatalog.all.map(Campaign.requiredRating).max()!
+        XCTAssertGreaterThanOrEqual(full, hardest)
+        XCTAssertGreaterThanOrEqual(Campaign.rating(starter), Campaign.requiredRating(TrackCatalog.all[0]))
+        let freeTracks = TrackCatalog.all.filter { Campaign.rating(starter) >= Campaign.requiredRating($0) }.count
+        XCTAssertGreaterThanOrEqual(freeTracks, 8, "cała pierwsza kraina bez ulepszeń")
+    }
+
+    /// Monety z jednego przejścia kampanii (nawet na 3. miejscach) starczą na pełne ulepszenie auta startowego.
+    func testOnePlaythroughPaysForFullUpgrade() {
+        let earned = TrackCatalog.all.map { Campaign.reward($0, place: 3, takedowns: 0) }.reduce(0, +)
+        let cost = Upgrade.allCases.count * (1...Campaign.maxLevel).map(Campaign.upgradeCost).reduce(0, +)
+        XCTAssertGreaterThanOrEqual(earned, cost)
+    }
+
+    func testStarsAndRewards() {
+        XCTAssertEqual(Campaign.stars(place: 1), 3)
+        XCTAssertEqual(Campaign.stars(place: 3), 2)
+        XCTAssertEqual(Campaign.stars(place: 6), 1, "każde dojechanie daje gwiazdkę")
+        let spec = TrackCatalog.all[10]
+        XCTAssertGreaterThan(Campaign.reward(spec, place: 1, takedowns: 0), Campaign.reward(spec, place: 2, takedowns: 0))
+        XCTAssertGreaterThan(Campaign.reward(spec, place: 6, takedowns: 0), 0)
+        XCTAssertGreaterThan(Campaign.reward(spec, place: 2, takedowns: 2), Campaign.reward(spec, place: 2, takedowns: 0))
+    }
+
+    func testRecordKeepsBestStarsAndAddsCoins() {
+        var st = Campaign.newGame()
+        let spec = TrackCatalog.all[0]
+        let a = Campaign.record(spec, place: 2, takedowns: 0, &st)
+        let b = Campaign.record(spec, place: 5, takedowns: 0, &st)
+        XCTAssertTrue(a.newBest)
+        XCTAssertFalse(b.newBest)
+        XCTAssertEqual(st.bestStars[spec.id], 2)
+        XCTAssertEqual(st.coins, a.coins + b.coins)
+    }
+
+    func testUnlockingProgression() {
+        var st = Campaign.newGame()
+        let t1 = TrackCatalog.all[0], t2 = TrackCatalog.all[1], coast1 = TrackCatalog.all[8]
+        XCTAssertTrue(Campaign.isUnlocked(t1, st))
+        XCTAssertFalse(Campaign.isUnlocked(t2, st), "kolejna trasa po ukończeniu poprzedniej")
+        Campaign.record(t1, place: 6, takedowns: 0, &st)
+        XCTAssertTrue(Campaign.isUnlocked(t2, st))
+        XCTAssertFalse(Campaign.isUnlocked(coast1, st), "kraina za gwiazdki")
+        for spec in TrackCatalog.all.prefix(8) { Campaign.record(spec, place: 2, takedowns: 0, &st) }
+        XCTAssertGreaterThanOrEqual(st.totalStars, Campaign.starsToUnlock[1])
+        XCTAssertTrue(Campaign.isUnlocked(coast1, st), "8 tras na podium otwiera Wybrzeże")
+    }
+
+    func testBuyingUpgradesAndCars() throws {
+        var st = Campaign.newGame()
+        XCTAssertThrowsError(try Campaign.buyUpgrade(.engine, car: Campaign.starterCar, &st))
+        st.coins = 1000
+        try Campaign.buyUpgrade(.engine, car: Campaign.starterCar, &st)
+        XCTAssertEqual(st.level(.engine, car: Campaign.starterCar), 1)
+        XCTAssertEqual(st.coins, 1000 - Campaign.upgradeCost(toLevel: 1))
+        XCTAssertThrowsError(try Campaign.buyUpgrade(.engine, car: "grom", &st), "nie można ulepszać cudzego auta")
+        let grom = CarCatalog.car(id: "grom")
+        st.coins = Campaign.price(of: grom)
+        try Campaign.buyCar(grom, &st)
+        XCTAssertTrue(st.ownedCars.contains("grom"))
+        XCTAssertEqual(st.coins, 0)
+    }
+
+    func testStateSurvivesSaving() throws {
+        var st = Campaign.newGame()
+        st.coins = 321
+        st.bestStars[3] = 2
+        st.upgrades["strzala"] = [.nitro: 2]
+        let back = try JSONDecoder().decode(CampaignState.self, from: JSONEncoder().encode(st))
+        XCTAssertEqual(back, st)
+    }
+
+    /// Łatwo dla dzieci: na trasach z całej kampanii samo auto-prowadzenie (bez dotykania),
+    /// autem o wymaganej mocy, kończy na podium wśród rywali o umiejętności z kampanii.
+    func testAutopilotReachesPodiumAcrossCampaign() {
+        for id in [1, 10, 20, 30, 40] {
+            let spec = TrackCatalog.track(id: id)
+            // Najmniej ulepszeń, które dają wymaganą moc (po kolei: silnik, przyspieszenie, prowadzenie, nitro).
+            var levels: [Upgrade: Int] = [:]
+            var def = Campaign.upgraded(starter, levels: levels)
+            outer: for lvl in 1...Campaign.maxLevel {
+                for u in Upgrade.allCases where Campaign.rating(def) < Campaign.requiredRating(spec) {
+                    levels[u] = lvl
+                    def = Campaign.upgraded(starter, levels: levels)
+                }
+                if Campaign.rating(def) >= Campaign.requiredRating(spec) { break outer }
+            }
+            let track = spec.makeTrack()
+            var entries = (0..<5).map { i in
+                Entry(name: "AI \(i)", def: CarCatalog.builtIn[i % 3], color: "#FFFFFF", isPlayer: false,
+                      controller: AIController(skill: Campaign.aiSkill(spec), rng: SeededRandom(seed: UInt64(i * 31 + id))))
+            }
+            entries.append(Entry(name: "Gracz", def: def, color: "#FFFFFF", isPlayer: true,
+                                 controller: AutoSteerController(input: FakeInput())))
+            let sim = RaceSim(track: track, entries: entries, laps: spec.laps)
+            while !(sim.player!.finished) && sim.time < 300 { sim.advance(); sim.events.removeAll() }
+            let place = sim.finishOrder.firstIndex { $0 === sim.player! }.map { $0 + 1 } ?? 99
+            print("trasa \(id) (\(spec.name)): auto-prowadzenie na miejscu \(place), moc \(Campaign.rating(def))/\(Campaign.requiredRating(spec))")
+            XCTAssertLessThanOrEqual(place, 3, "trasa \(id)")
+        }
+    }
+}

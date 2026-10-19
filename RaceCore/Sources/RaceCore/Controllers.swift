@@ -114,7 +114,8 @@ public final class AIController: Controller {
 
         // Gumka: dystans do gracza lekko zmienia prędkość, żeby wyścig był wyrównany.
         let gap = ctx.playerDistance - car.distance
-        car.speedScale = skill * clamp(1 + gap / 800, 0.93, 1.07)
+        // Na korzyść gracza (gra dla dzieci): rywal daleko z przodu zwalnia mocniej, niż przyspiesza z tyłu.
+        car.speedScale = skill * clamp(1 + gap / 600, 0.85, 1.05)
 
         return CarInput(steer: steer, drift: drift, nitro: nitro, brake: LineFollower.needsBrake(car: car, track: track))
     }
