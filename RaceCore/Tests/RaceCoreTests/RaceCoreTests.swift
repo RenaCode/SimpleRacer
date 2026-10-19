@@ -815,6 +815,41 @@ final class KidSafetyTests: XCTestCase {
         XCTAssertFalse(p.wrecked)
     }
 
+    /// Prostokąt kolizji ma wymiary aut z pary: długi „Grom” (4,7 m) i krótki „Zwinny” (4,0 m) stykają się
+    /// przy odstępie środków (4,7 + 4,0) / 2 = 4,35 m, a nie przy stałych 4,4 m.
+    func testCollisionUsesLengthsOfBothCars() {
+        let len = 1000.0
+        let long = CarCatalog.builtIn.first { $0.id == "grom" }!
+        let short = CarCatalog.builtIn.first { $0.id == "zwinny" }!
+        func rivals(gap: Double, _ a: CarDef, _ b: CarDef) -> (Car, Car) {
+            let front = Car(name: "A", def: a, color: "#FFFFFF", isPlayer: false, startDistance: 100 + gap, startLane: 0, trackLength: len)
+            let back = Car(name: "B", def: b, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 0, trackLength: len)
+            front.speed = 40; back.speed = 41
+            return (front, back)
+        }
+        // 4,38 m: przy stałym 4,4 m byłby styk, przy wymiarach tej pary — jeszcze nie.
+        let (f1, b1) = rivals(gap: 4.38, long, short)
+        _ = Collisions.resolve([f1, b1], trackLength: len)
+        XCTAssertEqual(f1.s, 104.38, accuracy: 1e-9)
+        XCTAssertEqual(b1.s, 100, accuracy: 1e-9)
+        // 4,30 m: styk — auta rozsuwają się dokładnie na 4,35 m i tylko się przepychają (rywale się nie rozbijają).
+        let (f2, b2) = rivals(gap: 4.30, long, short)
+        _ = Collisions.resolve([f2, b2], trackLength: len)
+        XCTAssertEqual(wrapDelta(f2.s, b2.s, len), 4.35, accuracy: 1e-9)
+        XCTAssertFalse(f2.wrecked || b2.wrecked)
+        // Dwa długie auta: styk już przy 4,6 m.
+        let (f3, b3) = rivals(gap: 4.6, long, long)
+        _ = Collisions.resolve([f3, b3], trackLength: len)
+        XCTAssertEqual(wrapDelta(f3.s, b3.s, len), 4.7, accuracy: 1e-9)
+        // Gracz w krótkim aucie wjeżdżany od tyłu przez długiego rywala: dalej tylko odepchnięcie.
+        let p = Car(name: "Gracz", def: short, color: "#FFFFFF", isPlayer: true, startDistance: 104.3, startLane: 0, trackLength: len)
+        let r = Car(name: "Rywal", def: long, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 0, trackLength: len)
+        p.speed = 40; r.speed = 80
+        let out = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertFalse(p.wrecked)
+        XCTAssertTrue(out.isEmpty)
+    }
+
     /// Rywal w fali uderzeniowej też nie rozbija gracza.
     func testRivalShockwaveCannotWreckPlayer() {
         let (p, r, len) = pair(playerBehind: false)

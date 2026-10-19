@@ -352,7 +352,11 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
 - **Wheels:** the realistic car models have their wheel parts (wheel, tyre, rim, disc; not the
   steering wheel or brake calipers) found by name and grouped into four wheels by position, then
   hung on an axle at each wheel's centre. They roll with the distance driven, and the front wheels
-  steer: angle ≈ wheelbase × yaw rate / speed (Ackermann), with counter-steer in a drift.
+  steer: angle ≈ wheelbase × yaw rate / speed (Ackermann), with counter-steer in a drift. The
+  player's front wheels turn as soon as the steering input arrives, before the car changes course.
+- **Merged car meshes:** when a realistic model loads, its hundreds of USD prims are merged once into
+  a few meshes (body, paint, four wheels), with parts of the same material joined into one draw;
+  every car in the race shares them (about 13 entities per car instead of 50–190).
 - **Suspension:** the body leans out of corners, squats when accelerating and dives when braking,
   smoothed like a spring. Only the body moves: it pivots around the axle height while the wheels stay
   on the road (unsprung), with road-car angles (up to 3.5° roll, 2° pitch).
@@ -363,7 +367,12 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
   mesh with a ring buffer (the oldest disappear); a small mesh with the newest segments is updated
   every frame, so the mark starts right under the tyre.
 - **Tyre smoke:** many faint, growing particles born along the path the wheel travelled in the
-  frame, so the smoke is a haze rather than separate puffs.
+  frame, so the smoke is a haze rather than separate puffs. Cars more than 60 m from the camera
+  don't smoke.
+- **Nitro flame:** a soft tongue of fire (crossed planes with a texture fading along and across)
+  going from a white-blue core to orange, flickering, plus a stream of particles.
+- **Nitro canisters:** a modelled N₂O bottle (rounded base, shoulder, valve with handwheel and outlet,
+  metal bands, a label) in metallic blue paint with clear coat, brushed metal and a faint glow.
 - **Speed lines:** thin streaks at the screen edges during nitro and above 260 km/h.
 - **Smooth motion:** physics runs at a fixed 120 Hz; the render interpolates cars between the last
   two physics steps, so motion is even at any refresh rate (no stop-then-jump frames).
@@ -376,8 +385,9 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
 - **Camera:** spring distance and height, a kick on nitro, mini-turbo and wall hits; shake from
   smooth noise scaled by "trauma" squared instead of per-frame random jitter.
 - **Wall hits:** a wall contact without a wreck sends sparks, a camera shake and a metal scrape.
-- **Collisions:** wrecked cars are obstacles (others steer around them) and restart without a speed
-  jump; rivals only push each other — takedowns are the player's.
+- **Collisions:** each car is a rectangle of its own size (for a pair, the average length and width);
+  wrecked cars are obstacles (others steer around them) and restart without a speed jump; rivals
+  only push each other — takedowns are the player's.
 
 ## Loading
 

@@ -230,24 +230,10 @@ final class RaceGame {
         return cur
     }
 
-    /// Butla nitro: błyszcząca niebieska kapsuła (jedna siatka) w świetlistej poświacie — dwie części,
+    /// Butla nitro: fotorealistyczna butla podtlenku azotu z delikatną poświatą (`NitroCanister`) — dwie encje,
     /// bo przy kilkudziesięciu butlach na trasie każda część to osobne polecenie rysowania.
     private static func pickupModel() -> Entity {
-        let e = Entity()
-        let blue = UIColor(red: 0.15, green: 0.6, blue: 1, alpha: 1)
-        var shell = PhysicallyBasedMaterial()
-        shell.baseColor = .init(tint: blue)
-        shell.emissiveColor = .init(color: blue)
-        shell.emissiveIntensity = 1.8
-        shell.metallic = 0.6
-        shell.roughness = 0.2
-        shell.clearcoat = 1.0
-        let tank = ModelEntity(mesh: .generateBox(width: 0.6, height: 1.3, depth: 0.6, cornerRadius: 0.3), materials: [shell])
-        e.addChild(tank)
-        var haloMat = UnlitMaterial(color: UIColor(red: 0.4, green: 0.8, blue: 1, alpha: 1))
-        haloMat.blending = .transparent(opacity: .init(floatLiteral: 0.2))
-        e.addChild(ModelEntity(mesh: .generateSphere(radius: 0.8), materials: [haloMat]))
-        return e
+        NitroCanister.make()
     }
 
     #if DEBUG || FAMILY
@@ -463,13 +449,14 @@ final class RaceGame {
                 let id = ObjectIdentifier(car)
                 let yawRate = lastYaw[id].map { wrapAngle(yaw - $0) / frameDt } ?? 0
                 lastYaw[id] = yaw
-                e.updateSuspension(yawRate: yawRate, speed: car.speed, slide: pose.slide, dt: frameDt)
+                e.updateSuspension(yawRate: yawRate, speed: car.speed, slide: pose.slide, dt: frameDt,
+                                   steerInput: car.isPlayer ? car.lastSteer : nil)
             }
             // Pierwsze klatki odliczania: płomień i dym pojawiają się na moment, zanim ruszy wyścig —
             // przygotowanie efektów nie wypada już na pierwsze nitro rywali po starcie.
             let rev = phase == .countdown && clock < 0.15
             e.setFlame(rev ? .normal : car.nitro.mode)
-            e.setSmoke((rev && clock < 0.05) || car.drifting)
+            e.setSmoke((rev && clock < 0.05) || car.drifting, viewer: camera.position)
             e.spinWheels(distance: pose.distance)
             // Ślady opon: w drifcie, gdy auto jest blisko gracza (dalej i tak ich nie widać).
             if abs(wrapDelta(car.s, playerS, sim.track.length)) < 80 {
