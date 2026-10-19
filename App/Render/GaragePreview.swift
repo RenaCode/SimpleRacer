@@ -16,16 +16,15 @@ final class GaragePreview {
     private var colorHex = ""
     private var angle: Float = 0.6
     private var backdrop = Entity()
+    private var carShadow = Entity()
 
     init() {
-        let floor = ModelEntity(mesh: .generateCylinder(height: 0.25, radius: 4.3),
-                                materials: [SimpleMaterial(color: UIColor(red: 0.17, green: 0.18, blue: 0.23, alpha: 1), roughness: 0.5, isMetallic: true)])
-        floor.position.y = -0.13
-        turntable.addChild(floor)
-        let ring = ModelEntity(mesh: .generateCylinder(height: 0.02, radius: 4.45),
-                               materials: [UnlitMaterial(color: UIColor(red: 1, green: 0.84, blue: 0.04, alpha: 1))])
-        ring.position.y = -0.14
-        turntable.addChild(ring)
+        // Obrotnica jak w salonie: cokół stoi, tarcza z autem się obraca.
+        let podium = Podium.make()
+        root.addChild(podium.base)
+        turntable.addChild(podium.top)
+        carShadow = podium.shadow
+        carShadow.isEnabled = false
         root.addChild(turntable)
 
         // Tło: zdjęcie panoramiczne prawdziwego warsztatu (CC0) — ono też oświetla lakier i daje odbicia.
@@ -64,8 +63,10 @@ final class GaragePreview {
             car?.root.removeFromParent()
             car = nil
             carId = ""
+            carShadow.isEnabled = false
             return
         }
+        carShadow.isEnabled = true
         if let car, carId == def.id, realisticShown == realisticReady {
             if colorHex != self.colorHex { car.setColor(UIColorHex.color(colorHex)) }
         } else {
