@@ -486,9 +486,10 @@ enum PropAtlas {
     /// normalne, chropowatość) w App/Ground/props-steel*.jpg; bez plików — plamista faktura z kodu.
     static let steelMaterial: PhysicallyBasedMaterial = {
         var m = PhysicallyBasedMaterial()
-        m.metallic = 1.0
-        // Chropowatość jak u matowego cynku — gładsza stal odbijała niebo jak lustro (niebieskie taśmy).
-        m.roughness = 0.6
+        // Stary, zmatowiały ocynk: częściowo metal, mocno chropowaty. Profil W odbijał wyraźnie niebo
+        // (górne pochyłości) i piasek (dolne) — niebiesko-żółte pasy wyglądały sztucznie.
+        m.metallic = 0.75
+        m.roughness = 0.75
         func tex(_ name: String) -> TextureResource? {
             Bundle.main.url(forResource: name, withExtension: "jpg").flatMap(SkyEnvironment.texture)
         }
@@ -497,7 +498,7 @@ enum PropAtlas {
             m.baseColor = .init(tint: UIColor(white: 0.9, alpha: 1), texture: .init(color, sampler: sampler(repeat: true)))
             if let n = tex("props-steel-normal") { m.normal = .init(texture: .init(n, sampler: sampler(repeat: true))) }
             if let r = tex("props-steel-rough") {
-                m.roughness = .init(scale: 1.6, texture: .init(r, sampler: sampler(repeat: true)))
+                m.roughness = .init(scale: 2.2, texture: .init(r, sampler: sampler(repeat: true)))
             }
             return m
         }

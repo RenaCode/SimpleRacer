@@ -155,6 +155,7 @@ final class RaceGame {
             root.addChild(e.root)
             cars.append((car, e))
         }
+        debugLog("wyścig: auta gotowe")
 
         // Słońce z panoramy krainy: kierunek z najjaśniejszego miejsca nieba, barwa z jego otoczenia —
         // cienie padają tam, gdzie wskazuje zdjęcie, a światło ma kolor nieba, nie czystą biel.
