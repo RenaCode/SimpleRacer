@@ -15,7 +15,7 @@ final class GaragePreview {
     private var carId = ""
     private var colorHex = ""
     private var angle: Float = 0.6
-    private var backdrop = ModelEntity()
+    private var backdrop = Entity()
 
     init() {
         let floor = ModelEntity(mesh: .generateCylinder(height: 0.25, radius: 4.3),
@@ -30,8 +30,9 @@ final class GaragePreview {
 
         // Tło: zdjęcie panoramiczne prawdziwego warsztatu (CC0) — ono też oświetla lakier i daje odbicia.
         let photo = SkyEnvironment.panorama(named: "garage")
-        if let photo {
-            backdrop = SkyEnvironment.skyDome(radius: 80, image: photo)
+        // Kamera patrzy na niebieską ścianę z barierami z opon (zdjęcie obrócone o −90°).
+        if let dome = SkyEnvironment.panoramaDome(named: "garage", radius: 80, yaw: -.pi / 2) {
+            backdrop = dome
         } else {
             var bg = UnlitMaterial(color: UIColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 1))
             bg.faceCulling = .front

@@ -10,7 +10,8 @@
   "name": "island-tree-01",
   "regions": [
    "city",
-   "coast"
+   "coast",
+   "forest"
   ],
   "side": "impostors/island-tree-01-side.png",
   "size": [
@@ -30,7 +31,8 @@
   "name": "island-tree-02",
   "regions": [
    "city",
-   "coast"
+   "coast",
+   "forest"
   ],
   "side": "impostors/island-tree-02-side.png",
   "size": [
@@ -50,7 +52,8 @@
   "name": "island-tree-03",
   "regions": [
    "city",
-   "coast"
+   "coast",
+   "forest"
   ],
   "side": "impostors/island-tree-03-side.png",
   "size": [
@@ -149,7 +152,6 @@
   "max": null,
   "name": "pine-tree-01-1",
   "regions": [
-   "forest",
    "snow"
   ],
   "side": "impostors/pine-tree-01-1-side.png",
@@ -169,7 +171,6 @@
   "max": null,
   "name": "fir-sapling-medium-0",
   "regions": [
-   "forest",
    "snow"
   ],
   "side": "impostors/fir-sapling-medium-0-side.png",
@@ -189,7 +190,6 @@
   "max": null,
   "name": "fir-sapling-medium-1",
   "regions": [
-   "forest",
    "snow"
   ],
   "side": "impostors/fir-sapling-medium-1-side.png",
@@ -209,7 +209,6 @@
   "max": null,
   "name": "fir-sapling-medium-2",
   "regions": [
-   "forest",
    "snow"
   ],
   "side": "impostors/fir-sapling-medium-2-side.png",

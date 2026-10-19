@@ -18,7 +18,7 @@ out_root = os.path.abspath(args[1]) if len(args) > 1 else folder
 out_dir = os.path.join(out_root, "impostors")
 os.makedirs(out_dir, exist_ok=True)
 entries = json.load(open(os.path.join(folder, "scenery.json")))
-PIXELS = 512
+PIXELS = 1024
 
 
 def reset_scene():
@@ -35,11 +35,13 @@ def reset_scene():
     world = bpy.data.worlds.new("sky")
     world.use_nodes = True
     bg = world.node_tree.nodes["Background"]
-    bg.inputs[0].default_value = (0.75, 0.82, 0.95, 1)
-    bg.inputs[1].default_value = 0.9
+    # Neutralne, lekko ciepłe otoczenie: niebieskie dawało szare, „wyprane” iglaki.
+    bg.inputs[0].default_value = (0.92, 0.9, 0.84, 1)
+    bg.inputs[1].default_value = 0.65
     scene.world = world
     sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
-    sun.data.energy = 3.2
+    sun.data.energy = 4.0
+    sun.data.color = (1.0, 0.96, 0.9)
     sun.rotation_euler = (math.radians(50), 0, math.radians(-35))
     scene.collection.objects.link(sun)
     return scene

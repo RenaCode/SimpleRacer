@@ -120,6 +120,13 @@ to keep the chosen car, colour and steering mode on the device. The game makes n
   brew install xcodegen
   ```
 
+- The Metal toolchain, for the ground shader. Newer Xcode versions download it separately; if the
+  build stops with "missing Metal Toolchain", run:
+
+  ```sh
+  xcodebuild -downloadComponent MetalToolchain
+  ```
+
 ## Building
 
 ```sh
@@ -199,12 +206,12 @@ latest stable Xcode and needs no specific simulator or code signing.
 - **The app** (SwiftUI + RealityKit) renders it. `RaceGame` wraps the simulation, places the car
   entities, drives the chase camera and publishes the HUD state to SwiftUI; menus, the garage,
   the HUD and the touch controls are SwiftUI views over a `RealityView` with a virtual camera.
-  Cars, buildings, trees, street lights and the start area (gantry, grandstands, tents, flags)
-  are CC0 models by Kenney (see [3D models](#3d-models)), loaded from OBJ files at runtime by a
-  small parser in `RaceCore`. Every model has a code-generated fallback, used when its file is
-  missing: lofted car bodies, buildings with facade textures, simple trees and lamps. The road,
-  kerbs, walls, sky (also used as image-based lighting), drift smoke and nitro flames are
-  generated in code.
+  Cars are the realistic models from `LocalModels` (see [Local realistic models](#local-realistic-models)).
+  The scenery is built from photos: region panoramas, impostors of trees and buildings and photo
+  textures for the ground and barriers (see [Scenery](#scenery-panoramas-impostors-and-photo-textures)).
+  The CC0 Kenney models (see [3D models](#3d-models)), loaded from OBJ files by a small parser in
+  `RaceCore`, are only a fallback when those files are missing. The road, kerbs and walls, drift
+  smoke and nitro flames are generated in code.
 - The selected car and colour are stored in `UserDefaults`. There is no backend.
 
 ## Local realistic models
@@ -238,7 +245,7 @@ there is none, the car falls back to its Kenney model.
 |---|---|---|
 | `Cars/` | [Car Kit](https://kenney.nl/assets/car-kit) 3.1 | the three cars (`sedan-sports`, `race-future`, `hatchback-sports`) |
 | `City/` | [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial) 2.1 | buildings and skyscrapers along the track |
-| `Track/` | [Racing Kit](https://kenney.nl/assets/racing-kit) 1.0 | start gantry, grandstands, tents, checkered flags, trees, street lights |
+| `Track/` | [Racing Kit](https://kenney.nl/assets/racing-kit) 1.0 | trees (fallback only) |
 
 To swap a model, replace its `.obj`/`.mtl` (and texture) with a file of the same name. Each car
 names its model and the palette cell that holds the paint in `CarCatalog.swift` (`CarModelRef`);
@@ -250,16 +257,23 @@ paint cell its body actually uses.
 
 Like most mobile racers, the scenery is built from photos rather than heavy 3D models:
 
-- **Far plane:** each region has a 360° panorama (`App/Sky/sky-<region>.jpg`, 4096 × 2048) on a sky
-  sphere that moves with the camera, so the horizon stays put and costs one draw call. The same image
-  lights the scene and gives the cars their reflections. The garage and menu use a photo of a real
-  car workshop (`sky-garage.jpg`) the same way.
+- **Far plane:** each region has a 360° panorama on a sphere that moves with the camera, so the
+  horizon stays put. The sky and ground come from a small copy (`App/Sky/sky-<region>.jpg`,
+  2048 × 1024); the horizon band, where the buildings, trees and hills are, comes from the full
+  8K photo (`sky-<region>-band.jpg`). The horizon stays sharp without the memory cost of a whole 8K
+  texture. The small copy also lights the scene and gives the cars their reflections. The garage and
+  menu use a photo of an indoor karting hall (`sky-garage*.jpg`) the same way, turned so the camera
+  faces the tyre barriers.
+- **Ground:** a tiled photo texture per region (`App/Ground/`) drawn by a small Metal shader
+  (`App/Render/Ground.metal`). It fades out with distance from the camera, so the 3D ground blends
+  into the ground in the panorama with no visible edge on the horizon.
 - **Along the road:** trees and buildings are *impostors*, photos of a 3D model taken from the front
-  and the side with a transparent background. A tree is two crossed planes, a building is a box
-  wrapped in its facade photos. All impostors that share a photo are merged into one mesh, so the
-  whole roadside is a few dozen draw calls.
-- **Ground and barriers:** tiled photo textures per region (`App/Ground/`), colour-matched to the
-  ground in that region's panorama.
+  and the side with a transparent background. A tree is two crossed planes. A building is a box
+  wrapped in its facade photos, and buildings stand side by side with their fronts in one line, like
+  a real street. All impostors that share a photo are merged into one mesh, so the whole roadside is
+  a few dozen draw calls.
+- No Kenney props are left along the track (no lamps, grandstands or start gantry); the start is a
+  line on the road.
 
 Impostors are rendered offline:
 
@@ -280,9 +294,9 @@ looked out of place and made frame times worse.
 | Asset | Source | Licence |
 |---|---|---|
 | Region panoramas: Wide Street 01, Spiaggia di Mondello, Goegap, Je Gray 02, Snowy Hillside | [Poly Haven HDRIs](https://polyhaven.com/hdris) | CC0 |
-| Garage panorama: Autoshop 01 | [Poly Haven HDRIs](https://polyhaven.com/hdris) | CC0 |
+| Garage panorama: Kart Club | [Poly Haven HDRIs](https://polyhaven.com/hdris) | CC0 |
 | Trees: Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium | [Poly Haven models](https://polyhaven.com/models) | CC0 |
-| Ground and barrier textures: Leafy Grass, Aerial Beach 01, Aerial Sand, Sparse Grass, Snow 01, Concrete Wall 004 | [Poly Haven textures](https://polyhaven.com/textures) | CC0 |
+| Ground and barrier textures: Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Concrete Wall 004 | [Poly Haven textures](https://polyhaven.com/textures) | CC0 |
 | Building facades (local only): Buildings Pack 1 by G. (gunn24), Old Residential Building by Andrej Grave | Sketchfab | CC BY 4.0, credited in the app |
 
 CC0 assets need no attribution; the app lists them on the credits screen anyway. CC BY assets are

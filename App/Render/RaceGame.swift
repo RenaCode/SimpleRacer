@@ -50,7 +50,8 @@ final class RaceGame {
     @ObservationIgnored private var pickupEntities: [Entity] = []
     /// Otoczenie wzdłuż trasy — rysowane tylko w pobliżu gracza.
     @ObservationIgnored private var scenery: [(entity: Entity, s: Double)] = []
-    @ObservationIgnored private var skyDome = ModelEntity()
+    @ObservationIgnored private var skyDome = Entity()
+    @ObservationIgnored private var groundCenter = SIMD3<Float>(repeating: .infinity)
     @ObservationIgnored private var cullTimer = 0.0
     @ObservationIgnored private var clock = 0.0
     @ObservationIgnored private var countdown = RaceConfig.countdown
@@ -95,6 +96,7 @@ final class RaceGame {
         countdownText = String(Int(RaceConfig.countdown))
 
         do {
+            ImpostorLibrary.shared.purge()
             root.addChild(try TrackBuilder.build(track, theme: .of(spec.region), region: spec.region))
             scenery = TrackBuilder.cullables
             debugLog("wyścig: trasa zbudowana")
@@ -127,7 +129,8 @@ final class RaceGame {
         root.addChild(sun)
 
         let panorama = SkyEnvironment.panorama(spec.region)
-        skyDome = SkyEnvironment.skyDome(radius: 2000, image: panorama ?? Materials.sky)
+        skyDome = SkyEnvironment.panoramaDome(named: LocalAssets.regionKey(spec.region), radius: 2000)
+            ?? SkyEnvironment.skyDome(radius: 2000)
         root.addChild(skyDome)
         let pickupModel = Self.pickupModel()
         for p in sim.pickups {
@@ -405,6 +408,12 @@ final class RaceGame {
         camera.look(at: at, from: from, relativeTo: nil)
         // Panorama jedzie z kamerą: zdjęcie to „nieskończenie daleki” plan, horyzont się nie przesuwa.
         skyDome.position = from
+        // Środek zanikania gruntu za kamerą — co kilka metrów wystarczy (podmiana materiału kosztuje).
+        if var g = TrackBuilder.ground, simd_distance(from, groundCenter) > 4 {
+            g.material.follow(from, on: g.entity)
+            TrackBuilder.ground = g
+            groundCenter = from
+        }
         let target = 68 + clamp(p.speed / p.def.topSpeed, 0, 1.6) * 10 + (p.nitro.mode != .off ? 8 : 0)
         fov = damp(fov, target, rate: 4, dt: dt)
         camera.camera.fieldOfViewInDegrees = Float(fov)

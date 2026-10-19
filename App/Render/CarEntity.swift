@@ -333,12 +333,12 @@ final class CarEntity {
         p.particlesInheritTransform = false
         // Mało, ale dużych i krótko żyjących cząsteczek: półprzezroczysty dym nakłada się na siebie
         // przed kamerą i to on (nie płomień) przycinał obraz, gdy kilka aut driftowało naraz.
-        p.mainEmitter.birthRate = 50
-        p.mainEmitter.lifeSpan = 0.65
-        p.mainEmitter.size = 0.4
-        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 3.5
+        p.mainEmitter.birthRate = 70
+        p.mainEmitter.lifeSpan = 0.55
+        p.mainEmitter.size = 0.22
+        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 4
         p.mainEmitter.spreadingAngle = 0.8
-        p.mainEmitter.color = .constant(.single(UIColor(white: 0.9, alpha: 0.5)))
+        p.mainEmitter.color = .constant(.single(UIColor(white: 0.92, alpha: 0.22)))
         p.mainEmitter.opacityCurve = .linearFadeOut
         p.isEmitting = false
         return p

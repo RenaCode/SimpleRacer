@@ -166,7 +166,7 @@ for e in entries where e.kind != "backdrop" && e.impostor != false {
         guard sy > 0.001, sx > 0.001 else { continue }
         let c = SCNVector3((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, (lo.z + hi.z) / 2)
         let name = parts.count > 1 ? "\(base)-\(i)" : base
-        let px = e.kind == "building" ? 1024 : 512
+        let px = e.kind == "building" ? 1536 : 1024
         let front = render(holder, from: [0, 0, 1], width: sx, height: sy, center: c, pixels: px)
         let side = render(holder, from: [1, 0, 0], width: sz, height: sy, center: c, pixels: px)
         savePNG(front, outDir.appendingPathComponent("\(name)-front.png"))

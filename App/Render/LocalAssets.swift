@@ -248,11 +248,11 @@ final class LocalAssets {
                    source: "https://opengameart.org/content/4-chiptunes-adventure"),
             Credit(title: "Modele aut, budynków i toru", author: "Kenney (kenney.nl)", license: "CC0",
                    source: "https://kenney.nl"),
-            Credit(title: "Panoramy krain i garażu (Wide Street 01, Spiaggia di Mondello, Goegap, Je Gray 02, Snowy Hillside, Autoshop 01)",
+            Credit(title: "Panoramy krain i garażu (Wide Street 01, Spiaggia di Mondello, Goegap, Je Gray 02, Snowy Hillside, Kart Club)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/hdris"),
             Credit(title: "Drzewa (Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/models"),
-            Credit(title: "Tekstury gruntu i betonu (Leafy Grass, Aerial Beach 01, Aerial Sand, Sparse Grass, Snow 01, Concrete Wall 004)",
+            Credit(title: "Tekstury gruntu i betonu (Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Concrete Wall 004)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/textures"),
         ]
         out += cars.map { Credit(title: $0.name, author: $0.author, license: $0.license, source: $0.source) }

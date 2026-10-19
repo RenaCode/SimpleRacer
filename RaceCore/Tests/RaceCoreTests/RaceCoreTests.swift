@@ -301,7 +301,8 @@ final class ObjModelTests: XCTestCase {
                 count += 1
             }
         }
-        XCTAssertEqual(count, 3 + 19 + 7)
+        // 3 auta, 19 budynków, 2 drzewa toru (zapasowe modele Kenney).
+        XCTAssertEqual(count, 3 + 19 + 2)
     }
 
     /// Każde auto ma nadwozie i cztery koła, a wskazane pole palety naprawdę jest jego lakierem.

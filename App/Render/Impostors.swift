@@ -1,5 +1,6 @@
 import RaceCore
 import RealityKit
+import Metal
 import UIKit
 
 /// Impostor: zdjęcie obiektu z przodu i z boku (przezroczyste tło), wyrenderowane wcześniej z modelu 3D
@@ -58,6 +59,19 @@ final class ImpostorLibrary {
 
     private var materials: [URL: UnlitMaterial] = [:]
 
+    /// Zwalnia tekstury poprzedniej krainy (wołane przed budową trasy).
+    func purge() { materials.removeAll() }
+
+    /// Mipmapy z filtrowaniem anizotropowym — fasady i drzewa oglądane pod kątem zostają ostre.
+    private static let sampler: MaterialParameters.Texture.Sampler = {
+        let d = MTLSamplerDescriptor()
+        d.minFilter = .linear
+        d.magFilter = .linear
+        d.mipFilter = .linear
+        d.maxAnisotropy = 8
+        return .init(d)
+    }()
+
     /// Materiał bez cieniowania (światło jest już w zdjęciu) z wycinaniem po kanale alfa — bez sortowania przezroczystości.
     func material(_ url: URL) -> UnlitMaterial? {
         if let m = materials[url] { return m }
@@ -67,9 +81,9 @@ final class ImpostorLibrary {
               let opacity = try? TextureResource(image: mask, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll))
         else { return nil }
         var m = UnlitMaterial()
-        m.color = .init(tint: .white, texture: .init(tex))
+        m.color = .init(tint: .white, texture: .init(tex, sampler: Self.sampler))
         // Tekstura nieprzezroczystości czyta pierwszy kanał (czerwony), nie alfę — maskę robimy osobno.
-        m.blending = .transparent(opacity: .init(scale: 1, texture: .init(opacity)))
+        m.blending = .transparent(opacity: .init(scale: 1, texture: .init(opacity, sampler: Self.sampler)))
         m.opacityThreshold = 0.5
         materials[url] = m
         return m
@@ -115,15 +129,21 @@ struct ImpostorBatch {
 
     /// Budynek: prostopadłościan, fasada (szerszy widok modelu) od strony drogi i z tyłu, boki z węższego widoku
     /// albo — gdy model to sama ściana — z tej samej fasady. `facing` to kierunek od budynku do drogi.
-    mutating func building(_ item: Impostor, height: Double, at p: SIMD3<Float>, facing: SIMD3<Float>) -> (width: Float, depth: Float) {
+    /// Szerokość fasady i głębokość bryły (m): z widoku z boku, a gdy model to sama ściana — ok. połowa szerokości.
+    static func buildingSize(_ item: Impostor, height: Double) -> (width: Float, depth: Float) {
         let s = item.def.size
-        let frontWide = s[0] >= s[2]
-        let facade = frontWide ? item.front : item.side
         let wideSize = Float(Swift.max(s[0], s[2])), narrowSize = Float(Swift.min(s[0], s[2]))
         let k = Float(height) / Float(s[1])
         let width = wideSize * k
-        let realSides = narrowSize / wideSize > 0.3
-        let depth = realSides ? narrowSize * k : Swift.max(8, width * 0.55)
+        return (width, narrowSize / wideSize > 0.3 ? narrowSize * k : Swift.max(8, width * 0.55))
+    }
+
+    mutating func building(_ item: Impostor, height: Double, at p: SIMD3<Float>, facing: SIMD3<Float>) {
+        let s = item.def.size
+        let frontWide = s[0] >= s[2]
+        let facade = frontWide ? item.front : item.side
+        let realSides = Float(Swift.min(s[0], s[2]) / Swift.max(s[0], s[2])) > 0.3
+        let (width, depth) = Self.buildingSize(item, height: height)
         let sideTex = realSides ? (frontWide ? item.side : item.front) : facade
         let h = Float(height)
         let f = simd_normalize(facing)
@@ -139,7 +159,6 @@ struct ImpostorBatch {
         builders[sideTex, default: MeshBuilder()].quad(br, fr, fr + up, br + up) // bok
         builders[sideTex, default: MeshBuilder()].quad(fl, bl, bl + up, fl + up) // bok
         roofs.quad(bl + up, br + up, fr + up, fl + up)
-        return (width, depth)
     }
 
     func build() -> Entity {
@@ -152,5 +171,30 @@ struct ImpostorBatch {
             root.addChild(ModelEntity(mesh: mesh, materials: [Materials.matte(UIColor(white: 0.28, alpha: 1))]))
         }
         return root
+    }
+}
+
+/// Materiał gruntu z shaderem `groundSurface` (Ground.metal): tekstura w układzie świata i zanikanie w oddali.
+@MainActor
+struct GroundMaterial {
+    private(set) var material: CustomMaterial
+    /// Rozmiar kafla tekstury (m) i odległość, od której grunt zaczyna znikać (m).
+    static let tile: Float = 5, fadeStart: Float = 170
+
+    static func make(_ image: CGImage) -> GroundMaterial? {
+        guard let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary(),
+              let tex = try? Materials.texture(image),
+              var m = try? CustomMaterial(surfaceShader: .init(named: "groundSurface", in: library), lightingModel: .lit)
+        else { return nil }
+        m.baseColor = .init(tint: .white, texture: .init(tex))
+        m.blending = .transparent(opacity: 1.0)
+        m.custom.value = [0, 0, tile, fadeStart]
+        return GroundMaterial(material: m)
+    }
+
+    /// Środek zanikania podąża za kamerą.
+    mutating func follow(_ camera: SIMD3<Float>, on entity: ModelEntity) {
+        material.custom.value = [camera.x, camera.z, Self.tile, Self.fadeStart]
+        entity.model?.materials = [material]
     }
 }

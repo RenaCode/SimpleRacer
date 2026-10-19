@@ -29,6 +29,57 @@ enum SkyEnvironment {
         return ModelEntity(mesh: .generateSphere(radius: radius), materials: [m])
     }
 
+    /// Pas horyzontu w pełnej rozdzielczości (`sky-<name>-band.jpg`): ułamek wysokości zdjęcia od góry.
+    /// Tam są budynki, drzewa i góry; niebo i grunt wystarczą w niskiej rozdzielczości.
+    static func bandRange(_ name: String) -> ClosedRange<Float> {
+        // W garażu kamera patrzy w dół na podłogę, więc pas sięga niżej.
+        name == "garage" ? 0.30...0.80 : 0.25...0.53
+    }
+
+    /// Panorama na własnej kuli: całość z małego zdjęcia, a pas horyzontu z osobnej tekstury 8K —
+    /// ostry horyzont bez kosztu pamięci pełnej panoramy 8K. `yaw` obraca zdjęcie wokół pionu.
+    static func panoramaDome(named name: String, radius: Float, yaw: Float = 0) -> Entity? {
+        guard let low = panorama(named: name) else { return nil }
+        let band = Bundle.main.url(forResource: "sky-\(name)-band", withExtension: "jpg")
+            .flatMap { UIImage(contentsOfFile: $0.path)?.cgImage }
+        let v0 = bandRange(name).lowerBound, v1 = bandRange(name).upperBound
+        let columns = 128
+        func point(_ u: Float, _ v: Float) -> SIMD3<Float> {
+            let phi = (u - 0.5) * 2 * .pi + yaw, theta = (0.5 - v) * .pi
+            return SIMD3(sin(phi) * cos(theta), sin(theta), -cos(phi) * cos(theta)) * radius
+        }
+        /// Rząd czworokątów od v a do v b; `uv` zamienia (u, v) panoramy na współrzędne tekstury.
+        func rows(_ b: inout MeshBuilder, from a: Float, to z: Float, steps: Int, uv: (Float, Float) -> SIMD2<Float>) {
+            for r in 0..<steps {
+                let va = a + (z - a) * Float(r) / Float(steps), vb = a + (z - a) * Float(r + 1) / Float(steps)
+                for c in 0..<columns {
+                    let ua = Float(c) / Float(columns), ub = Float(c + 1) / Float(columns)
+                    b.quad(point(ua, vb), point(ub, vb), point(ub, va), point(ua, va),
+                           uv: [uv(ua, vb), uv(ub, vb), uv(ub, va), uv(ua, va)])
+                }
+            }
+        }
+        var lowMesh = MeshBuilder(), bandMesh = MeshBuilder()
+        let lowUV = { (u: Float, v: Float) in SIMD2<Float>(u, 1 - v) }
+        if band != nil {
+            rows(&lowMesh, from: 0, to: v0, steps: 24, uv: lowUV)
+            rows(&bandMesh, from: v0, to: v1, steps: 16) { u, v in SIMD2(u, 1 - (v - v0) / (v1 - v0)) }
+            rows(&lowMesh, from: v1, to: 1, steps: 24, uv: lowUV)
+        } else {
+            rows(&lowMesh, from: 0, to: 1, steps: 64, uv: lowUV)
+        }
+        let root = Entity()
+        for (builder, image) in [(lowMesh, Optional(low)), (bandMesh, band)] {
+            guard let image, !builder.isEmpty, let mesh = try? builder.mesh(name: "sky"),
+                  let tex = try? Materials.texture(image) else { continue }
+            var m = UnlitMaterial()
+            m.color = .init(tint: .white, texture: .init(tex))
+            m.faceCulling = .none
+            root.addChild(ModelEntity(mesh: mesh, materials: [m]))
+        }
+        return root
+    }
+
     /// Dodaje oświetlenie z nieba do `root` i podpina pod nie wszystkie modele w drzewie.
     static func applyLighting(to root: Entity, image: CGImage = Materials.sky, intensity: Float = 0.4) {
         Task { @MainActor in

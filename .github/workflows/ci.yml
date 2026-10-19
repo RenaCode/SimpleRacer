@@ -24,6 +24,9 @@ jobs:
         run: |
           brew install xcodegen
           xcodegen generate
+          # Shader gruntu (Ground.metal): nowsze Xcode pobierają kompilator Metal osobno.
+          # Starsze mają go w zestawie i nie znają tej opcji — wtedy błąd ignorujemy.
+          xcodebuild -downloadComponent MetalToolchain || true
           # Build na ogólny cel symulatora — nie potrzebuje konkretnego urządzenia ani podpisu.
           xcodebuild -project SimpleRacer.xcodeproj -scheme SimpleRacer \
             -destination 'generic/platform=iOS Simulator' \
