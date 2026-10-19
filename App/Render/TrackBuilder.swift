@@ -132,8 +132,8 @@ enum TrackBuilder {
         ground = nil
         debugLog("trasa: jezdnia, krawężniki, bariery gotowe")
         if let photo, let fading = GroundMaterial.make(photo) {
-            // Grunt zanika w oddali i przechodzi w grunt ze zdjęcia panoramy (RaceGame przesuwa środek za kamerą).
-            let e = ModelEntity(mesh: try grass.mesh(name: "grass"), materials: [fading.material])
+            // Grunt zanika w oddali i przechodzi w grunt ze zdjęcia panoramy (RaceGame przesuwa krążek za kamerą).
+            let e = try fading.entity(y: groundY)
             root.addChild(e)
             ground = (e, fading)
         } else {
