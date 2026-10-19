@@ -17,6 +17,31 @@ public struct CarModelRef: Sendable {
     public var paintColumn: Int
 }
 
+/// Realistyczny model USDZ dostarczany lokalnie (LocalModels/, poza repozytorium).
+public struct RealisticModelRef: Sendable {
+    public var file: String
+    /// Nazwy siatek karoserii (prim USD przypiętych do materiału lakieru), które przemalowuje garaż.
+    public var paintParts: [String]
+    /// Obrót modelu wokół pionu (stopnie), gdy jego przód nie patrzy w +Z.
+    public var yawDegrees: Double
+    /// Czy licencja pozwala na użycie w płatnej aplikacji.
+    public var commercial: Bool
+    public var author: String
+    public var license: String
+    public var source: String
+
+    public init(file: String, paintParts: [String], yawDegrees: Double, commercial: Bool,
+                author: String, license: String, source: String) {
+        self.file = file
+        self.paintParts = paintParts
+        self.yawDegrees = yawDegrees
+        self.commercial = commercial
+        self.author = author
+        self.license = license
+        self.source = source
+    }
+}
+
 public struct CarDef: Identifiable, Sendable {
     public var id: String
     public var name: String
@@ -32,10 +57,34 @@ public struct CarDef: Identifiable, Sendable {
     public var shape: CarShape
     /// Gotowy model; nil = nadwozie generowane z `shape`.
     public var model: CarModelRef? = nil
+    /// Realistyczny model z LocalModels/; gdy jego plik nie jest dostępny, używany jest `model`.
+    public var realistic: RealisticModelRef? = nil
+
+    public init(id: String, name: String, description: String, topSpeed: Double, accel: Double, handling: Double,
+                nitroPower: Double, shape: CarShape, model: CarModelRef? = nil, realistic: RealisticModelRef? = nil) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.topSpeed = topSpeed
+        self.accel = accel
+        self.handling = handling
+        self.nitroPower = nitroPower
+        self.shape = shape
+        self.model = model
+        self.realistic = realistic
+    }
 }
 
 public enum CarCatalog {
-    public static let all: [CarDef] = [
+    /// Wbudowane auta (modele Kenney CC0) plus auta dopisane przez `register` (modele lokalne).
+    public private(set) static var all: [CarDef] = builtIn
+
+    /// Dopisuje auta (np. z LocalModels/cars.json); auta o istniejącym id są pomijane.
+    public static func register(_ defs: [CarDef]) {
+        for d in defs where !all.contains(where: { $0.id == d.id }) { all.append(d) }
+    }
+
+    public static let builtIn: [CarDef] = [
         CarDef(
             id: "strzala", name: "Strzała", description: "Wszechstronna — dobra na każdą trasę.",
             topSpeed: 75, accel: 14, handling: 1.6, nitroPower: 1.0,

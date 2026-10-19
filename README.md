@@ -40,6 +40,9 @@ The car accelerates by itself.
 track and takes corners by itself, drifting through tight ones. ◀ ▶ (or ← / →) move it one lane
 left or right; DRIFT and NITRO work as usual. With auto-steering off, ◀ ▶ steer directly.
 
+**Mute**: the 🔊 button next to pause mutes music and sounds at once (separate switches are in
+the menu).
+
 **Pause**: the ⏸ button at the top (Esc on a keyboard, Menu on a controller) pauses the race,
 with *Graj dalej* (resume), *Od nowa* (restart) and *Menu*. The race also pauses by itself when the
 app goes to the background (Home, a notification, Control Centre).
@@ -160,6 +163,28 @@ latest stable Xcode and needs no specific simulator or code signing.
   kerbs, walls, sky (also used as image-based lighting), drift smoke and nitro flames are
   generated in code.
 - The selected car and colour are stored in `UserDefaults`. There is no backend.
+
+## Local realistic models
+
+Realistic car models can be added locally, without committing them: put `.usdz` files in
+`LocalModels/` (git-ignored) and describe them in a `cars.json` next to them.
+
+```
+LocalModels/
+  Commercial/    models whose licence allows a paid app (CC0, CC BY, Sketchfab/Fab Standard…)
+    cars.json
+    *.usdz
+  PrivateOnly/   everything else (non-commercial licences, real car brands) — Debug builds only
+    cars.json
+    *.usdz
+```
+
+A build phase copies them into the app bundle (`Models/Realistic`). **`PrivateOnly/` is copied only
+in the Debug configuration**, so a Release/App Store build never contains those files. Each entry
+in `cars.json` gives the car's name, stats, the USD mesh names of its body paint (recoloured in the
+garage), an optional yaw and the author, licence and source shown on the in-app credits screen.
+Cars whose file is present appear in the garage and among rivals; until a model has loaded, or when
+there is none, the car falls back to its Kenney model.
 
 ## 3D models
 

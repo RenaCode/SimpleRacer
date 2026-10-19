@@ -4,6 +4,7 @@ import SwiftUI
 /// Garaż: tylko wybór auta i koloru lakieru.
 struct GarageView: View {
     @Bindable var model: AppModel
+    @State private var showCredits = false
 
     private var customColor: Binding<Color> {
         Binding(
@@ -18,17 +19,24 @@ struct GarageView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Garaż").font(Theme.display(32))
 
-                HStack(spacing: 8) {
-                    ForEach(CarCatalog.all) { car in
-                        let active = car.id == model.profile.carId
-                        Button(car.name) { model.profile.carId = car.id }
-                            .font(.system(size: 15, weight: .bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .foregroundStyle(active ? Color.black : Color.white)
-                            .background(active ? Theme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(active ? 0 : 0.15)))
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(CarCatalog.all) { car in
+                                let active = car.id == model.profile.carId
+                                Button(car.name) { model.profile.carId = car.id }
+                                    .font(.system(size: 15, weight: .bold))
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .foregroundStyle(active ? Color.black : Color.white)
+                                    .background(active ? Theme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(active ? 0 : 0.15)))
+                                    .id(car.id)
+                            }
+                        }
                     }
+                    .onAppear { proxy.scrollTo(model.profile.carId, anchor: .center) }
                 }
 
                 Text(model.car.description)
@@ -63,6 +71,9 @@ struct GarageView: View {
                         .frame(width: 40, height: 40)
                 }
 
+                Button { showCredits = true } label: { Label("Autorzy", systemImage: "info.circle") }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 Button { model.screen = .menu } label: { Label("Gotowe", systemImage: "checkmark") }
                     .buttonStyle(RaceButtonStyle(primary: true))
                     .frame(maxWidth: .infinity)
@@ -74,6 +85,28 @@ struct GarageView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.12)))
         }
         .padding(24)
+        .sheet(isPresented: $showCredits) { CreditsView() }
+    }
+}
+
+/// Autorzy muzyki i modeli wraz z licencjami (wymagane przez licencje CC BY).
+struct CreditsView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(LocalAssets.shared.credits) { c in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(c.title).font(.headline)
+                    Text(c.author).font(.subheadline)
+                    Text("Licencja: \(c.license)").font(.footnote).foregroundStyle(.secondary)
+                    Text(c.source).font(.caption).foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 4)
+            }
+            .navigationTitle("Autorzy")
+            .toolbar { Button("Zamknij") { dismiss() } }
+        }
     }
 }
 

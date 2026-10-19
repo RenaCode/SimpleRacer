@@ -46,8 +46,11 @@ final class GaragePreview {
         setLayout(.menu, narrow: false)
     }
 
+    private var realisticShown = false
+
     func show(def: CarDef, colorHex: String) {
-        if let car, carId == def.id {
+        let realisticReady = def.realistic.map { LocalAssets.shared.templates[$0.file] != nil } ?? false
+        if let car, carId == def.id, realisticShown == realisticReady {
             if colorHex != self.colorHex { car.setColor(UIColorHex.color(colorHex)) }
         } else {
             car?.root.removeFromParent()
@@ -55,6 +58,7 @@ final class GaragePreview {
             turntable.addChild(c.root)
             car = c
             carId = def.id
+            realisticShown = realisticReady
         }
         self.colorHex = colorHex
     }

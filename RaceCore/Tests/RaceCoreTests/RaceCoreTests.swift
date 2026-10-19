@@ -365,3 +365,48 @@ final class AutoSteerTests: XCTestCase {
         XCTAssertEqual(car.d, 0.55 * sim.track.halfWidth, accuracy: 1.5)
     }
 }
+
+final class DriftDirectionTests: XCTestCase {
+    let track = TrackData.makeCityLoop()
+
+    /// Miejsce, za którym trasa wyraźnie skręca w stronę `dir` (+1 lewo, −1 prawo).
+    private func spot(turning dir: Double) -> Double {
+        var s = 0.0
+        while s < track.length {
+            var sum = 0.0
+            var k = 20.0
+            while k <= 80 { sum += track.sample(at: s + k).curvature; k += 5 }
+            if sum * dir > 0.05 { return s }
+            s += 10
+        }
+        XCTFail("brak zakrętu w stronę \(dir)")
+        return 0
+    }
+
+    /// DRIFT wciśnięty bez skrętu przed zakrętem w prawo, a potem pełny skręt w lewo:
+    /// poślizg ma przejść na lewo (jak w grach mobilnych — kierunek driftu idzie za kierownicą).
+    func testDriftFollowsSteeringToOtherSide() {
+        let c = Car(name: "T", def: CarCatalog.all[0], color: "#FFFFFF", isPlayer: true,
+                    startDistance: spot(turning: -1), startLane: 0, trackLength: track.length)
+        c.speed = 60
+        var t = 0.0
+        while t < 0.1 { c.step(dt: RaceSim.step, input: CarInput(steer: 0, drift: true), track: track); t += RaceSim.step }
+        XCTAssertLessThan(c.slide, 0, "start w prawo, zgodnie z zakrętem")
+        t = 0
+        while t < 0.35 { c.step(dt: RaceSim.step, input: CarInput(steer: 1, drift: true), track: track); t += RaceSim.step }
+        XCTAssertTrue(c.drifting)
+        XCTAssertGreaterThan(c.slide, 0, "po skręcie w lewo poślizg w lewo")
+    }
+
+    /// Drift działa w obie strony także od początku: skręt w lewo / w prawo przy wciśnięciu DRIFT.
+    func testDriftBothDirectionsFromStart() {
+        for dir in [1.0, -1.0] {
+            let c = Car(name: "T", def: CarCatalog.all[0], color: "#FFFFFF", isPlayer: true,
+                        startDistance: 50, startLane: 0, trackLength: track.length)
+            c.speed = 60
+            var t = 0.0
+            while t < 0.2 { c.step(dt: RaceSim.step, input: CarInput(steer: dir, drift: true), track: track); t += RaceSim.step }
+            XCTAssertEqual(c.slide > 0 ? 1.0 : -1.0, dir)
+        }
+    }
+}

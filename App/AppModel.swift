@@ -60,6 +60,7 @@ final class AppModel {
     private static let key = "simpleracer.profile"
 
     init() {
+        LocalAssets.shared.registerCars()
         if let data = UserDefaults.standard.data(forKey: Self.key),
            let p = try? JSONDecoder().decode(Profile.self, from: data),
            CarCatalog.all.contains(where: { $0.id == p.carId }),
@@ -70,9 +71,15 @@ final class AppModel {
         }
         AudioManager.shared.musicOn = profile.musicOn
         AudioManager.shared.soundOn = profile.soundOn
+        Task { await LocalAssets.shared.preload() }
         #if DEBUG
         // Do testów w symulatorze z wiersza poleceń: `simctl launch <udid> com.renacode.simpleracer -autostartRace`.
         if ProcessInfo.processInfo.arguments.contains("-autostartRace") { startRace() }
+        // `-car <id>` wybiera auto (podgląd modeli w symulatorze).
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-car"), i + 1 < args.count, CarCatalog.all.contains(where: { $0.id == args[i + 1] }) {
+            profile.carId = args[i + 1]
+        }
         #endif
     }
 

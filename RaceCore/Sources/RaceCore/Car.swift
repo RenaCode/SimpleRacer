@@ -92,6 +92,9 @@ public final class Car {
             driftDir = abs(steer) > 0.25 ? (steer > 0 ? 1 : -1) : preferredDriftDir(track: track)
         } else if drifting && (!input.drift || speed < Physics.driftMinSpeed * 0.7) {
             drifting = false
+        } else if drifting && abs(steer) > Physics.driftSwitchSteer && (steer > 0 ? 1.0 : -1.0) != driftDir {
+            // Wyraźny skręt w drugą stronę przekłada poślizg (lekki — tylko kontruje).
+            driftDir = -driftDir
         }
         let braking = input.drift && !drifting
 

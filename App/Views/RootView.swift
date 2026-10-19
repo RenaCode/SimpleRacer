@@ -19,7 +19,14 @@ struct RootView: View {
                     GarageView(model: model)
                 }
             case let .race(id):
-                RaceScreen(model: model).id(id)
+                if LocalAssets.shared.loadingDone {
+                    RaceScreen(model: model).id(id)
+                } else {
+                    VStack(spacing: 16) {
+                        ProgressView().controlSize(.large).tint(Theme.accent)
+                        Text("Ładowanie aut…").font(Theme.display(24))
+                    }
+                }
             }
         }
         .background(Color.black)
@@ -45,6 +52,8 @@ private struct PreviewStage: View {
                 MainActor.assumeIsolated { preview?.update(dt: event.deltaTime) }
             }
         } update: { _ in
+            // Odczyt licznika podpina odświeżenie, gdy dojdzie realistyczny model.
+            _ = LocalAssets.shared.loadedCount
             preview.show(def: model.car, colorHex: model.profile.colorHex)
             preview.setLayout(model.screen == .garage ? .garage : .menu, narrow: narrow)
         }

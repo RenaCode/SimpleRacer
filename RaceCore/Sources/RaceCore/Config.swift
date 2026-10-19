@@ -21,6 +21,8 @@ public enum Physics {
     public static let driftSpeedFactor = 0.94
     /// Drift skręca ostrzej niż zwykła jazda.
     public static let driftSteerFactor = 1.7
+    /// Skręt w przeciwną stronę powyżej tej wartości przekłada drift na drugą stronę.
+    public static let driftSwitchSteer = 0.6
     /// Ile skrętu dokłada sam poślizg, gdy gracz nie skręca (0…1).
     public static let driftAutoSteer = 0.45
     /// Kąt, o jaki tył auta wychodzi w drifcie (wizualny poślizg).

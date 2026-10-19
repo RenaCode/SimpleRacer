@@ -5,11 +5,19 @@ struct MenuView: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            VStack(alignment: .leading, spacing: -8) {
-                Text("SIMPLE").foregroundStyle(.white)
-                Text("RACER").foregroundStyle(Theme.accent)
+            HStack(spacing: 24) {
+                Image("Logo")
+                    .resizable()
+                    .frame(width: 150, height: 150)
+                    .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
+                    .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: -8) {
+                    Text("SIMPLE").foregroundStyle(.white)
+                    Text("RACER").foregroundStyle(Theme.accent)
+                }
+                .font(Theme.display(84))
             }
-            .font(Theme.display(84))
 
             Spacer()
 

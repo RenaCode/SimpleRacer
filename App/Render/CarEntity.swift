@@ -27,6 +27,11 @@ final class CarEntity {
         let L = Float(s.length), W = Float(s.width)
         let hScale = Float(s.height) / 1.2
         root.addChild(body)
+        if let r = def.realistic, let template = LocalAssets.shared.templates[r.file] {
+            let d = buildRealistic(template: template, ref: r, color: color)
+            addEffects(width: d.width, rearZ: d.rearZ, exhaustY: d.exhaustY, backWheelX: d.backWheelX, backWheelZ: d.backWheelZ)
+            return
+        }
         if let ref = def.model, let d = buildModel(ref: ref, def: def, color: color) {
             addEffects(width: d.width, rearZ: d.rearZ, exhaustY: d.exhaustY, backWheelX: d.backWheelX, backWheelZ: d.backWheelZ)
             spinWheels(distance: 0)
@@ -223,6 +228,42 @@ final class CarEntity {
                          backWheelX: abs(backWheel.x) * s, backWheelZ: backWheel.z * s)
     }
 
+    /// Realistyczny model USDZ (już znormalizowany): klon współdzielący siatki i tekstury wzorca.
+    /// Lakier to siatki o nazwach z `paintParts` (dokładne nazwy prim USD przypiętych do materiału lakieru).
+    private func buildRealistic(template: Entity, ref: RealisticModelRef, color: UIColor) -> ModelDims {
+        let car = template.clone(recursive: true)
+        body.addChild(car)
+        let names = Set(ref.paintParts)
+        func walk(_ e: Entity, inPaint: Bool) {
+            let hit = inPaint || names.contains(e.name)
+            if hit, let m = e as? ModelEntity { paintParts.append(m) }
+            for c in e.children { walk(c, inPaint: hit) }
+        }
+        walk(car, inPaint: false)
+        realisticPaint = true
+        for p in paintParts { Self.repaint(p, color) }
+        let b = car.visualBounds(relativeTo: root)
+        return ModelDims(width: b.extents.x, rearZ: b.min.z, exhaustY: 0.4,
+                         backWheelX: b.extents.x * 0.4, backWheelZ: b.min.z * 0.62)
+    }
+
+    private var realisticPaint = false
+
+    /// Przemalowanie części realistycznego modelu: kolor lakieru z połyskiem, bez oryginalnej tekstury koloru.
+    private static func repaint(_ e: ModelEntity, _ color: UIColor) {
+        guard var model = e.model else { return }
+        model.materials = model.materials.map { m in
+            guard var p = m as? PhysicallyBasedMaterial else { return Materials.paint(color) }
+            p.baseColor = .init(tint: color)
+            p.metallic = 0.45
+            p.roughness = 0.28
+            p.clearcoat = 1.0
+            p.clearcoatRoughness = 0.04
+            return p
+        }
+        e.model = model
+    }
+
     /// Lakier modelu: paleta z przemalowanym polem, z połyskiem bezbarwnego lakieru.
     private func modelPaint(_ color: UIColor) -> PhysicallyBasedMaterial {
         var m = PhysicallyBasedMaterial()
@@ -304,7 +345,9 @@ final class CarEntity {
     }
 
     func setColor(_ color: UIColor) {
-        if paintRef != nil {
+        if realisticPaint {
+            for p in paintParts { Self.repaint(p, color) }
+        } else if paintRef != nil {
             let m = modelPaint(color)
             for p in paintParts { p.model?.materials = [m] }
         } else {

@@ -20,6 +20,25 @@ targets:
         buildPhase: resources
     dependencies:
       - package: RaceCore
+    # Modele lokalne (LocalModels/, poza repozytorium) → Models/Realistic w paczce aplikacji.
+    # PrivateOnly/ (licencje niekomercyjne, marki) trafia WYŁĄCZNIE do buildu Debug — Release nigdy go nie zawiera.
+    postBuildScripts:
+      - name: Copy local models
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          SRC="$SRCROOT/LocalModels"
+          DST="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Models/Realistic"
+          rm -rf "$DST"
+          [ -d "$SRC" ] || exit 0
+          mkdir -p "$DST"
+          [ -f "$SRC/Commercial/cars.json" ] && cp "$SRC/Commercial/cars.json" "$DST/cars.json"
+          find "$SRC/Commercial" -name '*.usdz' -exec cp {} "$DST/" \; 2>/dev/null || true
+          if [ "$CONFIGURATION" = "Debug" ]; then
+            find "$SRC/PrivateOnly" -name '*.usdz' -exec cp {} "$DST/" \; 2>/dev/null || true
+            [ -f "$SRC/PrivateOnly/cars.json" ] && cp "$SRC/PrivateOnly/cars.json" "$DST/cars-private.json"
+          fi
+          echo "Modele lokalne ($CONFIGURATION): $(ls "$DST" | tr '\n' ' ')"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.renacode.simpleracer
@@ -37,3 +56,5 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.racing-games
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Skrypt kopiujący modele lokalne czyta katalog spoza listy plików projektu.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO

@@ -29,7 +29,13 @@ struct RaceScreen: View {
                 .opacity(game.result == nil ? 1 : 0.25)
             if game.result == nil {
                 TouchControls(input: game.input)
-                PauseButton { game.paused = true }
+                PauseButton(muted: !model.profile.musicOn && !model.profile.soundOn,
+                            pause: { game.paused = true },
+                            toggleMute: {
+                                let mute = model.profile.musicOn || model.profile.soundOn
+                                model.profile.musicOn = !mute
+                                model.profile.soundOn = !mute
+                            })
             }
             if game.paused && game.result == nil {
                 PauseView(resume: { game.paused = false },
@@ -55,24 +61,33 @@ struct RaceScreen: View {
     }
 }
 
-/// Przycisk pauzy u góry ekranu, obok pozycji.
+/// Pauza i wyciszenie u góry ekranu.
 private struct PauseButton: View {
-    let action: () -> Void
+    let muted: Bool
+    let pause: () -> Void
+    let toggleMute: () -> Void
 
     var body: some View {
         VStack {
-            Button(action: action) {
-                Image(systemName: "pause.fill")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(Circle().fill(Color.black.opacity(0.35)))
-                    .overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 2))
+            HStack(spacing: 14) {
+                round(muted ? "speaker.slash.fill" : "speaker.wave.2.fill", label: muted ? "Włącz dźwięk" : "Wycisz", toggleMute)
+                round("pause.fill", label: "Pauza", pause)
             }
-            .accessibilityLabel("Pauza")
             .padding(.top, 14)
             Spacer()
         }
+    }
+
+    private func round(_ icon: String, label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(Color.black.opacity(0.35)))
+                .overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 2))
+        }
+        .accessibilityLabel(label)
     }
 }
 
