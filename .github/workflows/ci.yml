@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Bez pinowania wersji: najnowszy stabilny Xcode zawsze ma pasujące SDK iOS.
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Testy logiki gry (macOS)
+        working-directory: RaceCore
+        run: swift test
+
+      - name: Build aplikacji na iPada
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          # Build na ogólny cel symulatora — nie potrzebuje konkretnego urządzenia ani podpisu.
+          xcodebuild -project SimpleRacer.xcodeproj -scheme SimpleRacer \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build
