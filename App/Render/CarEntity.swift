@@ -324,6 +324,7 @@ final class CarEntity {
 
     private static func sparkEmitter(side: Float) -> ParticleEmitterComponent {
         var p = ParticleEmitterComponent()
+        p.mainEmitter.image = ParticleTextures.dot
         p.emitterShape = .point
         p.isEmitting = false
         p.speed = 7
@@ -421,7 +422,8 @@ final class CarEntity {
         }
         for sx: Float in [-1, 1] {
             let e = Entity()
-            e.position = [sx * backWheelX, 0.15, backWheelZ - 0.5]
+            // Nad jezdnią: duże cząsteczki rodzące się nisko były ucinane przez asfalt prostą krawędzią.
+            e.position = [sx * backWheelX, 0.45, backWheelZ - 0.5]
             e.components.set(Self.smokeEmitter())
             root.addChild(e)
             smoke.append(e)
@@ -452,6 +454,7 @@ final class CarEntity {
         p.birthLocation = .volume
         p.speed = 0.8
         p.speedVariation = 0.4
+        p.emissionDirection = [0, 1, 0]
         p.particlesInheritTransform = false
         // Mało, ale dużych i krótko żyjących cząsteczek: półprzezroczysty dym nakłada się na siebie
         // przed kamerą i to on (nie płomień) przycinał obraz, gdy kilka aut driftowało naraz.
@@ -460,11 +463,19 @@ final class CarEntity {
         p.mainEmitter.birthRate = 110
         p.mainEmitter.lifeSpan = 0.8
         p.mainEmitter.lifeSpanVariation = 0.25
-        p.mainEmitter.size = 0.7
-        p.mainEmitter.sizeVariation = 0.25
-        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 3.2
+        p.mainEmitter.size = 0.6
+        p.mainEmitter.sizeVariation = 0.2
+        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 2.8
         p.mainEmitter.spreadingAngle = 0.8
-        p.mainEmitter.color = .constant(.single(UIColor(white: 0.88, alpha: 0.1)))
+        // Dym unosi się, rosnąc — dolny brzeg kłębu nie schodzi pod asfalt.
+        p.mainEmitter.acceleration = [0, 0.9, 0]
+        p.mainEmitter.angleVariation = .pi
+        p.mainEmitter.angularSpeedVariation = 1.2
+        // Miękki, nieregularny kłąb zamiast domyślnego kwadratu (dym składał się z prostokątów).
+        p.mainEmitter.image = ParticleTextures.smoke
+        // Addytywnie: biały dym spod opon rozjaśnia tło miękko (patrz ParticleTextures).
+        p.mainEmitter.blendMode = .additive
+        p.mainEmitter.color = .constant(.single(UIColor(white: 0.5, alpha: 0.5)))
         p.mainEmitter.opacityCurve = .linearFadeOut
         p.isEmitting = false
         return p
