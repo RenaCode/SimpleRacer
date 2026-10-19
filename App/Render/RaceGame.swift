@@ -139,8 +139,11 @@ final class RaceGame {
         input.poll()
         if paused {
             _ = input.consumeNitro() // wciśnięcia z czasu pauzy nie odpalają nitro po wznowieniu
+            AudioManager.shared.setEngine(speed: 0, nitro: false, running: false)
             return
         }
+        let p = player
+        AudioManager.shared.setEngine(speed: p.speed / p.def.topSpeed, nitro: p.nitro.mode != .off, running: !p.wrecked)
         clock += dt
 
         switch phase {
@@ -148,11 +151,15 @@ final class RaceGame {
             countdown -= dt
             if countdown > 0 {
                 let text = String(Int(countdown.rounded(.up)))
-                if text != countdownText { countdownText = text }
+                if text != countdownText {
+                    countdownText = text
+                    AudioManager.shared.play(.beep)
+                }
             } else {
                 countdownText = nil
                 phase = .racing
                 toast("START!", .good)
+                AudioManager.shared.play(.go)
             }
         case .racing, .finished:
             acc += dt
@@ -188,15 +195,18 @@ final class RaceGame {
             case let .takedown(attacker, victim):
                 if attacker === p {
                     toast("TAKEDOWN!", .good)
+                    AudioManager.shared.play(.takedown)
                     shake = 0.5
                 } else if victim === p {
                     toast("ROZBITY!", .bad)
                 }
             case let .wreck(car) where car === p:
                 shake = 0.8
+                AudioManager.shared.play(.crash)
                 let byRival = events.contains { if case let .takedown(_, v) = $0 { return v === p }; return false }
                 if !byRival { toast("ROZBITY!", .bad) }
             case let .nitro(car, mode) where car === p:
+                AudioManager.shared.play(.nitro)
                 if mode == .perfect { toast("PERFECT NITRO", .good) }
                 if mode == .shockwave {
                     toast("FALA UDERZENIOWA", .good)
@@ -206,6 +216,7 @@ final class RaceGame {
                 toast("NA WŁOS! +nitro", .info)
             case let .pickup(car) where car === p:
                 toast("+NITRO", .info)
+                AudioManager.shared.play(.pickup)
             case let .finish(car, position) where car === p:
                 phase = .finished
                 finishTimer = RaceConfig.finishDelay

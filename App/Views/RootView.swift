@@ -23,6 +23,10 @@ struct RootView: View {
             }
         }
         .background(Color.black)
+        .onAppear { AudioManager.shared.start() }
+        .onChange(of: model.screen, initial: true) { _, screen in
+            if case .race = screen { AudioManager.shared.play(.race) } else { AudioManager.shared.play(.menu) }
+        }
     }
 }
 

@@ -48,7 +48,10 @@ struct RaceScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && game.result == nil { game.paused = true }
         }
-        .onDisappear { game.subscription?.cancel() }
+        .onDisappear {
+            game.subscription?.cancel()
+            AudioManager.shared.setEngine(speed: 0, nitro: false, running: false)
+        }
     }
 }
 

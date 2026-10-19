@@ -1,0 +1,10 @@
+Music: "Chiptune Adventures" by Juhani Junkala (SubspaceAudio)
+https://opengameart.org/content/4-chiptunes-adventure
+
+License: Creative Commons Zero (CC0 1.0). Credit given here because it is appreciated.
+Converted from the original WAV files to AAC (128 kbit/s):
+- menu.m4a   — "4. Stage Select"
+- race-1.m4a — "1. Stage 1"
+- race-2.m4a — "2. Stage 2"
+
+Sound effects and the engine sound are synthesised in code (App/Audio/AudioManager.swift).

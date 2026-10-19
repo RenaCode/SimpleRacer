@@ -8,6 +8,8 @@ struct Profile: Codable, Equatable {
     var colorHex: String
     /// Auto-prowadzenie: auto samo trzyma tor, ◀ ▶ zmieniają pas. Domyślnie włączone (dla dzieci).
     var autoSteer: Bool = true
+    var musicOn: Bool = true
+    var soundOn: Bool = true
 
     static let `default` = Profile(carId: CarCatalog.all[0].id, colorHex: CarCatalog.colors[0])
 
@@ -23,6 +25,8 @@ struct Profile: Codable, Equatable {
         carId = try c.decode(String.self, forKey: .carId)
         colorHex = try c.decode(String.self, forKey: .colorHex)
         autoSteer = try c.decodeIfPresent(Bool.self, forKey: .autoSteer) ?? true
+        musicOn = try c.decodeIfPresent(Bool.self, forKey: .musicOn) ?? true
+        soundOn = try c.decodeIfPresent(Bool.self, forKey: .soundOn) ?? true
     }
 }
 
@@ -46,7 +50,11 @@ final class AppModel {
 
     var screen: Screen = .menu
     var profile: Profile {
-        didSet { save() }
+        didSet {
+            save()
+            AudioManager.shared.musicOn = profile.musicOn
+            AudioManager.shared.soundOn = profile.soundOn
+        }
     }
 
     private static let key = "simpleracer.profile"
@@ -60,6 +68,8 @@ final class AppModel {
         } else {
             profile = .default
         }
+        AudioManager.shared.musicOn = profile.musicOn
+        AudioManager.shared.soundOn = profile.soundOn
         #if DEBUG
         // Do testów w symulatorze z wiersza poleceń: `simctl launch <udid> com.renacode.simpleracer -autostartRace`.
         if ProcessInfo.processInfo.arguments.contains("-autostartRace") { startRace() }

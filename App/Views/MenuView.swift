@@ -22,12 +22,11 @@ struct MenuView: View {
             .foregroundStyle(.secondary)
             .padding(.bottom, 12)
 
-            Toggle(isOn: $model.profile.autoSteer) {
-                Label("Auto-prowadzenie", systemImage: "steeringwheel")
-                    .font(.system(size: 17, weight: .bold))
+            VStack(alignment: .leading, spacing: 10) {
+                setting("Auto-prowadzenie", "steeringwheel", $model.profile.autoSteer)
+                setting("Muzyka", "music.note", $model.profile.musicOn)
+                setting("Dźwięki", "speaker.wave.2.fill", $model.profile.soundOn)
             }
-            .toggleStyle(.switch)
-            .tint(Theme.accent)
             .frame(width: 300)
             .padding(.bottom, 16)
 
@@ -40,5 +39,13 @@ struct MenuView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(48)
+    }
+
+    private func setting(_ title: String, _ icon: String, _ value: Binding<Bool>) -> some View {
+        Toggle(isOn: value) {
+            Label(title, systemImage: icon).font(.system(size: 17, weight: .bold))
+        }
+        .toggleStyle(.switch)
+        .tint(Theme.accent)
     }
 }
