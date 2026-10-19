@@ -13,6 +13,7 @@ final class CarEntity {
     let body = Entity()
     private var paintParts: [ModelEntity] = []
     private var flames: [ModelEntity] = []
+    private var flameEmitters: [Entity] = []
     private var wheels: [Entity] = []
     private var smoke: [Entity] = []
     private var smoking = false
@@ -279,16 +280,22 @@ final class CarEntity {
         return m
     }
 
-    /// Płomień nitro z wydechów i dym spod tylnych kół.
+    /// Płomień nitro z wydechów (jasny rdzeń + strumień świecących cząsteczek) i dym spod tylnych kół.
     private func addEffects(width W: Float, rearZ: Float, exhaustY: Float, backWheelX: Float, backWheelZ: Float) {
-        let flameMesh = MeshResource.generateCone(height: 1.3, radius: 0.16)
+        // Rdzeń: wydłużona, świecąca „kula” tuż za wydechem; strumień cząsteczek leci z niej do tyłu.
+        let coreMesh = MeshResource.generateSphere(radius: 0.08)
         for side: Float in [-1, 1] {
-            let f = ModelEntity(mesh: flameMesh, materials: [Self.flame(.normal)])
-            f.orientation = simd_quatf(angle: -.pi / 2, axis: [1, 0, 0]) // czubek do tyłu (−Z)
-            f.position = [side * W * 0.22, exhaustY, rearZ - 0.65]
-            f.isEnabled = false
-            body.addChild(f)
-            flames.append(f)
+            let exhaust = Entity()
+            exhaust.position = [side * W * 0.2, exhaustY, rearZ - 0.15]
+            let core = ModelEntity(mesh: coreMesh, materials: [Self.flame(.normal)])
+            core.scale = [1, 1, 2.2]
+            core.position.z = -0.25
+            exhaust.addChild(core)
+            exhaust.components.set(Self.flameEmitter(.normal))
+            exhaust.isEnabled = false
+            body.addChild(exhaust)
+            flames.append(core)
+            flameEmitters.append(exhaust)
         }
         for sx: Float in [-1, 1] {
             let e = Entity()
@@ -333,15 +340,50 @@ final class CarEntity {
         return p
     }
 
-    private static func flame(_ mode: NitroMode) -> UnlitMaterial {
-        let color: UIColor = switch mode {
-        case .off, .normal: UIColor(red: 0.3, green: 0.79, blue: 0.94, alpha: 1)
-        case .perfect: UIColor(red: 0.71, green: 0.09, blue: 0.62, alpha: 1)
-        case .shockwave: UIColor(red: 1, green: 0.62, blue: 0.11, alpha: 1)
+    /// Kolor płomienia: niebieski (nitro), fioletowy (perfect), pomarańczowy (fala).
+    private static func flameColor(_ mode: NitroMode) -> UIColor {
+        switch mode {
+        case .off, .normal: UIColor(red: 0.25, green: 0.65, blue: 1, alpha: 1)
+        case .perfect: UIColor(red: 0.8, green: 0.25, blue: 1, alpha: 1)
+        case .shockwave: UIColor(red: 1, green: 0.55, blue: 0.1, alpha: 1)
         }
-        var m = UnlitMaterial(color: color)
-        m.blending = .transparent(opacity: .init(floatLiteral: 0.85))
+    }
+
+    /// Rdzeń płomienia: jasny kolor trybu (biel na ciemnym asfalcie wychodziła szaro), półprzezroczysty.
+    private static func flame(_ mode: NitroMode) -> UnlitMaterial {
+        let c = flameColor(mode)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        var m = UnlitMaterial(color: UIColor(red: 0.35 + r * 0.65, green: 0.35 + g * 0.65, blue: 0.35 + b * 0.65, alpha: 1))
+        m.blending = .transparent(opacity: .init(floatLiteral: 0.75))
         return m
+    }
+
+    /// Strumień płomienia: krótko żyjące, świecące (addytywne) cząsteczki, od białego żaru do koloru trybu.
+    private static func flameEmitter(_ mode: NitroMode) -> ParticleEmitterComponent {
+        var p = ParticleEmitterComponent()
+        p.emitterShape = .point
+        p.birthDirection = .local
+        p.emissionDirection = [0, 0, -1]
+        p.speed = 13
+        p.speedVariation = 2
+        p.particlesInheritTransform = true // płomień trzyma się auta, nie zostaje na drodze
+        // Wąski u wydechu, rozszerza się i ciemnieje — smuga ognia, a nie kłęby.
+        p.mainEmitter.birthRate = 320
+        p.mainEmitter.lifeSpan = 0.11
+        p.mainEmitter.lifeSpanVariation = 0.03
+        p.mainEmitter.size = mode == .shockwave ? 0.2 : 0.14
+        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 1.8
+        p.mainEmitter.spreadingAngle = 0.08
+        p.mainEmitter.blendMode = .additive
+        let c = flameColor(mode)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let hot = UIColor(red: 0.5 + r * 0.5, green: 0.5 + g * 0.5, blue: 0.5 + b * 0.5, alpha: 0.9)
+        let cool = UIColor(red: r * 0.6, green: g * 0.6, blue: b * 0.8, alpha: 0.2)
+        p.mainEmitter.color = .evolving(start: .single(hot), end: .single(cool))
+        p.mainEmitter.opacityCurve = .linearFadeOut
+        return p
     }
 
     func setColor(_ color: UIColor) {
@@ -359,14 +401,19 @@ final class CarEntity {
     func setFlame(_ mode: NitroMode) {
         if mode != flameMode {
             flameMode = mode
-            for f in flames {
-                f.isEnabled = mode != .off
-                if mode != .off { f.model?.materials = [Self.flame(mode)] }
+            for e in flameEmitters {
+                e.isEnabled = mode != .off
+                if mode != .off { e.components.set(Self.flameEmitter(mode)) }
             }
+            if mode != .off { for f in flames { f.model?.materials = [Self.flame(mode)] } }
         }
         guard mode != .off else { return }
-        let base: Float = mode == .shockwave ? 1.6 : mode == .perfect ? 1.3 : 1
-        for f in flames { f.scale = [base, base * Float.random(in: 0.85...1.15), base] }
+        // Migotanie rdzenia: płomień „oddycha”.
+        let base: Float = mode == .shockwave ? 1.4 : mode == .perfect ? 1.2 : 1
+        for f in flames {
+            let k = Float.random(in: 0.8...1.2)
+            f.scale = [base * k, base * k, base * 2.2 * Float.random(in: 0.85...1.25)]
+        }
     }
 
     func setSmoke(_ on: Bool) {

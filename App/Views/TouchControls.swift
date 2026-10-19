@@ -27,12 +27,14 @@ struct TouchControls: View {
 }
 
 /// Przycisk reagujący na dotknięcie i puszczenie (nie na „kliknięcie”), działa wielodotykowo.
+/// Stan wciśnięcia trzyma `@GestureState`, który SwiftUI zeruje sam także przy przerwanym geście
+/// (np. gest systemowy) — przycisk nie może zostać „wciśnięty” na stałe.
 private struct HoldButton: View {
     let label: String
     let size: CGFloat
     var tint: Color = .white
     let onChange: (Bool) -> Void
-    @State private var pressed = false
+    @GestureState private var pressed = false
 
     var body: some View {
         Text(label)
@@ -42,15 +44,7 @@ private struct HoldButton: View {
             .background(Circle().fill(pressed ? Color.white.opacity(0.3) : Color.black.opacity(0.3)))
             .overlay(Circle().stroke(tint.opacity(0.6), lineWidth: 2))
             .contentShape(Circle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        if !pressed { pressed = true; onChange(true) }
-                    }
-                    .onEnded { _ in
-                        pressed = false
-                        onChange(false)
-                    }
-            )
+            .gesture(DragGesture(minimumDistance: 0).updating($pressed) { _, state, _ in state = true })
+            .onChange(of: pressed) { _, now in onChange(now) }
     }
 }

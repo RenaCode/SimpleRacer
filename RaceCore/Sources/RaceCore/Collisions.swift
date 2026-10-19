@@ -11,6 +11,11 @@ public enum Collisions {
         let L = Physics.carLength, W = Physics.carWidth
 
         func takedown(_ attacker: Car, _ victim: Car) {
+            // Gra dla dzieci: rywal nigdy nie rozbija gracza — kończy się na odepchnięciu.
+            if victim.isPlayer && !attacker.isPlayer {
+                victim.speed = max(victim.speed, attacker.speed * 0.9)
+                return
+            }
             victim.wreck()
             attacker.takedowns += 1
             attacker.nitro.add(Physics.takedownNitro)
@@ -46,7 +51,7 @@ public enum Collisions {
                     let victim = attackerIsA ? b : a
                     if aPush + bPush > Physics.sideSlamSpeed || (attackerIsA ? shockA : shockB) {
                         takedown(attacker, victim)
-                        victim.alphaVel = attackerIsA ? -sign * 0.5 : sign * 0.5
+                        if victim.wrecked { victim.alphaVel = attackerIsA ? -sign * 0.5 : sign * 0.5 }
                     } else {
                         a.alphaVel *= 0.5
                         b.alphaVel *= 0.5

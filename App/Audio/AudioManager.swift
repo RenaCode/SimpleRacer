@@ -248,7 +248,10 @@ final class EngineSynth: @unchecked Sendable {
 
 /// Diagnostyka tylko w buildzie Debug (widoczna w konsoli Xcode / `simctl launch --console-pty`).
 func debugLog(_ message: @autoclosure () -> String) {
-    #if DEBUG
-    print(message())
+    #if DEBUG || FAMILY
+    print(String(format: "[%.2f s] ", ProcessInfo.processInfo.systemUptime - appStartUptime) + message())
     #endif
 }
+
+/// Chwila startu procesu (do pomiaru czasów ładowania w logach Debug).
+let appStartUptime = ProcessInfo.processInfo.systemUptime

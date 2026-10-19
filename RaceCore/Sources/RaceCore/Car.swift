@@ -3,7 +3,8 @@ import Foundation
 public struct CarInput {
     /// −1…1, dodatnie = w lewo.
     public var steer: Double
-    /// Drift przy prędkości (kierunek ze skrętu albo z najbliższego zakrętu); przy małej prędkości — hamulec.
+    /// Drift przy prędkości (kierunek ze skrętu albo z najbliższego zakrętu). Nigdy nie hamuje —
+    /// przy małej prędkości czeka, aż auto się rozpędzi.
     public var drift: Bool
     /// Wciśnięcie nitro w tym kroku (zbocze, nie stan przycisku).
     public var nitro: Bool
@@ -53,6 +54,8 @@ public final class Car {
     public var speedScale = 1.0
     /// Ile sekund trwa już bieżący drift (ładowanie mini-turbo).
     public private(set) var driftCharge = 0.0
+    /// Ile jeszcze drift trwa niezależnie od przycisku (krótkie stuknięcie daje pełny poślizg).
+    private var driftHold = 0.0
     /// Pozostały czas zrywu po drifcie.
     public private(set) var driftBoostTimer = 0.0
     /// Ustawiane przez RaceSim: auto jedzie w cieniu aerodynamicznym rywala.
@@ -105,8 +108,9 @@ public final class Car {
         if !drifting && input.drift && speed > Physics.driftMinSpeed {
             // Kolejność przycisków nie ma znaczenia: DRIFT bez skrętu też wchodzi w poślizg.
             drifting = true
+            driftHold = Physics.driftMinTime
             driftDir = abs(steer) > 0.25 ? (steer > 0 ? 1 : -1) : preferredDriftDir(track: track)
-        } else if drifting && (!input.drift || speed < Physics.driftMinSpeed * 0.7) {
+        } else if drifting && ((!input.drift && driftHold <= 0) || speed < Physics.driftMinSpeed * 0.7) {
             drifting = false
             // Mini-turbo: im dłuższy poślizg, tym dłuższy zryw.
             if driftCharge >= Physics.driftBoostMinCharge && speed >= Physics.driftMinSpeed {
@@ -119,7 +123,9 @@ public final class Car {
             // Wyraźny skręt w drugą stronę przekłada poślizg (lekki — tylko kontruje).
             driftDir = -driftDir
         }
-        let braking = (input.drift && !drifting) || input.brake
+        driftHold = max(0, driftHold - dt)
+        // DRIFT nie hamuje (dzieci trzymają go od startu); hamuje tylko kierownica komputera przed zakrętem.
+        let braking = input.brake
 
         if drifting { driftCharge += dt * min(1, abs(slide) / Physics.driftSlideAngle) }
         driftBoostTimer = max(0, driftBoostTimer - dt)

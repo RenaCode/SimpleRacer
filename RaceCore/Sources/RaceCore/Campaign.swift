@@ -38,8 +38,8 @@ public struct CampaignState: Codable, Equatable, Sendable {
 public enum Campaign {
     public static let maxLevel = 5
     public static let upgradeStep = 0.04
-    /// Auto, które gracz ma od początku.
-    public static let starterCar = "strzala"
+    /// Auto, które gracz ma od początku (aplikacja może je zmienić, gdy używa własnych modeli).
+    public static var starterCar = "strzala"
     /// Gwiazdki potrzebne do wejścia do krainy (Miasto, Wybrzeże, Pustynia, Las, Śnieg).
     public static let starsToUnlock = [0, 10, 22, 36, 52]
 

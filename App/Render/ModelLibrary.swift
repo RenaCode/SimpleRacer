@@ -10,7 +10,7 @@ import UIKit
 final class ModelLibrary {
     static let shared = ModelLibrary()
 
-    struct Loaded {
+    struct Loaded: Sendable {
         let model: ObjModel
         let materials: [String: ObjMaterial]
         let folder: URL
@@ -22,10 +22,24 @@ final class ModelLibrary {
     private var textures: [URL: TextureResource] = [:]
     private var templates: [String: Entity] = [:]
 
-    /// `path` bez rozszerzenia, np. "Cars/sedan-sports".
-    func load(_ path: String) -> Loaded? {
-        if let l = loaded[path] { return l }
-        guard let root else { return nil }
+    /// Przetwarza wszystkie modele OBJ w tle (poza wątkiem głównym), żeby pierwszy wyścig nie czekał.
+    func prefetch() async {
+        guard let root else { return }
+        let fm = FileManager.default
+        var paths: [String] = []
+        for dir in ["Cars", "City", "Track"] {
+            let files = (try? fm.contentsOfDirectory(atPath: root.appendingPathComponent(dir).path)) ?? []
+            paths += files.filter { $0.hasSuffix(".obj") }.map { "\(dir)/" + $0.dropLast(4) }
+        }
+        let todo = paths.filter { loaded[$0] == nil }
+        let parsed = await Task.detached(priority: .utility) { () -> [(String, Loaded)] in
+            todo.compactMap { path in Self.parse(path: path, root: root).map { (path, $0) } }
+        }.value
+        for (path, l) in parsed where loaded[path] == nil { loaded[path] = l }
+        debugLog("modele OBJ: \(parsed.count) przetworzonych w tle")
+    }
+
+    nonisolated private static func parse(path: String, root: URL) -> Loaded? {
         let url = root.appendingPathComponent(path + ".obj")
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         let model = ObjModel.parse(text)
@@ -35,7 +49,13 @@ final class ModelLibrary {
            let mtl = try? String(contentsOf: folder.appendingPathComponent(lib), encoding: .utf8) {
             mats = ObjModel.parseMaterials(mtl)
         }
-        let l = Loaded(model: model, materials: mats, folder: folder)
+        return Loaded(model: model, materials: mats, folder: folder)
+    }
+
+    /// `path` bez rozszerzenia, np. "Cars/sedan-sports".
+    func load(_ path: String) -> Loaded? {
+        if let l = loaded[path] { return l }
+        guard let root, let l = Self.parse(path: path, root: root) else { return nil }
         loaded[path] = l
         return l
     }

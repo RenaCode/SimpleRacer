@@ -58,7 +58,8 @@ final class LocalAssets {
         let fm = FileManager.default
         cars = entries.filter { fm.fileExists(atPath: folder.appendingPathComponent($0.file).path) }
         let fallback = CarCatalog.builtIn[0]
-        CarCatalog.register(cars.map { e in
+        // Gdy są własne modele, gra używa tylko ich (Kenney zostaje jako zapas na czas wczytywania).
+        CarCatalog.replaceAll(with: cars.map { e in
             CarDef(id: e.id, name: e.name, description: "\(e.author) · \(e.license)",
                    topSpeed: e.topSpeed, accel: e.accel, handling: e.handling, nitroPower: e.nitroPower,
                    shape: fallback.shape, model: fallback.model,
@@ -66,22 +67,48 @@ final class LocalAssets {
                                                 commercial: e.commercial, author: e.author, license: e.license,
                                                 source: e.source))
         })
-        if cars.isEmpty { loadingDone = true }
+        if cars.isEmpty {
+            loadingDone = true
+        } else {
+            // Auto startowe: pierwsze z licencją komercyjną (do wersji płatnej), inaczej pierwsze w ogóle.
+            Campaign.starterCar = (cars.first { $0.commercial } ?? cars[0]).id
+        }
     }
 
-    /// Wczytuje modele w tle po kolei; do czasu wczytania auto ma model zapasowy (Kenney).
-    func preload() async {
+    func isLoaded(_ def: CarDef) -> Bool {
+        def.realistic.map { templates[$0.file] != nil } ?? true
+    }
+
+    /// Wczytane auta (do wyglądu rywali); gdy jeszcze żadne — cały katalog.
+    var loadedCars: [CarDef] {
+        let ready = CarCatalog.all.filter { $0.realistic.map { templates[$0.file] != nil } ?? false }
+        return ready.isEmpty ? CarCatalog.all : ready
+    }
+
+    /// Wczytuje modele w tle — najpierw auto gracza, potem reszta równolegle.
+    /// Do czasu wczytania auto ma model zapasowy (Kenney).
+    func preload(first: String? = nil) async {
         guard let folder else { return }
-        for e in cars where templates[e.file] == nil {
-            if let entity = try? await Entity(contentsOf: folder.appendingPathComponent(e.file)) {
-                templates[e.file] = Self.normalized(entity, yawDegrees: e.yaw)
-                loadedCount += 1
-                debugLog("model: \(e.file) wczytany")
-            } else {
-                debugLog("model: \(e.file) — błąd wczytania")
+        let ordered = cars.sorted { a, _ in a.id == first }
+        if let head = ordered.first { await load(head, from: folder) }
+        await withTaskGroup(of: Void.self) { group in
+            for e in ordered.dropFirst() {
+                group.addTask { await self.load(e, from: folder) }
             }
         }
         loadingDone = true
+        debugLog("model: wszystkie wczytane")
+    }
+
+    private func load(_ e: LocalCarEntry, from folder: URL) async {
+        guard templates[e.file] == nil else { return }
+        if let entity = try? await Entity(contentsOf: folder.appendingPathComponent(e.file)) {
+            templates[e.file] = Self.normalized(entity, yawDegrees: e.yaw)
+            loadedCount += 1
+            debugLog("model: \(e.file) wczytany")
+        } else {
+            debugLog("model: \(e.file) — błąd wczytania")
+        }
     }
 
     /// Przód w +Z, środek w X/Z w zerze, koła na y = 0, długość 4,5 m.

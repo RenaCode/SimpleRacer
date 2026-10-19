@@ -15,6 +15,7 @@ final class GameInput: PlayerInputSource {
     private var deviceDrift = false
     private var prevDeviceNitro = false
     private var prevEscape = false
+    private var lastAutoNitroTick = 0
 
     /// Esc na klawiaturze albo Menu na padzie.
     var onEscape: (() -> Void)?
@@ -50,6 +51,13 @@ final class GameInput: PlayerInputSource {
         deviceSteer = max(-1, min(1, steer))
         deviceDrift = drift
         if nitro && !prevDeviceNitro { nitroQueued = true }
+        #if DEBUG || FAMILY
+        // `-autoNitro`: co 4 s wciska nitro (pokaz efektów w symulatorze).
+        if ProcessInfo.processInfo.arguments.contains("-autoNitro") {
+            let tick = Int(ProcessInfo.processInfo.systemUptime / 4)
+            if tick != lastAutoNitroTick { lastAutoNitroTick = tick; nitroQueued = true }
+        }
+        #endif
         prevDeviceNitro = nitro
         if escape && !prevEscape { onEscape?() }
         prevEscape = escape
@@ -64,7 +72,7 @@ final class GameInput: PlayerInputSource {
 
     var drift: Bool { deviceDrift || touchDrift || debugHoldDrift }
 
-    #if DEBUG
+    #if DEBUG || FAMILY
     /// Do zrzutów w symulatorze: `-holdDrift` trzyma DRIFT wciśnięty od 8. sekundy po starcie aplikacji (po rozpędzeniu).
     private let debugDriftFrom: Double? = ProcessInfo.processInfo.arguments.contains("-holdDrift")
         ? ProcessInfo.processInfo.systemUptime + 8 : nil

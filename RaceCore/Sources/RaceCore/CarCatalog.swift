@@ -79,6 +79,12 @@ public enum CarCatalog {
     /// Wbudowane auta (modele Kenney CC0) plus auta dopisane przez `register` (modele lokalne).
     public private(set) static var all: [CarDef] = builtIn
 
+    /// Zastępuje katalog aut (np. tylko modele lokalne). Pusta lista nic nie zmienia.
+    public static func replaceAll(with defs: [CarDef]) {
+        guard !defs.isEmpty else { return }
+        all = defs
+    }
+
     /// Dopisuje auta (np. z LocalModels/cars.json); auta o istniejącym id są pomijane.
     public static func register(_ defs: [CarDef]) {
         for d in defs where !all.contains(where: { $0.id == d.id }) { all.append(d) }

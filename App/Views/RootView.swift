@@ -9,6 +9,7 @@ struct RootView: View {
         ZStack {
             switch model.screen {
             case .menu, .garage:
+                let _ = debugLog("ekran: \(model.screen == .menu ? "menu" : "garaż")")
                 GeometryReader { geo in
                     PreviewStage(preview: preview, model: model, narrow: geo.size.width < 760)
                 }
@@ -21,7 +22,7 @@ struct RootView: View {
             case .campaign:
                 CampaignView(model: model)
             case let .race(id):
-                if LocalAssets.shared.loadingDone {
+                if LocalAssets.shared.loadingDone || (LocalAssets.shared.loadedCount >= 0 && LocalAssets.shared.isLoaded(model.car)) {
                     RaceScreen(model: model).id(id)
                 } else {
                     VStack(spacing: 16) {

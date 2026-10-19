@@ -2,17 +2,33 @@ import RaceCore
 import RealityKit
 import SwiftUI
 
+/// Ekran wyścigu. Gra powstaje raz, przy pierwszym pokazaniu ekranu — nie w `init`, bo SwiftUI
+/// tworzy widok od nowa przy każdej zmianie modelu (np. wyciszeniu), a budowa sceny trwa sekundy.
 struct RaceScreen: View {
     let model: AppModel
-    @State private var game: RaceGame
+    @State private var game: RaceGame?
+
+    var body: some View {
+        ZStack {
+            if let game {
+                RaceContent(model: model, game: game)
+            } else {
+                Color.black.ignoresSafeArea()
+            }
+        }
+        .task {
+            guard game == nil else { return }
+            game = RaceGame(profile: model.profile, spec: model.track, playerCar: model.playerCar)
+        }
+    }
+}
+
+private struct RaceContent: View {
+    let model: AppModel
+    let game: RaceGame
     @Environment(\.scenePhase) private var scenePhase
     /// Wynik rozliczony w kampanii (gwiazdki, monety) — raz na wyścig.
     @State private var settled: RaceResult?
-
-    init(model: AppModel) {
-        self.model = model
-        _game = State(initialValue: RaceGame(profile: model.profile, spec: model.track, playerCar: model.playerCar))
-    }
 
     var body: some View {
         ZStack {

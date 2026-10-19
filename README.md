@@ -37,6 +37,9 @@ more tracks, tilt steering.
 - **Car rating** — one number from top speed, acceleration, handling and nitro. Every track
   needs a minimum rating (650 → 820). Four upgrades (engine, acceleration, handling, nitro),
   five levels each, raise it; better cars cost coins.
+- **Kid-safe**: rivals can never wreck the player (a rival hit only pushes); the player can
+  still take rivals down. The DRIFT button never brakes — it waits until the car is fast enough —
+  and a short tap still gives a half-second drift.
 - **Easy, for children**: rivals are a little weaker than the track's requirement and slow down
   when far ahead; the starter car, fully upgraded, can finish the whole campaign; one playthrough
   pays for those upgrades; and tests check that auto-steering alone reaches the podium on tracks
@@ -127,6 +130,14 @@ open SimpleRacer.xcodeproj
 Run on an iPad simulator, or on a device after choosing a team in
 **Signing & Capabilities** of the `SimpleRacer` target.
 
+Build configurations:
+
+| Configuration | Optimised | `LocalModels/PrivateOnly` | Use |
+|---|---|---|---|
+| Debug | no | yes | development |
+| **Family** | yes | yes | **Xcode “Run”** — installs on the family's iPads |
+| Release | yes | **no** | App Store archive |
+
 From the command line, on an iPad simulator:
 
 ```sh
@@ -143,7 +154,10 @@ Debug builds accept launch arguments for testing in the simulator:
 - `-holdDrift` holds DRIFT from 8 seconds after launch,
 - `-finishSoon` puts the player 150 m before the finish line (to reach the results screen quickly),
 - `-track <n>` picks the campaign track, `-screen campaign|garage` opens a screen,
-- `-rich` gives coins and stars (to look at the shop and unlocks), `-car <id>` picks and owns a car.
+- `-rich` gives coins and stars (to look at the shop and unlocks), `-car <id>` picks and owns a car,
+- `-autoNitro` presses nitro every 4 s, `-toggleMuteAt <s>` toggles sound after <s> seconds.
+
+These and the timing logs work in Debug and Family builds, not in Release.
 
 ```sh
 xcrun simctl launch booted com.renacode.simpleracer -autostartRace -holdDrift

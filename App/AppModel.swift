@@ -76,6 +76,7 @@ final class AppModel {
     private static let campaignKey = "simpleracer.campaign"
 
     init() {
+        debugLog("start: AppModel")
         LocalAssets.shared.registerCars()
         if let data = UserDefaults.standard.data(forKey: Self.key),
            let p = try? JSONDecoder().decode(Profile.self, from: data),
@@ -91,12 +92,17 @@ final class AppModel {
         } else {
             campaign = Campaign.newGame()
         }
-        // Jeździ się tylko własnym autem.
-        if !campaign.ownedCars.contains(profile.carId) { profile.carId = Campaign.starterCar }
+        // Auto startowe zawsze w garażu; jeździ się tylko własnym autem, które istnieje w katalogu.
+        campaign.ownedCars.insert(Campaign.starterCar)
+        if !campaign.ownedCars.contains(profile.carId) || !CarCatalog.all.contains(where: { $0.id == profile.carId }) {
+            profile.carId = Campaign.starterCar
+        }
         AudioManager.shared.musicOn = profile.musicOn
         AudioManager.shared.soundOn = profile.soundOn
-        Task { await LocalAssets.shared.preload() }
-        #if DEBUG
+        let first = profile.carId
+        Task { await LocalAssets.shared.preload(first: first) }
+        Task { await ModelLibrary.shared.prefetch() }
+        #if DEBUG || FAMILY
         // Do testów w symulatorze z wiersza poleceń: `simctl launch <udid> com.renacode.simpleracer -autostartRace`.
         if ProcessInfo.processInfo.arguments.contains("-autostartRace") { startRace() }
         // `-car <id>` wybiera auto (podgląd modeli w symulatorze).
@@ -111,6 +117,14 @@ final class AppModel {
             for spec in TrackCatalog.all.prefix(20) { campaign.bestStars[spec.id] = 3 }
         }
         if let i = args.firstIndex(of: "-track"), i + 1 < args.count, let id = Int(args[i + 1]) { trackId = id }
+        // `-toggleMuteAt <s>` przełącza wyciszenie po <s> sekundach (test zawieszania przy wyciszaniu).
+        if let i = args.firstIndex(of: "-toggleMuteAt"), i + 1 < args.count, let t = Double(args[i + 1]) {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(t))
+                debugLog("test: przełączam wyciszenie")
+                self?.profile.soundOn.toggle()
+            }
+        }
         if let i = args.firstIndex(of: "-screen"), i + 1 < args.count {
             screen = ["campaign": .campaign, "garage": .garage][args[i + 1]] ?? .menu
         }

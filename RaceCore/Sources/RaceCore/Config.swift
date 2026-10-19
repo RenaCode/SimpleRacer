@@ -41,6 +41,8 @@ public enum Physics {
     public static let slipstreamNitro = 0.05
     /// Natychmiastowy „kop” przy odpaleniu nitro (m/s).
     public static let nitroKick = 5.0
+    /// Najkrótszy drift: nawet krótkie stuknięcie DRIFT daje poślizg tak długi (s).
+    public static let driftMinTime = 0.5
     /// Skręt w przeciwną stronę powyżej tej wartości przekłada drift na drugą stronę.
     public static let driftSwitchSteer = 0.6
     /// Ile skrętu dokłada sam poślizg, gdy gracz nie skręca (0…1).

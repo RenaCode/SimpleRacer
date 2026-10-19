@@ -1,5 +1,5 @@
 /// Materiał z pliku .mtl: kolor rozproszony i opcjonalna tekstura (ścieżka względna do pliku .mtl).
-public struct ObjMaterial: Equatable {
+public struct ObjMaterial: Equatable, Sendable {
     public var diffuse: SIMD3<Float> = [1, 1, 1]
     public var texture: String?
 
@@ -10,7 +10,7 @@ public struct ObjMaterial: Equatable {
 }
 
 /// Fragment grupy z jednym materiałem, gotowy do zbudowania siatki (wierzchołki już rozwinięte z indeksów OBJ).
-public struct ObjPart {
+public struct ObjPart: Sendable {
     public var material: String
     public var positions: [SIMD3<Float>] = []
     public var normals: [SIMD3<Float>] = []
@@ -18,14 +18,14 @@ public struct ObjPart {
     public var indices: [UInt32] = []
 }
 
-public struct ObjGroup {
+public struct ObjGroup: Sendable {
     public var name: String
     public var parts: [ObjPart]
 }
 
 /// Minimalny czytnik Wavefront OBJ: grupy (`g`/`o`), materiały (`usemtl`), wielokąty dzielone na trójkąty.
 /// Wystarcza dla modeli z paczek CC0 (Kenney) i pozwala podmienić model, wrzucając inny plik OBJ.
-public struct ObjModel {
+public struct ObjModel: Sendable {
     public var groups: [ObjGroup]
     /// Nazwa pliku .mtl z linii `mtllib`, jeśli była.
     public var materialLibrary: String?

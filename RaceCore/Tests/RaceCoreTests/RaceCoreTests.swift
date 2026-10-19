@@ -159,12 +159,26 @@ final class DriftTests: XCTestCase {
         XCTAssertEqual(c.slide > 0 ? 1.0 : -1.0, expected)
     }
 
-    /// Przy małej prędkości ten sam przycisk hamuje.
-    func testDriftButtonBrakesWhenSlow() {
-        let c = car(at: 50, speed: 10)
-        drive(c, seconds: 0.3, input: CarInput(steer: 0, drift: true))
+    /// Przycisk DRIFT nigdy nie hamuje: przy małej prędkości auto dalej przyspiesza,
+    /// a drift włącza się sam po osiągnięciu prędkości (dzieci często trzymają przycisk od startu).
+    func testDriftButtonNeverBrakesAndKicksInAtSpeed() {
+        let c = car(at: 50, speed: 5)
+        drive(c, seconds: 0.5, input: CarInput(steer: 0, drift: true))
+        XCTAssertGreaterThan(c.speed, 5, "przyspiesza mimo wciśniętego DRIFT")
         XCTAssertFalse(c.drifting)
-        XCTAssertLessThan(c.speed, 10)
+        drive(c, seconds: 3, input: CarInput(steer: 0, drift: true))
+        XCTAssertTrue(c.drifting, "po rozpędzeniu drift sam się włącza")
+    }
+
+    /// Krótkie stuknięcie DRIFT daje drift trwający co najmniej `Physics.driftMinTime`.
+    func testTapDriftLastsMinimumTime() {
+        let c = car(at: 50, speed: 60)
+        drive(c, seconds: 0.05, input: CarInput(steer: 0, drift: true))
+        // Stałe czasy (nie z `driftMinTime`), żeby test łapał też zbyt krótki drift.
+        drive(c, seconds: 0.3, input: CarInput(steer: 0, drift: false))
+        XCTAssertTrue(c.drifting, "stuknięcie nie kończy driftu od razu")
+        drive(c, seconds: 0.5, input: CarInput(steer: 0, drift: false))
+        XCTAssertFalse(c.drifting, "po minimalnym czasie drift się kończy")
     }
 }
 
@@ -676,5 +690,60 @@ final class RivalTests: XCTestCase {
         let hard = Campaign.rating(Campaign.rival(looking: strong, on: last))
         XCTAssertLessThan(hard, Campaign.requiredRating(last))
         XCTAssertGreaterThan(hard, Campaign.requiredRating(last) - 60)
+    }
+}
+
+final class KidSafetyTests: XCTestCase {
+    private func pair(playerBehind: Bool, sideBySide: Bool = false) -> (player: Car, rival: Car, track: Double) {
+        let len = 1000.0
+        let def = CarCatalog.builtIn[0]
+        let p = Car(name: "Gracz", def: def, color: "#FFFFFF", isPlayer: true, startDistance: 100, startLane: 0, trackLength: len)
+        let r = Car(name: "Rywal", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 0, trackLength: len)
+        if sideBySide {
+            r.d = 1.5
+            r.alphaVel = -0.5 // rywal wjeżdża bokiem w gracza
+            r.speed = 60; p.speed = 60
+        } else if playerBehind {
+            p.s = 97; p.distance = 97; p.speed = 80; r.speed = 40
+        } else {
+            r.s = 97; r.distance = 97; r.speed = 80; p.speed = 40
+        }
+        return (p, r, len)
+    }
+
+    /// Rywal uderzający w tył gracza z dużą prędkością nie rozbija go.
+    func testRivalCannotTakeDownPlayerFromBehind() {
+        let (p, r, len) = pair(playerBehind: false)
+        let out = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertFalse(p.wrecked)
+        XCTAssertTrue(out.isEmpty)
+    }
+
+    /// Rywal wjeżdżający bokiem w gracza też go nie rozbija.
+    func testRivalCannotTakeDownPlayerFromSide() {
+        let (p, r, len) = pair(playerBehind: false, sideBySide: true)
+        _ = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertFalse(p.wrecked)
+    }
+
+    /// Gracz nadal może rozbić rywala (takedown zostaje frajdą dla dziecka).
+    func testPlayerCanStillTakeDownRival() {
+        let (p, r, len) = pair(playerBehind: true)
+        let out = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertTrue(r.wrecked)
+        XCTAssertEqual(out.count, 1)
+        XCTAssertFalse(p.wrecked)
+    }
+
+    /// Rywal w fali uderzeniowej też nie rozbija gracza.
+    func testRivalShockwaveCannotWreckPlayer() {
+        let (p, r, len) = pair(playerBehind: false)
+        r.speed = 41
+        r.nitro.gauge = 1
+        r.nitro.update(dt: 0.01, pressed: true)
+        r.nitro.update(dt: 0.01, pressed: true) // podwójne = fala
+        XCTAssertEqual(r.nitro.mode, .shockwave)
+        _ = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertFalse(p.wrecked)
     }
 }

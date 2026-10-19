@@ -62,12 +62,14 @@ final class RaceGame {
 
     init(profile: Profile, spec: TrackSpec, playerCar: CarDef) {
         self.spec = spec
+        debugLog("wyścig: start budowania (trasa \(spec.id))")
+        defer { debugLog("wyścig: scena gotowa") }
         let rng = SeededRandom(seed: UInt64(Date().timeIntervalSince1970 * 1000))
         let track = spec.makeTrack()
         let names = Self.rivals.shuffled()
         // Rywale: dowolny wygląd, statystyki dopasowane do trasy (lekko słabsze od wymaganych).
         var entries: [Entry] = (0..<RaceConfig.opponents).map { i in
-            Entry(name: names[i], def: Campaign.rival(looking: rng.pick(CarCatalog.all), on: spec),
+            Entry(name: names[i], def: Campaign.rival(looking: rng.pick(LocalAssets.shared.loadedCars), on: spec),
                   color: rng.pick(CarCatalog.colors), isPlayer: false,
                   controller: AIController(skill: Campaign.aiSkill(spec) + rng.next() * 0.04,
                                            rng: SeededRandom(seed: UInt64(rng.next() * 1e15))))
@@ -81,9 +83,11 @@ final class RaceGame {
 
         do {
             root.addChild(try TrackBuilder.build(track, theme: .of(spec.region)))
+            debugLog("wyścig: trasa zbudowana")
         } catch {
             assertionFailure("Nie udało się zbudować trasy: \(error)")
         }
+        debugLog("wyścig: auta…")
         for car in sim.cars {
             let e = CarEntity(def: car.def, color: UIColorHex.color(car.color))
             root.addChild(e.root)
@@ -112,7 +116,7 @@ final class RaceGame {
         root.addChild(camera)
 
         SkyEnvironment.applyLighting(to: root)
-        #if DEBUG
+        #if DEBUG || FAMILY
         // Do zrzutów ekranu wyników: `-finishSoon` stawia gracza 150 m przed metą.
         if ProcessInfo.processInfo.arguments.contains("-finishSoon") {
             player.distance = sim.raceDistance - 150
@@ -126,17 +130,42 @@ final class RaceGame {
 
     private var player: Car { sim.player! }
 
-    /// Butla nitro: świecący niebieski zbiornik z chromowanymi końcówkami.
+    /// Butla nitro: błyszcząca niebieska kapsuła z białym pasem i zaworem, w świetlistej poświacie,
+    /// otoczona wirującym pierścieniem.
     private static func pickupModel() -> Entity {
         let e = Entity()
-        let tank = ModelEntity(mesh: .generateBox(width: 0.55, height: 1.0, depth: 0.55, cornerRadius: 0.27),
-                               materials: [Materials.glow(UIColor(red: 0.2, green: 0.75, blue: 1, alpha: 1), intensity: 2.5)])
+        let blue = UIColor(red: 0.15, green: 0.6, blue: 1, alpha: 1)
+        var shell = PhysicallyBasedMaterial()
+        shell.baseColor = .init(tint: blue)
+        shell.emissiveColor = .init(color: blue)
+        shell.emissiveIntensity = 1.6
+        shell.metallic = 0.6
+        shell.roughness = 0.2
+        shell.clearcoat = 1.0
+        // Kapsuła: walec z półkulami.
+        let tank = ModelEntity(mesh: .generateCylinder(height: 0.7, radius: 0.3), materials: [shell])
         e.addChild(tank)
-        for y: Float in [-0.55, 0.55] {
-            let cap = ModelEntity(mesh: .generateCylinder(height: 0.12, radius: 0.2), materials: [Materials.chrome])
+        for y: Float in [-0.35, 0.35] {
+            let cap = ModelEntity(mesh: .generateSphere(radius: 0.3), materials: [shell])
             cap.position.y = y
             e.addChild(cap)
         }
+        let band = ModelEntity(mesh: .generateCylinder(height: 0.14, radius: 0.31),
+                               materials: [Materials.glow(.white, intensity: 1.2)])
+        e.addChild(band)
+        let valve = ModelEntity(mesh: .generateCylinder(height: 0.16, radius: 0.1), materials: [Materials.chrome])
+        valve.position.y = 0.72
+        e.addChild(valve)
+        // Poświata i pierścień (półprzezroczyste, nieoświetlane — świecą same).
+        var haloMat = UnlitMaterial(color: UIColor(red: 0.4, green: 0.8, blue: 1, alpha: 1))
+        haloMat.blending = .transparent(opacity: .init(floatLiteral: 0.18))
+        let halo = ModelEntity(mesh: .generateSphere(radius: 0.75), materials: [haloMat])
+        e.addChild(halo)
+        var ringMat = UnlitMaterial(color: UIColor(red: 0.55, green: 0.9, blue: 1, alpha: 1))
+        ringMat.blending = .transparent(opacity: .init(floatLiteral: 0.7))
+        let ring = ModelEntity(mesh: .generateCylinder(height: 0.03, radius: 0.62), materials: [ringMat])
+        ring.orientation = simd_quatf(angle: .pi / 7, axis: [1, 0, 0])
+        e.addChild(ring)
         return e
     }
 
@@ -306,6 +335,8 @@ final class RaceGame {
     }
 
     private func toast(_ text: String, _ kind: Toast.Kind) {
+        // Ten sam komunikat tuż po poprzednim (np. seria butli nitro) nie dubluje się na ekranie.
+        if toasts.last?.text == text { return }
         let t = Toast(text: text, kind: kind)
         toasts.append(t)
         if toasts.count > 3 { toasts.removeFirst(toasts.count - 3) }
