@@ -293,8 +293,21 @@ Like most mobile racers, the scenery is built from photos rather than heavy 3D m
   Street blocks stand side by side; taller office towers form a second row. Textures in `App/Buildings/`.
 - **Road and walls:** photo asphalt with normal and roughness maps; the track edge is a wall with
   thickness and a coping, textured per region (brick, sandstone, stone, wooden planks).
-- No Kenney props are left along the track (no lamps, grandstands or start gantry); the start is a
-  line on the road.
+- **Road markings:** lines, kerbs and the start line use textures baked by
+  `tools/bake-road-textures.swift` from the CC0 asphalt photo: worn paint that shows the same asphalt
+  through its gaps, red and white kerb blocks with tyre rubber, dust, cracks and a normal map (rounded
+  edge, joints), and a worn chequered start line. A strip of the region's ground fills the gap between
+  the kerb and the wall.
+- **Roadside props** (`App/Render/RoadsideProps.swift`), right behind the wall every 4–25 m for a
+  sense of speed: street lamps with banners (city), lamps and a steel W-beam guardrail on the wall with
+  reflectors (coast), guardrail (forest), guardrail and orange snow poles (snow), wall-top delineators
+  and banner poles (desert), and red chevron boards on the outside of tight bends (all regions). Poly
+  Haven has no modern road furniture (its street lamps are 20–30k-triangle Victorian lanterns), so the
+  props are built in code from smooth solids (lathed profiles, tubes, rounded prisms) with photo PBR
+  galvanised steel (ambientCG) and one painted atlas drawn in code. Each 100 m of track is merged into
+  two meshes (steel, paint) and hidden with the rest of the far scenery. `-noRoadside` (Debug/Family)
+  turns them off for A/B timing.
+- There are no grandstands or start gantry; the start is a line on the road.
 
 Impostors are rendered offline:
 
@@ -320,6 +333,8 @@ looked out of place and made frame times worse.
 | Ground, asphalt, floor and wall textures: Concrete Floor Worn 001, Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Asphalt Track, Large Red Bricks, White Sandstone Bricks, Stacked Stone Wall, Wood Plank Wall, Red Sandstone Wall | [Poly Haven textures](https://polyhaven.com/textures) | CC0 |
 | Building facades: Facade 018A, 019A, 020A, 006, 001 | [ambientCG](https://ambientcg.com/list?category=Facade) | CC0 |
 | Building ground floor and cornices: Stone Tile Wall, Beige Wall 001 | [Poly Haven textures](https://polyhaven.com/textures) | CC0 |
+| Roadside steel (guardrails, lamps, posts): Metal 049 B (`App/Ground/props-steel*.jpg`) | [ambientCG](https://ambientcg.com/view?id=Metal049B) | CC0 |
+| Line paint, kerb and start-line textures: baked in code from Asphalt Track (above) | own work | CC0 |
 | Building facade impostors (local only, fallback): Buildings Pack 1 by G. (gunn24), Old Residential Building by Andrej Grave | Sketchfab | CC BY 4.0, credited in the app |
 
 CC0 assets need no attribution; the app lists them on the credits screen anyway. CC BY assets are
