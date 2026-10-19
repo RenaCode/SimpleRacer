@@ -108,7 +108,7 @@ final class LocalAssets {
         let fallback = CarCatalog.builtIn[0]
         // Gdy są własne modele, gra używa tylko ich (Kenney zostaje jako zapas na czas wczytywania).
         CarCatalog.replaceAll(with: cars.map { e in
-            CarDef(id: e.id, name: e.name, description: "\(e.author) · \(e.license)",
+            CarDef(id: e.id, name: e.name, description: Self.describe(topSpeed: e.topSpeed, accel: e.accel, handling: e.handling),
                    topSpeed: e.topSpeed, accel: e.accel, handling: e.handling, nitroPower: e.nitroPower,
                    shape: fallback.shape, model: fallback.model,
                    realistic: RealisticModelRef(file: e.file, paintParts: e.paint, yawDegrees: e.yaw,
@@ -121,6 +121,18 @@ final class LocalAssets {
             // Auto startowe: pierwsze z licencją komercyjną (do wersji płatnej), inaczej pierwsze w ogóle.
             Campaign.starterCar = (cars.first { $0.commercial } ?? cars[0]).id
         }
+    }
+
+    /// Krótki opis auta z jego najmocniejszej cechy (autor i licencja modelu są w Ustawieniach).
+    static func describe(topSpeed: Double, accel: Double, handling: Double) -> String {
+        func norm(_ v: Double, _ r: ClosedRange<Double>) -> Double { (v - r.lowerBound) / (r.upperBound - r.lowerBound) }
+        let speed = norm(topSpeed, CarCatalog.topSpeedRange)
+        let pull = norm(accel, CarCatalog.accelRange)
+        let grip = norm(handling, CarCatalog.handlingRange)
+        if max(speed, pull, grip) - min(speed, pull, grip) < 0.15 { return "Wszechstronne — dobre na każdą trasę." }
+        if speed >= pull && speed >= grip { return "Najszybsze na prostych." }
+        if pull >= grip { return "Błyskawicznie rusza i szybko się rozpędza." }
+        return "Pewnie trzyma się zakrętów i świetnie driftuje."
     }
 
     func isLoaded(_ def: CarDef) -> Bool {
@@ -137,6 +149,11 @@ final class LocalAssets {
     /// Do czasu wczytania auto ma model zapasowy (Kenney).
     func preload(first: String? = nil) async {
         guard let folder else { return }
+        if !Self.sceneryEnabled {
+            // Same opisy (autorzy, licencje) — z tych modeli powstały impostory, więc trzeba je podpisać.
+            // Od razu, bo lista autorów może się otworzyć, zanim wczytają się auta.
+            sceneryEntries = Self.sceneryEntries(in: folder)
+        }
         let ordered = cars.sorted { a, _ in a.id == first }
         if let head = ordered.first { await load(head, from: folder) }
         await withTaskGroup(of: Void.self) { group in
@@ -147,6 +164,11 @@ final class LocalAssets {
         if Self.sceneryEnabled { await preloadScenery(from: folder) }
         loadingDone = true
         debugLog("model: wszystkie wczytane")
+    }
+
+    private static func sceneryEntries(in folder: URL) -> [SceneryEntry] {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("scenery.json")) else { return [] }
+        return (try? JSONDecoder().decode([SceneryEntry].self, from: data)) ?? []
     }
 
     /// Modele otoczenia: paczki rozbite na pojedyncze obiekty, każdy wyśrodkowany i postawiony na ziemi.
@@ -226,11 +248,25 @@ final class LocalAssets {
                    source: "https://opengameart.org/content/4-chiptunes-adventure"),
             Credit(title: "Modele aut, budynków i toru", author: "Kenney (kenney.nl)", license: "CC0",
                    source: "https://kenney.nl"),
-            Credit(title: "Panoramy krain (Wide Street 01, Spiaggia di Mondello, Goegap, Je Gray 02, Snowy Hillside)",
+            Credit(title: "Panoramy krain i garażu (Wide Street 01, Spiaggia di Mondello, Goegap, Je Gray 02, Snowy Hillside, Autoshop 01)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/hdris"),
+            Credit(title: "Drzewa (Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium)",
+                   author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/models"),
+            Credit(title: "Tekstury gruntu i betonu (Leafy Grass, Aerial Beach 01, Aerial Sand, Sparse Grass, Snow 01, Concrete Wall 004)",
+                   author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/textures"),
         ]
         out += cars.map { Credit(title: $0.name, author: $0.author, license: $0.license, source: $0.source) }
-        out += sceneryEntries.map { Credit(title: $0.title, author: $0.author, license: $0.license, source: $0.source) }
+        // Podpisujemy modele otoczenia, które są w grze: wczytane w 3D albo jako impostory (nazwa impostora
+        // zaczyna się od nazwy pliku modelu, np. buildings-pack-1-3 ← scenery/buildings-pack-1.usdz).
+        let impostors = ImpostorLibrary.shared.all.map(\.def.name)
+        // Lista może się otworzyć, zanim wczytywanie w tle zdąży przeczytać opisy — wtedy czytamy je tu.
+        let entries = sceneryEntries.isEmpty ? (folder.map(Self.sceneryEntries) ?? []) : sceneryEntries
+        out += entries
+            .filter { e in
+                let base = ((e.file as NSString).lastPathComponent as NSString).deletingPathExtension
+                return Self.sceneryEnabled || impostors.contains { $0 == base || $0.hasPrefix(base + "-") }
+            }
+            .map { Credit(title: $0.title, author: $0.author, license: $0.license, source: $0.source) }
         return out
     }
 }

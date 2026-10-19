@@ -4,7 +4,6 @@ import SwiftUI
 /// Garaż: tylko wybór auta i koloru lakieru.
 struct GarageView: View {
     @Bindable var model: AppModel
-    @State private var showCredits = false
 
     private var customColor: Binding<Color> {
         Binding(
@@ -142,9 +141,6 @@ struct GarageView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                     Spacer(minLength: 0)
-                    Button { showCredits = true } label: { Label("Autorzy", systemImage: "info.circle") }
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
                 }
                 .frame(width: 300)
 
@@ -177,28 +173,6 @@ struct GarageView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.12)))
         }
         .padding(20)
-        .sheet(isPresented: $showCredits) { CreditsView() }
-    }
-}
-
-/// Autorzy muzyki i modeli wraz z licencjami (wymagane przez licencje CC BY).
-struct CreditsView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List(LocalAssets.shared.credits) { c in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(c.title).font(.headline)
-                    Text(c.author).font(.subheadline)
-                    Text("Licencja: \(c.license)").font(.footnote).foregroundStyle(.secondary)
-                    Text(c.source).font(.caption).foregroundStyle(.tertiary)
-                }
-                .padding(.vertical, 4)
-            }
-            .navigationTitle("Autorzy")
-            .toolbar { Button("Zamknij") { dismiss() } }
-        }
     }
 }
 

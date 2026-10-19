@@ -15,6 +15,7 @@ final class GaragePreview {
     private var carId = ""
     private var colorHex = ""
     private var angle: Float = 0.6
+    private var backdrop = ModelEntity()
 
     init() {
         let floor = ModelEntity(mesh: .generateCylinder(height: 0.25, radius: 4.3),
@@ -27,11 +28,18 @@ final class GaragePreview {
         turntable.addChild(ring)
         root.addChild(turntable)
 
-        var bg = UnlitMaterial(color: UIColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 1))
-        bg.faceCulling = .front
-        root.addChild(ModelEntity(mesh: .generateSphere(radius: 60), materials: [bg]))
+        // Tło: zdjęcie panoramiczne prawdziwego warsztatu (CC0) — ono też oświetla lakier i daje odbicia.
+        let photo = SkyEnvironment.panorama(named: "garage")
+        if let photo {
+            backdrop = SkyEnvironment.skyDome(radius: 80, image: photo)
+        } else {
+            var bg = UnlitMaterial(color: UIColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 1))
+            bg.faceCulling = .front
+            backdrop = ModelEntity(mesh: .generateSphere(radius: 80), materials: [bg])
+        }
+        root.addChild(backdrop)
 
-        SkyEnvironment.applyLighting(to: root)
+        SkyEnvironment.applyLighting(to: root, image: photo ?? Materials.sky, intensity: photo == nil ? 0.4 : 0.8)
         let key = DirectionalLight()
         key.light.intensity = 3000
         key.look(at: .zero, from: [3, 9, 6], relativeTo: nil)
@@ -77,7 +85,10 @@ final class GaragePreview {
         // wolnej części: przesunięcie ≈ 0,31 × odległość.
         let distance: Float = narrow ? 13 : (layout == .garage ? 14 : 10)
         let target: SIMD3<Float> = narrow ? [0, -1.2, 0] : (layout == .garage ? [0.31 * distance, 0.5, 0] : [-2.2, 0.6, 0])
-        camera.look(at: target, from: [0, 3.4, distance], relativeTo: nil)
+        let eye: SIMD3<Float> = [0, 3.4, distance]
+        camera.look(at: target, from: eye, relativeTo: nil)
+        // Panorama wyśrodkowana na kamerze — perspektywa zdjęcia zgadza się z widokiem.
+        backdrop.position = eye
     }
 
     func update(dt: Double) {

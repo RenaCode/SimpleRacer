@@ -42,6 +42,12 @@ private struct RaceContent: View {
                 }
             }
             .ignoresSafeArea()
+            // Pierwsze klatki sceny (wgrywanie na GPU) trwają dłużej — zasłania je krótkie wejście z czerni.
+            Color.black
+                .ignoresSafeArea()
+                .opacity(game.sceneShown ? 0 : 1)
+                .animation(.easeOut(duration: 0.35), value: game.sceneShown)
+                .allowsHitTesting(false)
 
             HudView(game: game)
                 .opacity(game.result == nil ? 1 : 0.25)

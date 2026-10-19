@@ -10,7 +10,12 @@ import UIKit
 enum SkyEnvironment {
     /// Panorama krainy z paczki aplikacji (App/Sky, CC0 Poly Haven); `nil`, gdy pliku brak.
     static func panorama(_ region: Region) -> CGImage? {
-        guard let url = Bundle.main.url(forResource: "sky-\(LocalAssets.regionKey(region))", withExtension: "jpg"),
+        panorama(named: LocalAssets.regionKey(region))
+    }
+
+    /// Panorama `App/Sky/sky-<name>.jpg` (krainy albo "garage").
+    static func panorama(named name: String) -> CGImage? {
+        guard let url = Bundle.main.url(forResource: "sky-\(name)", withExtension: "jpg"),
               let image = UIImage(contentsOfFile: url.path) else { return nil }
         return image.cgImage
     }
@@ -42,7 +47,7 @@ enum SkyEnvironment {
         let height = width * image.height / image.width
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         ctx.interpolationQuality = .medium
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         return ctx.makeImage()

@@ -291,8 +291,10 @@ final class CarEntity {
             core.scale = [1, 1, 2.2]
             core.position.z = -0.25
             exhaust.addChild(core)
-            exhaust.components.set(Self.flameEmitter(.normal))
-            exhaust.isEnabled = false
+            var emitter = Self.flameEmitter(.normal)
+            emitter.isEmitting = false
+            exhaust.components.set(emitter)
+            core.isEnabled = false
             body.addChild(exhaust)
             flames.append(core)
             flameEmitters.append(exhaust)
@@ -329,12 +331,14 @@ final class CarEntity {
         p.speed = 0.8
         p.speedVariation = 0.4
         p.particlesInheritTransform = false
-        p.mainEmitter.birthRate = 140
-        p.mainEmitter.lifeSpan = 0.9
-        p.mainEmitter.size = 0.35
-        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 5
+        // Mało, ale dużych i krótko żyjących cząsteczek: półprzezroczysty dym nakłada się na siebie
+        // przed kamerą i to on (nie płomień) przycinał obraz, gdy kilka aut driftowało naraz.
+        p.mainEmitter.birthRate = 50
+        p.mainEmitter.lifeSpan = 0.65
+        p.mainEmitter.size = 0.4
+        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 3.5
         p.mainEmitter.spreadingAngle = 0.8
-        p.mainEmitter.color = .constant(.single(UIColor(white: 0.9, alpha: 0.45)))
+        p.mainEmitter.color = .constant(.single(UIColor(white: 0.9, alpha: 0.5)))
         p.mainEmitter.opacityCurve = .linearFadeOut
         p.isEmitting = false
         return p
@@ -350,7 +354,24 @@ final class CarEntity {
     }
 
     /// Rdzeń płomienia: jasny kolor trybu (biel na ciemnym asfalcie wychodziła szaro), półprzezroczysty.
+    private static var flameMaterials: [NitroMode: UnlitMaterial] = [:]
+    private static var flameEmitterCache: [NitroMode: ParticleEmitterComponent] = [:]
+
     private static func flame(_ mode: NitroMode) -> UnlitMaterial {
+        if let m = flameMaterials[mode] { return m }
+        let m = makeFlame(mode)
+        flameMaterials[mode] = m
+        return m
+    }
+
+    private static func flameEmitter(_ mode: NitroMode) -> ParticleEmitterComponent {
+        if let p = flameEmitterCache[mode] { return p }
+        let p = makeFlameEmitter(mode)
+        flameEmitterCache[mode] = p
+        return p
+    }
+
+    private static func makeFlame(_ mode: NitroMode) -> UnlitMaterial {
         let c = flameColor(mode)
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         c.getRed(&r, green: &g, blue: &b, alpha: &a)
@@ -360,7 +381,7 @@ final class CarEntity {
     }
 
     /// Strumień płomienia: krótko żyjące, świecące (addytywne) cząsteczki, od białego żaru do koloru trybu.
-    private static func flameEmitter(_ mode: NitroMode) -> ParticleEmitterComponent {
+    private static func makeFlameEmitter(_ mode: NitroMode) -> ParticleEmitterComponent {
         var p = ParticleEmitterComponent()
         p.emitterShape = .point
         p.birthDirection = .local
@@ -400,12 +421,25 @@ final class CarEntity {
 
     func setFlame(_ mode: NitroMode) {
         if mode != flameMode {
+            // Emiter żyje cały wyścig; przy zmianie trybu podmieniamy gotowy (zbuforowany) komponent,
+            // a przy wyłączeniu tylko wstrzymujemy emisję — tworzenie emiterów w biegu dawało przycięcia.
+            let colourChanged = mode != .off && flameColorKey(mode) != flameColorKey(lastFlameColor)
+            debugLog("efekt: nitro \(mode)")
             flameMode = mode
             for e in flameEmitters {
-                e.isEnabled = mode != .off
-                if mode != .off { e.components.set(Self.flameEmitter(mode)) }
+                var p = colourChanged ? Self.flameEmitter(mode) : (e.components[ParticleEmitterComponent.self] ?? Self.flameEmitter(mode))
+                p.isEmitting = mode != .off
+                e.components.set(p)
             }
-            if mode != .off { for f in flames { f.model?.materials = [Self.flame(mode)] } }
+            if mode != .off {
+                lastFlameColor = mode
+                for f in flames {
+                    if colourChanged { f.model?.materials = [Self.flame(mode)] }
+                    f.isEnabled = true
+                }
+            } else {
+                for f in flames { f.isEnabled = false }
+            }
         }
         guard mode != .off else { return }
         // Migotanie rdzenia: płomień „oddycha”.
@@ -416,8 +450,12 @@ final class CarEntity {
         }
     }
 
+    private var lastFlameColor: NitroMode = .normal
+    private func flameColorKey(_ m: NitroMode) -> NitroMode { m == .off ? .normal : m }
+
     func setSmoke(_ on: Bool) {
         guard on != smoking else { return }
+        debugLog("efekt: dym \(on)")
         smoking = on
         for e in smoke {
             guard var p = e.components[ParticleEmitterComponent.self] else { continue }

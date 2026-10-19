@@ -1,0 +1,222 @@
+[
+ {
+  "front": "impostors/island-tree-01-front.png",
+  "height": [
+   9,
+   13
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "island-tree-01",
+  "regions": [
+   "city",
+   "coast"
+  ],
+  "side": "impostors/island-tree-01-side.png",
+  "size": [
+   4.755149841308594,
+   5.027446746826172,
+   4.817679405212402
+  ]
+ },
+ {
+  "front": "impostors/island-tree-02-front.png",
+  "height": [
+   9,
+   13
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "island-tree-02",
+  "regions": [
+   "city",
+   "coast"
+  ],
+  "side": "impostors/island-tree-02-side.png",
+  "size": [
+   4.207745552062988,
+   3.4066057205200195,
+   4.07069730758667
+  ]
+ },
+ {
+  "front": "impostors/island-tree-03-front.png",
+  "height": [
+   2.2,
+   3.2
+  ],
+  "kind": "bush",
+  "max": null,
+  "name": "island-tree-03",
+  "regions": [
+   "city",
+   "coast"
+  ],
+  "side": "impostors/island-tree-03-side.png",
+  "size": [
+   2.9720709323883057,
+   2.6150591373443604,
+   2.9132323265075684
+  ]
+ },
+ {
+  "front": "impostors/jacaranda-tree-front.png",
+  "height": [
+   8,
+   11
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "jacaranda-tree",
+  "regions": [
+   "city",
+   "coast"
+  ],
+  "side": "impostors/jacaranda-tree-side.png",
+  "size": [
+   24.417049407958984,
+   19.468875885009766,
+   19.15457534790039
+  ]
+ },
+ {
+  "front": "impostors/fir-tree-01-0-front.png",
+  "height": [
+   14,
+   20
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "fir-tree-01-0",
+  "regions": [
+   "forest",
+   "snow"
+  ],
+  "side": "impostors/fir-tree-01-0-side.png",
+  "size": [
+   6.533779144287109,
+   18.92510986328125,
+   6.426823139190674
+  ]
+ },
+ {
+  "front": "impostors/fir-tree-01-1-front.png",
+  "height": [
+   14,
+   20
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "fir-tree-01-1",
+  "regions": [
+   "forest",
+   "snow"
+  ],
+  "side": "impostors/fir-tree-01-1-side.png",
+  "size": [
+   5.612586975097656,
+   14.055205345153809,
+   6.056670665740967
+  ]
+ },
+ {
+  "front": "impostors/fir-tree-01-2-front.png",
+  "height": [
+   14,
+   20
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "fir-tree-01-2",
+  "regions": [
+   "forest",
+   "snow"
+  ],
+  "side": "impostors/fir-tree-01-2-side.png",
+  "size": [
+   6.305938720703125,
+   14.520581245422363,
+   5.9662370681762695
+  ]
+ },
+ {
+  "front": "impostors/pine-tree-01-1-front.png",
+  "height": [
+   13,
+   19
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "pine-tree-01-1",
+  "regions": [
+   "forest",
+   "snow"
+  ],
+  "side": "impostors/pine-tree-01-1-side.png",
+  "size": [
+   7.625714302062988,
+   17.544002532958984,
+   7.855485916137695
+  ]
+ },
+ {
+  "front": "impostors/fir-sapling-medium-0-front.png",
+  "height": [
+   2.5,
+   4
+  ],
+  "kind": "bush",
+  "max": null,
+  "name": "fir-sapling-medium-0",
+  "regions": [
+   "forest",
+   "snow"
+  ],
+  "side": "impostors/fir-sapling-medium-0-side.png",
+  "size": [
+   4.268614768981934,
+   7.795253276824951,
+   3.957899332046509
+  ]
+ },
+ {
+  "front": "impostors/fir-sapling-medium-1-front.png",
+  "height": [
+   2.5,
+   4
+  ],
+  "kind": "bush",
+  "max": null,
+  "name": "fir-sapling-medium-1",
+  "regions": [
+   "forest",
+   "snow"
+  ],
+  "side": "impostors/fir-sapling-medium-1-side.png",
+  "size": [
+   4.306527137756348,
+   5.906752109527588,
+   4.013303756713867
+  ]
+ },
+ {
+  "front": "impostors/fir-sapling-medium-2-front.png",
+  "height": [
+   2.5,
+   4
+  ],
+  "kind": "bush",
+  "max": null,
+  "name": "fir-sapling-medium-2",
+  "regions": [
+   "forest",
+   "snow"
+  ],
+  "side": "impostors/fir-sapling-medium-2-side.png",
+  "size": [
+   4.987889289855957,
+   8.826326370239258,
+   5.275873184204102
+  ]
+ }
+]

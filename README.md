@@ -154,9 +154,10 @@ Debug builds accept launch arguments for testing in the simulator:
 - `-holdDrift` holds DRIFT from 8 seconds after launch,
 - `-finishSoon` puts the player 150 m before the finish line (to reach the results screen quickly),
 - `-track <n>` picks the campaign track, `-screen campaign|garage` opens a screen,
+- `-showCredits` opens Settings on the credits list,
 - `-mute` turns music and sound effects off (simulator tests play through the Mac speakers),
 - `-rich` gives coins and stars (to look at the shop and unlocks), `-car <id>` picks and owns a car,
-- `-autoNitro` presses nitro every 4 s, `-toggleMuteAt <s>` toggles sound after <s> seconds.
+- `-autoNitro` presses nitro every 4 s, `-toggleMuteAt N` toggles sound after N seconds.
 
 These and the timing logs work in Debug and Family builds, not in Release.
 
@@ -245,17 +246,47 @@ the garage recolours that cell, keeping its shading. The tests check that every 
 loads, that its materials and textures exist, and that each car has a body, four wheels and a
 paint cell its body actually uses.
 
-## Region backdrops
+## Scenery: panoramas, impostors and photo textures
 
-Like most mobile racers, the far scenery is a photo, not 3D geometry: each region has a 360°
-panorama (`App/Sky/sky-<region>.jpg`, 4096 × 2048) on a sky sphere that moves with the camera, so
-the horizon stays put and costs one draw call. The same image lights the scene and gives the cars
-their reflections. Near the road the game keeps light Kenney props. The panoramas are CC0
-tonemapped HDRIs from [Poly Haven](https://polyhaven.com/hdris): Wide Street 01 (city),
-Spiaggia di Mondello (coast), Goegap (desert), Je Gray 02 (forest) and Snowy Hillside (snow).
+Like most mobile racers, the scenery is built from photos rather than heavy 3D models:
 
-Realistic 3D scenery from `LocalModels` (`scenery.json`) is switched off
-(`LocalAssets.sceneryEnabled`): it looked out of place and made frame times worse.
+- **Far plane:** each region has a 360° panorama (`App/Sky/sky-<region>.jpg`, 4096 × 2048) on a sky
+  sphere that moves with the camera, so the horizon stays put and costs one draw call. The same image
+  lights the scene and gives the cars their reflections. The garage and menu use a photo of a real
+  car workshop (`sky-garage.jpg`) the same way.
+- **Along the road:** trees and buildings are *impostors*, photos of a 3D model taken from the front
+  and the side with a transparent background. A tree is two crossed planes, a building is a box
+  wrapped in its facade photos. All impostors that share a photo are merged into one mesh, so the
+  whole roadside is a few dozen draw calls.
+- **Ground and barriers:** tiled photo textures per region (`App/Ground/`), colour-matched to the
+  ground in that region's panorama.
+
+Impostors are rendered offline:
+
+- `tools/render-impostors.py` renders vegetation in Blender, run without a window:
+  `Blender -b --factory-startup --python tools/render-impostors.py -- <folder with scenery.json> [<output>]`.
+  The tree impostors in `App/Impostors/` come from it.
+- `tools/make-impostors.swift` renders building facades with SceneKit:
+  `swift tools/make-impostors.swift LocalModels/Commercial`. It writes
+  `LocalModels/Commercial/impostors/` and `impostors.json`, which the build copies into the app.
+  Without them the city falls back to Kenney buildings.
+
+The full 3D models (`LocalModels/Commercial/scenery/`) are only the source for impostors and are not
+put in the app. Loading them directly (`LocalAssets.sceneryEnabled`) is switched off, because it
+looked out of place and made frame times worse.
+
+### Scenery licences
+
+| Asset | Source | Licence |
+|---|---|---|
+| Region panoramas: Wide Street 01, Spiaggia di Mondello, Goegap, Je Gray 02, Snowy Hillside | [Poly Haven HDRIs](https://polyhaven.com/hdris) | CC0 |
+| Garage panorama: Autoshop 01 | [Poly Haven HDRIs](https://polyhaven.com/hdris) | CC0 |
+| Trees: Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium | [Poly Haven models](https://polyhaven.com/models) | CC0 |
+| Ground and barrier textures: Leafy Grass, Aerial Beach 01, Aerial Sand, Sparse Grass, Snow 01, Concrete Wall 004 | [Poly Haven textures](https://polyhaven.com/textures) | CC0 |
+| Building facades (local only): Buildings Pack 1 by G. (gunn24), Old Residential Building by Andrej Grave | Sketchfab | CC BY 4.0, credited in the app |
+
+CC0 assets need no attribution; the app lists them on the credits screen anyway. CC BY assets are
+credited in the app (Settings → "Autorzy i licencje"), as the licence requires.
 
 ## Project layout
 
@@ -268,10 +299,14 @@ App/
   SimpleRacerApp.swift, AppModel.swift   app entry point, screens, saved profile
   Input/              touch, keyboard and controller input
   Models/             CC0 3D models (OBJ + palette textures) and their licence
+  Sky/                CC0 panoramas: one per region and the garage
+  Impostors/          CC0 tree impostors (front and side photos) and impostors.json
+  Ground/             CC0 ground and barrier textures
   Render/             RealityKit: model library, cars, track, materials and textures,
                       sky lighting, race (RaceGame), garage preview
   Views/              SwiftUI: menu, garage, HUD, touch controls, results
 project.yml           XcodeGen project definition
+tools/                app icon, impostor renderers (Blender, SceneKit)
 ```
 
 ## License

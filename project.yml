@@ -19,9 +19,13 @@ targets:
     platform: iOS
     sources:
       - path: App
-        excludes: ["Models/**"]
+        excludes: ["Models/**", "Impostors/**"]
       # Modele 3D jako katalog w paczce aplikacji (Bundle: Models/Cars, Models/City, Models/Track).
       - path: App/Models
+        type: folder
+        buildPhase: resources
+      # Impostory drzew (zdjęcia z modeli CC0 Poly Haven) — katalog z impostors.json i obrazkami.
+      - path: App/Impostors
         type: folder
         buildPhase: resources
     dependencies:
@@ -38,8 +42,11 @@ targets:
           rm -rf "$DST"
           [ -d "$SRC" ] || exit 0
           mkdir -p "$DST"
-          find "$SRC/Commercial" -name '*.json' -exec cp {} "$DST/" \; 2>/dev/null || true
-          find "$SRC/Commercial" -name '*.usdz' -exec cp {} "$DST/" \; 2>/dev/null || true
+          # Tylko główny katalog: modele aut i opisy. Modele otoczenia (Commercial/scenery/) są źródłem
+          # impostorów (tools/make-impostors.swift) — do gry trafiają tylko ich zdjęcia (Commercial/impostors/).
+          find "$SRC/Commercial" -maxdepth 1 -name '*.json' -exec cp {} "$DST/" \; 2>/dev/null || true
+          find "$SRC/Commercial" -maxdepth 1 -name '*.usdz' -exec cp {} "$DST/" \; 2>/dev/null || true
+          if [ -d "$SRC/Commercial/impostors" ]; then cp -R "$SRC/Commercial/impostors" "$DST/"; fi
           if [ "$CONFIGURATION" = "Debug" ] || [ "$CONFIGURATION" = "Family" ]; then
             find "$SRC/PrivateOnly" -name '*.usdz' -exec cp {} "$DST/" \; 2>/dev/null || true
             [ -f "$SRC/PrivateOnly/cars.json" ] && cp "$SRC/PrivateOnly/cars.json" "$DST/cars-private.json"

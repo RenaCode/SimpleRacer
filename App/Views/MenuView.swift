@@ -3,6 +3,12 @@ import SwiftUI
 
 struct MenuView: View {
     @Bindable var model: AppModel
+    #if DEBUG || FAMILY
+    /// `-showCredits` otwiera ustawienia na liście autorów (sprawdzanie licencji w symulatorze).
+    @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-showCredits")
+    #else
+    @State private var showSettings = false
+    #endif
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -29,7 +35,7 @@ struct MenuView: View {
                 Text("· moc \(Campaign.rating(model.playerCar))  ★ \(model.campaign.totalStars)  $ \(model.campaign.coins)")
             }
             .font(.system(size: 15, weight: .bold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.white.opacity(0.85))
             .padding(.bottom, 12)
 
             VStack(alignment: .leading, spacing: 10) {
@@ -45,10 +51,21 @@ struct MenuView: View {
                     .buttonStyle(RaceButtonStyle(primary: true))
                 Button { model.screen = .garage } label: { Label("Garaż", systemImage: "door.garage.closed") }
                     .buttonStyle(RaceButtonStyle())
+                Button { showSettings = true } label: { Label("Ustawienia", systemImage: "gearshape.fill") }
+                    .buttonStyle(RaceButtonStyle())
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(48)
+        .sheet(isPresented: $showSettings) { SettingsView(model: model) }
+        // Tło to jasne zdjęcie warsztatu — ciemny gradient z lewej trzyma napisy czytelne.
+        .background(alignment: .leading) {
+            LinearGradient(colors: [.black.opacity(0.7), .black.opacity(0.35), .clear],
+                           startPoint: .leading, endPoint: .trailing)
+                .frame(width: 620)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+        }
     }
 
     private func setting(_ title: String, _ icon: String, _ value: Binding<Bool>) -> some View {

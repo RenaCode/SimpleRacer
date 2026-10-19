@@ -33,6 +33,8 @@ final class RaceGame {
 
     private(set) var phase: Phase = .countdown
     private(set) var countdownText: String?
+    /// Scena wyrenderowała pierwsze klatki (do zasłonięcia startowego przycięcia).
+    private(set) var sceneShown = false
     private(set) var hud = HudState()
     private(set) var toasts: [Toast] = []
     private(set) var result: RaceResult?
@@ -231,6 +233,7 @@ final class RaceGame {
         let p = player
         AudioManager.shared.setEngine(speed: p.speed / p.def.topSpeed, nitro: p.nitro.mode != .off, running: !p.wrecked)
         clock += dt
+        if !sceneShown && clock > 0.5 { sceneShown = true }
 
         switch phase {
         case .countdown:
@@ -358,8 +361,11 @@ final class RaceGame {
                 e.body.orientation = simd_quatf(angle: Float(-car.slide * 0.12), axis: [0, 0, 1])
                 e.body.position.y = 0
             }
-            e.setFlame(car.nitro.mode)
-            e.setSmoke(car.drifting)
+            // Pierwsze klatki odliczania: płomień i dym pojawiają się na moment, zanim ruszy wyścig —
+            // przygotowanie efektów nie wypada już na pierwsze nitro rywali po starcie.
+            let rev = phase == .countdown && clock < 0.15
+            e.setFlame(rev ? .normal : car.nitro.mode)
+            e.setSmoke((rev && clock < 0.05) || car.drifting)
             e.spinWheels(distance: car.distance)
         }
         // Otoczenie: co 0,2 s ukrywamy obiekty dalej niż 320 m po trasie (bliżej przed autem widać dalej).
