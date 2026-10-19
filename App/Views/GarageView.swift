@@ -63,6 +63,7 @@ struct GarageView: View {
     var body: some View {
         HStack {
             Spacer()
+            ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("Garaż").font(Theme.display(32))
@@ -70,33 +71,37 @@ struct GarageView: View {
                     StatPill(icon: "dollarsign.circle.fill", text: "\(model.campaign.coins)", color: Theme.shock)
                 }
 
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(CarCatalog.all) { car in
-                                let active = car.id == model.previewCar.id
-                                let owned = model.campaign.ownedCars.contains(car.id)
-                                Button {
-                                    model.garageCarId = car.id
-                                    if owned { model.profile.carId = car.id }
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        if !owned { Image(systemName: "lock.fill").font(.caption) }
-                                        Text(car.name)
+                // Siatka aut w dwóch kolumnach — przy wielu autach nic się nie ucina.
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                    ForEach(CarCatalog.all) { car in
+                        let active = car.id == model.previewCar.id
+                        let owned = model.campaign.ownedCars.contains(car.id)
+                        Button {
+                            model.garageCarId = car.id
+                            if owned { model.profile.carId = car.id }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(car.name).font(.system(size: 14, weight: .bold)).lineLimit(1).minimumScaleFactor(0.8)
+                                HStack(spacing: 4) {
+                                    if owned {
+                                        Text("moc \(Campaign.rating(Campaign.upgraded(car, in: model.campaign)))")
+                                    } else {
+                                        Image(systemName: "lock.fill")
+                                        Text("\(Campaign.price(of: car)) $")
                                     }
                                 }
-                                    .font(.system(size: 15, weight: .bold))
-                                    .lineLimit(1)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 10)
-                                    .foregroundStyle(active ? Color.black : Color.white)
-                                    .background(active ? Theme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(active ? 0 : 0.15)))
-                                    .id(car.id)
+                                .font(.caption.weight(.semibold))
+                                .opacity(0.8)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .foregroundStyle(active ? Color.black : Color.white)
+                            .background(active ? Theme.accent : Color.white.opacity(owned ? 0.08 : 0.03),
+                                        in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(active ? 0 : 0.15)))
                         }
                     }
-                    .onAppear { proxy.scrollTo(model.previewCar.id, anchor: .center) }
                 }
 
                 Text(shown.description)
@@ -143,6 +148,7 @@ struct GarageView: View {
                     .buttonStyle(RaceButtonStyle(primary: true))
                     .frame(maxWidth: .infinity)
                     .padding(.top, 8)
+            }
             }
             .padding(24)
             .frame(width: 400)
