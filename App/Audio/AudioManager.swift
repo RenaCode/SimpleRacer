@@ -1,14 +1,16 @@
 import AVFoundation
 import Foundation
 
-/// Dźwięk gry: zapętlona muzyka (CC0, App/Audio/*.m4a), silnik syntezowany na żywo i krótkie efekty
-/// generowane w kodzie. Sesja `.ambient`: gra miesza się z innymi dźwiękami i słucha wyciszenia urządzenia.
+/// Dźwięk gry: zapętlona muzyka (CC0, App/Audio/*.m4a), silnik/opony/wiatr/nitro syntezowane na żywo
+/// (`EngineSynth`) i krótkie efekty generowane w kodzie. Sesja `.ambient`: gra miesza się z innymi
+/// dźwiękami i słucha wyciszenia urządzenia.
 @MainActor
 final class AudioManager {
     static let shared = AudioManager()
 
     enum Track { case menu, race }
     enum Effect: CaseIterable { case beep, go, pickup, nitro, crash, takedown }
+    private enum ImpactSound: CaseIterable { case hit, scrape }
 
     var musicOn = true { didSet { applyVolumes() } }
     var soundOn = true { didSet { applyVolumes() } }
@@ -18,19 +20,32 @@ final class AudioManager {
     private var sfx: [AVAudioPlayerNode] = []
     private var nextSfx = 0
     private var buffers: [Effect: AVAudioPCMBuffer] = [:]
+    private var impactNodes: [ImpactSound: AVAudioPlayerNode] = [:]
+    private var impactBuffers: [ImpactSound: AVAudioPCMBuffer] = [:]
+    private var lastImpact = 0.0
     private var musicBuffers: [String: AVAudioPCMBuffer] = [:]
     private var currentTrack: Track?
     private var raceTrackIndex = 0
-    private let synth = EngineSynth()
+    private static let synthRate = 44_100.0
+    private let synth = EngineSynth(sampleRate: AudioManager.synthRate)
     private lazy var engineNode: AVAudioSourceNode = {
         let synth = self.synth
         return AVAudioSourceNode { _, _, frameCount, bufferList -> OSStatus in
-            synth.render(frames: Int(frameCount), into: UnsafeMutableAudioBufferListPointer(bufferList))
+            // Wątek audio: bez alokacji i blokad. Synteza mono do pierwszego kanału, reszta to kopia.
+            let buffers = UnsafeMutableAudioBufferListPointer(bufferList)
+            guard let first = buffers.first?.mData?.assumingMemoryBound(to: Float.self) else { return noErr }
+            synth.render(frames: Int(frameCount), into: first)
+            for b in buffers.dropFirst() {
+                b.mData?.assumingMemoryBound(to: Float.self).update(from: first, count: Int(frameCount))
+            }
             return noErr
         }
     }()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
     private var started = false
+    private var lastSpeed = 0.0
+    private var lastSpeedTime: Double?
+    private var throttle = 1.0
 
     private static let musicVolume: Float = 0.45
     private static let sfxVolume: Float = 0.7
@@ -39,7 +54,8 @@ final class AudioManager {
         engine.attach(music)
         engine.connect(music, to: engine.mainMixerNode, format: format)
         engine.attach(engineNode)
-        engine.connect(engineNode, to: engine.mainMixerNode, format: AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+        engine.connect(engineNode, to: engine.mainMixerNode,
+                       format: AVAudioFormat(standardFormatWithSampleRate: Self.synthRate, channels: 1))
         for _ in 0..<5 {
             let n = AVAudioPlayerNode()
             engine.attach(n)
@@ -47,6 +63,14 @@ final class AudioManager {
             sfx.append(n)
         }
         for e in Effect.allCases { buffers[e] = Self.synthesize(e, format: format) }
+        // Uderzenia w bandę mają własne węzły: głośność zależy od siły, a otarcie może się powtarzać.
+        for i in ImpactSound.allCases {
+            let n = AVAudioPlayerNode()
+            engine.attach(n)
+            engine.connect(n, to: engine.mainMixerNode, format: format)
+            impactNodes[i] = n
+            impactBuffers[i] = Self.synthesizeImpact(i, format: format)
+        }
 
         // Przerwania (telefon, FaceTime, Siri) i zmiany wyjścia audio zatrzymują silnik — wznawiamy go.
         let nc = NotificationCenter.default
@@ -134,17 +158,56 @@ final class AudioManager {
         node.play()
     }
 
-    /// Dźwięk silnika: `speed` 0…1+ (względem prędkości maksymalnej), `nitro` podbija ton i głośność.
-    func setEngine(speed: Double, nitro: Bool, running: Bool) {
-        synth.target(pitch: 55 + 140 * min(1.4, max(0, speed)) + (nitro ? 30 : 0),
-                     volume: running && soundOn ? (nitro ? 0.3 : 0.15) : 0,
-                     growl: running && nitro ? 1 : 0)
+    /// Dźwięk jazdy, wołany co klatkę. `speed` 0…1+ (względem prędkości maksymalnej), `nitro` podbija
+    /// silnik i dodaje syk, `running` = false gasi silnik (wrak, pauza). `slip` 0…1 to kąt poślizgu
+    /// względem pełnego driftu (`abs(slide) / Physics.driftSlideAngle`), `drifting` włącza pisk od razu,
+    /// zanim auto zdąży się obrócić. Gaz/hamowanie silnikiem wynika z pochodnej prędkości (auto przyspiesza
+    /// samo): spadek prędkości to zamknięta przepustnica — matowa barwa i strzały z wydechu.
+    func setEngine(speed: Double, nitro: Bool, running: Bool, slip: Double = 0, drifting: Bool = false) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let last = lastSpeedTime, now - last > 0.001, now - last < 0.5 {
+            let dv = (speed - lastSpeed) / (now - last)
+            if dv < -0.05 { throttle = 0 } else if dv > -0.01 { throttle = 1 }
+        } else {
+            throttle = 1
+        }
+        lastSpeed = speed
+        lastSpeedTime = now
+        synth.set(speed: speed, nitro: nitro, running: running && soundOn,
+                  slip: max(slip, drifting ? 0.35 : 0), throttle: throttle)
+    }
+
+    /// Uderzenie w bandę albo otarcie o nią. `intensity` 0…1: poniżej ~0,3 słychać głównie zgrzyt
+    /// metalu (otarcie), wyżej dochodzi tąpnięcie o głośności rosnącej z siłą. Kolejne wywołania w ciągu
+    /// 70 ms są pomijane, więc można wołać co klatkę podczas ciągłego tarcia o bandę.
+    func impact(intensity: Double) {
+        guard started, soundOn, intensity.isFinite, intensity > 0.02 else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastImpact >= 0.07 else { return }
+        lastImpact = now
+        let force = min(1, intensity)
+        trigger(.scrape, volume: Self.sfxVolume * Float(0.35 + 0.65 * force))
+        if force >= 0.3 {
+            trigger(.hit, volume: Self.sfxVolume * Float((force - 0.3) / 0.7 * 0.8 + 0.2))
+        }
+    }
+
+    private func trigger(_ sound: ImpactSound, volume: Float) {
+        guard let node = impactNodes[sound], let buffer = impactBuffers[sound] else { return }
+        node.stop()
+        node.volume = volume
+        node.scheduleBuffer(buffer, at: nil)
+        node.play()
     }
 
     private func applyVolumes() {
         music.volume = musicOn ? Self.musicVolume : 0
         for n in sfx { n.volume = Self.sfxVolume }
-        if !soundOn { synth.target(pitch: 55, volume: 0, growl: 0) }
+        synth.setMaster(soundOn ? 1 : 0)
+        if !soundOn {
+            synth.set(speed: 0, nitro: false, running: false, slip: 0, throttle: 1)
+            for n in impactNodes.values { n.stop() }
+        }
     }
 
     // MARK: - Synteza efektów
@@ -192,57 +255,65 @@ final class AudioManager {
         case .takedown:
             samples = tone([(523, 0.08), (659, 0.08), (784, 0.08), (1047, 0.2)], wave: square, decay: 5)
         }
+        return buffer(samples, gain: 0.5, format: format)
+    }
+
+    /// Uderzenie: tąpnięcie (sinus 90→45 Hz) + dzwonienie blachy (nieharmoniczne, lekko rozstrojone pary
+    /// dają dudnienie) + krótki szum. Otarcie: szum pasmowy ~2–5 kHz z nieregularnym „zgrzytaniem”
+    /// i dwoma cienkimi tonami blachy.
+    private static func synthesizeImpact(_ sound: ImpactSound, format: AVAudioFormat) -> AVAudioPCMBuffer {
+        let sr = format.sampleRate
+        var rng = SystemRandomNumberGenerator()
+        var samples: [Float] = []
+        switch sound {
+        case .hit:
+            let n = Int(0.45 * sr)
+            samples.reserveCapacity(n)
+            var phase = 0.0
+            var lpFast = 0.0, lpSlow = 0.0
+            let partials: [(Double, Double)] = [(1190, 1.0), (1196, 0.7), (2370, 0.6), (2381, 0.4), (3650, 0.35), (5210, 0.2)]
+            for i in 0..<n {
+                let t = Double(i) / sr
+                phase += (45 + 45 * exp(-t * 14)) / sr
+                let thump = sin(2 * .pi * phase) * exp(-t * 11) * 0.8
+                var metal = 0.0
+                for (f, a) in partials { metal += sin(2 * .pi * f * t) * a }
+                metal *= exp(-t * 9) * 0.16
+                let w = Double.random(in: -1...1, using: &rng)
+                lpFast += 0.45 * (w - lpFast)
+                lpSlow += 0.08 * (w - lpSlow)
+                let crack = (lpFast - lpSlow) * exp(-t * 28) * 1.2
+                samples.append(Float((thump + metal + crack) * min(1, t * 400)))
+            }
+        case .scrape:
+            let n = Int(0.32 * sr)
+            samples.reserveCapacity(n)
+            var lpFast = 0.0, lpSlow = 0.0, grind = 0.0
+            let jitter1 = Double.random(in: 0.97...1.03, using: &rng), jitter2 = Double.random(in: 0.97...1.03, using: &rng)
+            for i in 0..<n {
+                let t = Double(i) / sr
+                let w = Double.random(in: -1...1, using: &rng)
+                lpFast += 0.5 * (w - lpFast)
+                lpSlow += 0.15 * (w - lpSlow)
+                // Nieregularne zgrzytanie: wolno błądząca modulacja (~40 Hz) przechodzi przez próg.
+                grind += 0.006 * (w - grind)
+                let gate = 0.45 + 0.55 * (grind > 0 ? 1.0 : 0.25)
+                let tones = sin(2 * .pi * 3100 * jitter1 * t) * 0.12 + sin(2 * .pi * 4700 * jitter2 * t) * 0.07
+                let env = min(1, t * 250) * exp(-t * 9)
+                samples.append(Float(((lpFast - lpSlow) * 2.4 * gate + tones * gate) * env))
+            }
+        }
+        return buffer(samples, gain: 0.5, format: format)
+    }
+
+    private static func buffer(_ samples: [Float], gain: Float, format: AVAudioFormat) -> AVAudioPCMBuffer {
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count))!
         buffer.frameLength = AVAudioFrameCount(samples.count)
         for ch in 0..<Int(format.channelCount) {
             let dst = buffer.floatChannelData![ch]
-            for i in 0..<samples.count { dst[i] = samples[i] * 0.5 }
+            for i in 0..<samples.count { dst[i] = samples[i] * gain }
         }
         return buffer
-    }
-}
-
-/// Syntezator silnika na wątku audio: piłokształtny ton z harmoniczną, wygładzane zmiany wysokości i głośności.
-/// Przy nitro (`growl`) dochodzi pomruk oktawę niżej, szorstkie drganie i przester — silnik „warczy”.
-/// Wartości docelowe ustawia wątek główny; drobne wyścigi przy odczycie Float są tu nieszkodliwe.
-final class EngineSynth: @unchecked Sendable {
-    private var pitch = 55.0, volume = 0.0, growl = 0.0
-    private var targetPitch = 55.0, targetVolume = 0.0, targetGrowl = 0.0
-    private var phase = 0.0, phase2 = 0.0, phaseSub = 0.0, phaseRough = 0.0
-
-    func target(pitch: Double, volume: Double, growl: Double) {
-        targetPitch = pitch
-        targetVolume = volume
-        targetGrowl = growl
-    }
-
-    func render(frames: Int, into buffers: UnsafeMutableAudioBufferListPointer) {
-        let sr = 44_100.0
-        for i in 0..<frames {
-            pitch += (targetPitch - pitch) * 0.0008
-            volume += (targetVolume - volume) * 0.0005
-            growl += (targetGrowl - growl) * 0.0004
-            phase += pitch / sr
-            phase2 += pitch * 2.01 / sr
-            phaseSub += pitch * 0.5 / sr
-            phaseRough += 31 / sr
-            if phase >= 1 { phase -= 1 }
-            if phase2 >= 1 { phase2 -= 1 }
-            if phaseSub >= 1 { phaseSub -= 1 }
-            if phaseRough >= 1 { phaseRough -= 1 }
-            let saw = 2 * phase - 1
-            let saw2 = 2 * phase2 - 1
-            let sub = phaseSub < 0.5 ? 1.0 : -1.0
-            // Szorstkość: szybkie „trzepotanie” głośności, słyszalne jako warkot.
-            let rough = 1 + 0.35 * growl * sin(2 * .pi * phaseRough)
-            let raw = (saw * 0.7 + saw2 * 0.3 + sub * 0.6 * growl) * rough
-            // Miękki przester rośnie z nitro.
-            let drive = 1 + 2.5 * growl
-            let v = Float(tanh(raw * drive) / tanh(drive) * volume)
-            for b in buffers {
-                b.mData?.assumingMemoryBound(to: Float.self)[i] = v
-            }
-        }
     }
 }
 

@@ -263,7 +263,8 @@ final class RaceGame {
             return
         }
         let p = player
-        AudioManager.shared.setEngine(speed: p.speed / p.def.topSpeed, nitro: p.nitro.mode != .off, running: !p.wrecked)
+        AudioManager.shared.setEngine(speed: p.speed / p.def.topSpeed, nitro: p.nitro.mode != .off, running: !p.wrecked,
+                                      slip: abs(p.slide) / Physics.driftSlideAngle, drifting: p.drifting)
         clock += dt
 
         switch phase {
