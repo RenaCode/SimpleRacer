@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import RaceCore
 import RealityKit
 import UIKit
@@ -243,6 +244,7 @@ final class CarEntity {
         walk(car, inPaint: false)
         realisticPaint = true
         for p in paintParts { Self.repaint(p, color) }
+        rigRealisticWheels(car, file: ref.file)
         let b = car.visualBounds(relativeTo: root)
         return ModelDims(width: b.extents.x, rearZ: b.min.z, exhaustY: 0.4,
                          backWheelX: b.extents.x * 0.4, backWheelZ: b.min.z * 0.62)
@@ -301,7 +303,7 @@ final class CarEntity {
         }
         for sx: Float in [-1, 1] {
             let e = Entity()
-            e.position = [sx * backWheelX, 0.15, backWheelZ]
+            e.position = [sx * backWheelX, 0.15, backWheelZ - 0.5]
             e.components.set(Self.smokeEmitter())
             root.addChild(e)
             smoke.append(e)
@@ -325,20 +327,26 @@ final class CarEntity {
 
     private static func smokeEmitter() -> ParticleEmitterComponent {
         var p = ParticleEmitterComponent()
-        p.emitterShape = .sphere
-        p.emitterShapeSize = [0.2, 0.05, 0.2]
+        // Pudełko wydłużone do tyłu: cząsteczki rodzą się na całej drodze, którą koło przebyło w klatce,
+        // więc przy dużej prędkości smuga jest ciągła, a nie z osobnych kłębów.
+        p.emitterShape = .box
+        p.emitterShapeSize = [0.25, 0.05, 1.4]
         p.birthLocation = .volume
         p.speed = 0.8
         p.speedVariation = 0.4
         p.particlesInheritTransform = false
         // Mało, ale dużych i krótko żyjących cząsteczek: półprzezroczysty dym nakłada się na siebie
         // przed kamerą i to on (nie płomień) przycinał obraz, gdy kilka aut driftowało naraz.
-        p.mainEmitter.birthRate = 70
-        p.mainEmitter.lifeSpan = 0.55
-        p.mainEmitter.size = 0.22
-        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 4
+        // Gęsta, rzadka smuga zamiast pojedynczych kłębów: dużo słabo kryjących cząsteczek, które rosną
+        // i rozmywają się w powietrzu (przy 200 km/h auto przejeżdża metr na klatkę).
+        p.mainEmitter.birthRate = 110
+        p.mainEmitter.lifeSpan = 0.8
+        p.mainEmitter.lifeSpanVariation = 0.25
+        p.mainEmitter.size = 0.7
+        p.mainEmitter.sizeVariation = 0.25
+        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 3.2
         p.mainEmitter.spreadingAngle = 0.8
-        p.mainEmitter.color = .constant(.single(UIColor(white: 0.92, alpha: 0.22)))
+        p.mainEmitter.color = .constant(.single(UIColor(white: 0.88, alpha: 0.1)))
         p.mainEmitter.opacityCurve = .linearFadeOut
         p.isEmitting = false
         return p
@@ -466,7 +474,92 @@ final class CarEntity {
 
     func spinWheels(distance: Double) {
         let spin = simd_quatf(angle: Float(distance) / wheelRadius, axis: [1, 0, 0])
-        for w in wheels { w.orientation = spin }
+        let steer = simd_quatf(angle: steerAngle, axis: [0, 1, 0])
+        for w in wheels { w.orientation = w.position.z > 0 ? steer * spin : spin }
+    }
+
+    /// Punkty styku tylnych kół z jezdnią (świat) — do śladów opon. Bez rozpoznanych kół: puste.
+    func rearContacts() -> [SIMD3<Float>] {
+        wheels.filter { $0.position.z < 0 }.map { $0.position(relativeTo: nil) }
+    }
+
+    // MARK: - Zawieszenie i skręt kół
+
+    /// Kąt skrętu przednich kół (rad), przechył i pochylenie nadwozia — wygładzane jak na sprężynach.
+    private(set) var steerAngle: Float = 0
+    private var roll: Float = 0
+    private var pitch: Float = 0
+    private var lastSpeed: Double?
+
+    /// Ruch nadwozia na zawieszeniu: w zakręcie przechyla się na zewnątrz, przy przyspieszaniu przysiada
+    /// tyłem, przy hamowaniu nurkuje przodem. Przednie koła skręcają zgodnie z torem jazdy (Ackermann:
+    /// kąt ≈ rozstaw osi × prędkość kątowa / prędkość), a w poślizgu kontrują.
+    /// Zwraca obrót nadwozia (bez przechyłu w drifcie, który dokłada RaceGame).
+    func chassis(yawRate: Double, speed: Double, slide: Double, dt: Double) -> simd_quatf {
+        let accel = lastSpeed.map { (speed - $0) / max(dt, 1e-3) } ?? 0
+        lastSpeed = speed
+        let lateral = speed * yawRate
+        let k = Float(1 - exp(-dt * 7))
+        let rollTarget = Float(min(0.07, max(-0.07, -lateral * 0.0035)))
+        let pitchTarget = Float(min(0.035, max(-0.035, -accel * 0.004)))
+        roll += (rollTarget - roll) * k
+        pitch += (pitchTarget - pitch) * k
+        let ackermann = 2.7 * yawRate / max(speed, 3)
+        let steerTarget = Float(min(0.5, max(-0.5, ackermann - slide)))
+        steerAngle += (steerTarget - steerAngle) * Float(1 - exp(-dt * 10))
+        return simd_quatf(angle: roll, axis: [0, 0, 1]) * simd_quatf(angle: pitch, axis: [1, 0, 0])
+    }
+
+    /// Koła realistycznego modelu: części z „wheel/tire/rim/disc…” w nazwie (bez kierownicy i zacisków)
+    /// grupujemy w cztery koła wg ćwiartki auta i podpinamy pod osie w środkach kół, żeby się kręciły.
+    /// Model, w którym koła to jedna wspólna siatka, zostaje bez zmian.
+    private func rigRealisticWheels(_ car: Entity, file: String) {
+        let wheelRx = try! NSRegularExpression(pattern: "wheel|tire|tyre|(?<![a-z])rims?(?![a-z])|disc|disk|reifen|felge", options: .caseInsensitive)
+        let skipRx = try! NSRegularExpression(pattern: "steering|caliper|brake|interior|INT_", options: .caseInsensitive)
+        func has(_ rx: NSRegularExpression, _ s: String) -> Bool { rx.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil }
+        let carBounds = car.visualBounds(relativeTo: root)
+        var parts: [(entity: ModelEntity, bounds: BoundingBox)] = []
+        func walk(_ e: Entity, matched: Bool, skipped: Bool) {
+            let m = matched || has(wheelRx, e.name)
+            let sk = skipped || has(skipRx, e.name)
+            if let model = e as? ModelEntity, m, !sk {
+                let b = model.visualBounds(relativeTo: root)
+                // Siatka obejmująca kilka kół naraz (szersza niż pół auta) — nie da się jej obracać.
+                if b.extents.x < carBounds.extents.x * 0.45, b.extents.z < carBounds.extents.z * 0.35 {
+                    parts.append((model, b))
+                }
+            }
+            for c in e.children { walk(c, matched: m, skipped: sk) }
+        }
+        walk(car, matched: false, skipped: false)
+        let cz = carBounds.center.z, cx = carBounds.center.x
+        var groups: [Int: [(entity: ModelEntity, bounds: BoundingBox)]] = [:]
+        for p in parts {
+            let key = (p.bounds.center.x > cx ? 1 : 0) + (p.bounds.center.z > cz ? 2 : 0)
+            groups[key, default: []].append(p)
+        }
+        guard groups.count == 4 else {
+            debugLog("koła: \(file) — nie rozpoznano (\(parts.count) części, \(groups.count) grup)")
+            return
+        }
+        var radius: Float = 0
+        for (_, group) in groups {
+            var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
+            for p in group { lo = simd_min(lo, p.bounds.min); hi = simd_max(hi, p.bounds.max) }
+            let pivot = Entity()
+            body.addChild(pivot)
+            pivot.setPosition((lo + hi) / 2, relativeTo: root)
+            for p in group { p.entity.setParent(pivot, preservingWorldTransform: true) }
+            wheels.append(pivot)
+            radius = max(radius, max(hi.y - lo.y, hi.z - lo.z) / 2)
+        }
+        wheelRadius = max(0.2, radius)
+        debugLog(String(format: "koła: %@ — 4 koła z %d części, promień %.2f m", file, parts.count, wheelRadius))
+        #if DEBUG || FAMILY
+        if ProcessInfo.processInfo.arguments.contains("-logWheels") {
+            debugLog("koła: \(file) części: " + Set(parts.map { String($0.entity.name.prefix(40)) }).sorted().joined(separator: ", "))
+        }
+        #endif
     }
 }
 

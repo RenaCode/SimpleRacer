@@ -161,7 +161,7 @@ Debug builds accept launch arguments for testing in the simulator:
 - `-holdDrift` holds DRIFT from 8 seconds after launch,
 - `-finishSoon` puts the player 150 m before the finish line (to reach the results screen quickly),
 - `-track <n>` picks the campaign track, `-screen campaign|garage` opens a screen,
-- `-showCredits` opens Settings on the credits list, `-raceAfter N` presses "Ścigaj się" after N seconds in the menu,
+- `-logWheels` logs the parts found as wheels in each car model, `-showCredits` opens Settings on the credits list, `-raceAfter N` presses "Ścigaj się" after N seconds in the menu,
 - `-mute` turns music and sound effects off (simulator tests play through the Mac speakers),
 - `-rich` gives coins and stars (to look at the shop and unlocks), `-car <id>` picks and owns a car,
 - `-autoNitro` presses nitro every 4 s, `-toggleMuteAt N` toggles sound after N seconds.
@@ -310,6 +310,21 @@ looked out of place and made frame times worse.
 
 CC0 assets need no attribution; the app lists them on the credits screen anyway. CC BY assets are
 credited in the app (Settings → "Autorzy i licencje"), as the licence requires.
+
+## Race effects
+
+- **Wheels:** the realistic car models have their wheel parts (wheel, tyre, rim, disc; not the
+  steering wheel or brake calipers) found by name and grouped into four wheels by position, then
+  hung on an axle at each wheel's centre. They roll with the distance driven, and the front wheels
+  steer: angle ≈ wheelbase × yaw rate / speed (Ackermann), with counter-steer in a drift.
+- **Suspension:** the body leans out of corners, squats when accelerating and dives when braking,
+  smoothed like a spring.
+- **Skid marks:** while drifting, the rear tyres leave dark marks with soft edges. All marks are one
+  mesh with a ring buffer (the oldest disappear); a small mesh with the newest segments is updated
+  every frame, so the mark starts right under the tyre.
+- **Tyre smoke:** many faint, growing particles born along the path the wheel travelled in the
+  frame, so the smoke is a haze rather than separate puffs.
+- **Speed lines:** thin streaks at the screen edges during nitro and above 260 km/h.
 
 ## Loading
 

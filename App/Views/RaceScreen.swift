@@ -62,6 +62,14 @@ private struct RaceContent: View {
     /// Wynik rozliczony w kampanii (gwiazdki, monety) — raz na wyścig.
     @State private var settled: RaceResult?
 
+    /// Smugi prędkości: pełne przy nitro, słabe od 260 km/h.
+    private var speedLineIntensity: Double {
+        let hud = game.hud
+        if game.result != nil || game.paused { return 0 }
+        if hud.mode != .off { return hud.mode == .normal ? 0.8 : 1 }
+        return min(0.4, max(0, (hud.speedKmh - 260) / 100))
+    }
+
     var body: some View {
         ZStack {
             RealityView { content in
@@ -75,6 +83,8 @@ private struct RaceContent: View {
             }
             .ignoresSafeArea()
 
+            SpeedLines(intensity: speedLineIntensity)
+                .animation(.easeOut(duration: 0.4), value: speedLineIntensity)
             HudView(game: game)
                 .opacity(game.result == nil ? 1 : 0.25)
             if game.result == nil {

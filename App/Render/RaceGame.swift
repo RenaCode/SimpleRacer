@@ -63,6 +63,10 @@ final class RaceGame {
     @ObservationIgnored private var scenery: [(entity: Entity, s: Double)] = []
     @ObservationIgnored private var skyDome = Entity()
     @ObservationIgnored private var groundCenter = SIMD3<Float>(repeating: .infinity)
+    /// Kierunek jazdy aut w poprzedniej klatce i długość klatki — do prędkości kątowej.
+    @ObservationIgnored private var lastYaw: [ObjectIdentifier: Double] = [:]
+    @ObservationIgnored private var frameDt = 1.0 / 60
+    @ObservationIgnored private let skidMarks = SkidMarks()
     @ObservationIgnored private var cullTimer = 0.0
     @ObservationIgnored private var clock = 0.0
     @ObservationIgnored private var countdown = RaceConfig.countdown
@@ -144,6 +148,7 @@ final class RaceGame {
         skyDome = SkyEnvironment.panoramaDome(named: LocalAssets.regionKey(spec.region), radius: 2000)
             ?? SkyEnvironment.skyDome(radius: 2000)
         root.addChild(skyDome)
+        root.addChild(skidMarks.entity)
         let pickupModel = Self.pickupModel()
         for p in sim.pickups {
             let e = pickupModel.clone(recursive: true)
@@ -240,6 +245,7 @@ final class RaceGame {
         }
         #endif
         let dt = min(rawDt, 0.05)
+        frameDt = max(dt, 1.0 / 240)
         input.poll()
         if paused {
             _ = input.consumeNitro() // wciśnięcia z czasu pauzy nie odpalają nitro po wznowieniu
@@ -382,7 +388,13 @@ final class RaceGame {
                     * simd_quatf(angle: sin(t * .pi) * 0.6, axis: [1, 0, 0])
                 e.body.position.y = sin(t * .pi) * 1.5
             } else {
-                e.body.orientation = simd_quatf(angle: Float(-car.slide * 0.12), axis: [0, 0, 1])
+                // Prędkość kątowa toru jazdy (do skrętu kół i przechyłu na zawieszeniu).
+                let yaw = w.heading + car.alphaVel
+                let id = ObjectIdentifier(car)
+                let yawRate = lastYaw[id].map { wrapAngle(yaw - $0) / frameDt } ?? 0
+                lastYaw[id] = yaw
+                let chassis = e.chassis(yawRate: yawRate, speed: car.speed, slide: car.slide, dt: frameDt)
+                e.body.orientation = simd_quatf(angle: Float(-car.slide * 0.12), axis: [0, 0, 1]) * chassis
                 e.body.position.y = 0
             }
             // Pierwsze klatki odliczania: płomień i dym pojawiają się na moment, zanim ruszy wyścig —
@@ -391,7 +403,15 @@ final class RaceGame {
             e.setFlame(rev ? .normal : car.nitro.mode)
             e.setSmoke((rev && clock < 0.05) || car.drifting)
             e.spinWheels(distance: car.distance)
+            // Ślady opon: w drifcie, gdy auto jest blisko gracza (dalej i tak ich nie widać).
+            if abs(wrapDelta(car.s, playerS, sim.track.length)) < 80 {
+                let base = cars.firstIndex { $0.0 === car }.map { $0 * 4 } ?? 0
+                for (i, p) in e.rearContacts().enumerated() {
+                    skidMarks.track(key: base + i, at: p, active: car.drifting && !car.wrecked && car.speed > 8)
+                }
+            }
         }
+        skidMarks.flush(dt: frameDt)
         // Otoczenie: co 0,2 s ukrywamy obiekty dalej niż 320 m po trasie (bliżej przed autem widać dalej).
         cullTimer -= 1.0 / 60
         if cullTimer <= 0 {
