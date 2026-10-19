@@ -51,7 +51,7 @@ struct HudView: View {
             .animation(.spring(duration: 0.25), value: game.toasts)
 
             if game.input.hasKeyboard {
-                Text("←/→ skręt · ↓ drift/hamulec · spacja nitro (2× fala) · Esc menu")
+                Text("←/→ skręt · ↓ drift/hamulec · spacja nitro (2× fala) · Esc pauza")
                     .font(.footnote.weight(.medium)).opacity(0.7)
                     // U góry, bo na dole leżą przyciski dotykowe.
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

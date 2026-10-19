@@ -36,6 +36,8 @@ final class RaceGame {
     private(set) var hud = HudState()
     private(set) var toasts: [Toast] = []
     private(set) var result: RaceResult?
+    /// Pauza: stoi fizyka i odliczanie, scena dalej się rysuje.
+    var paused = false
 
     @ObservationIgnored let input = GameInput()
     @ObservationIgnored let root = Entity()
@@ -65,8 +67,9 @@ final class RaceGame {
                   controller: AIController(skill: 0.9 + rng.next() * 0.08, rng: SeededRandom(seed: UInt64(rng.next() * 1e15))))
         }
         // Gracz startuje z końca stawki i musi przebić się do przodu.
+        let playerControl: Controller = profile.autoSteer ? AutoSteerController(input: input) : PlayerController(input: input)
         entries.append(Entry(name: "Ty", def: CarCatalog.car(id: profile.carId), color: profile.colorHex,
-                             isPlayer: true, controller: PlayerController(input: input)))
+                             isPlayer: true, controller: playerControl))
         sim = RaceSim(track: track, entries: entries)
         countdownText = String(Int(RaceConfig.countdown))
 
@@ -133,8 +136,12 @@ final class RaceGame {
 
     func update(dt rawDt: Double) {
         let dt = min(rawDt, 0.05)
-        clock += dt
         input.poll()
+        if paused {
+            _ = input.consumeNitro() // wciśnięcia z czasu pauzy nie odpalają nitro po wznowieniu
+            return
+        }
+        clock += dt
 
         switch phase {
         case .countdown:

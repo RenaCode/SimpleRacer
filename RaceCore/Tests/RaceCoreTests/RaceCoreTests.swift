@@ -309,3 +309,59 @@ final class ObjModelTests: XCTestCase {
         }
     }
 }
+
+/// Atrapa wejścia gracza: stały skręt/drift, nitro na żądanie.
+final class FakeInput: PlayerInputSource {
+    var steer = 0.0
+    var drift = false
+    var nitroQueued = false
+    func consumeNitro() -> Bool { defer { nitroQueued = false }; return nitroQueued }
+}
+
+final class AutoSteerTests: XCTestCase {
+    private func race(player controller: Controller, seconds: Double, laps: Int = 2,
+                      during: ((RaceSim) -> Void)? = nil) -> (sim: RaceSim, wallWrecks: Int) {
+        let track = TrackData.makeCityLoop()
+        let sim = RaceSim(track: track, entries: [
+            Entry(name: "Gracz", def: CarCatalog.all[0], color: "#FFFFFF", isPlayer: true, controller: controller),
+        ], laps: laps)
+        var wrecks = 0
+        while sim.time < seconds && sim.finishOrder.isEmpty {
+            sim.advance()
+            during?(sim)
+            for e in sim.events { if case .wreck = e { wrecks += 1 } }
+            sim.events.removeAll()
+        }
+        return (sim, wrecks)
+    }
+
+    /// Bez dotykania czegokolwiek auto-prowadzenie przejeżdża cały wyścig i nie rozbija się o bandy.
+    func testAutopilotFinishesRaceWithoutWallWrecks() {
+        let (sim, wrecks) = race(player: AutoSteerController(input: FakeInput()), seconds: 120)
+        XCTAssertEqual(sim.finishOrder.count, 1, "auto-prowadzenie dojechało do mety")
+        XCTAssertEqual(wrecks, 0)
+    }
+
+    /// Auto-prowadzenie jedzie wyraźnie szybciej niż auto bez sterowania, które ociera się o bandy —
+    /// kontrola, że auto-prowadzenie naprawdę prowadzi, a nie tylko korzysta z asystenta prostowania.
+    func testAutopilotIsMuchFasterThanNoSteering() {
+        let auto = race(player: AutoSteerController(input: FakeInput()), seconds: 120, laps: 1).sim
+        let none = race(player: PlayerController(input: FakeInput()), seconds: 120, laps: 1).sim
+        let tAuto = auto.cars[0].finishTime, tNone = none.cars[0].finished ? none.cars[0].finishTime : 120
+        print(String(format: "okrążenie: auto-prowadzenie %.1f s, bez sterowania %.1f s", tAuto, tNone))
+        XCTAssertTrue(auto.cars[0].finished)
+        XCTAssertLessThan(tAuto, tNone * 0.85)
+    }
+
+    /// Jedno stuknięcie ◀ przestawia auto na lewy pas.
+    func testTapLeftMovesOneLaneLeft() {
+        let input = FakeInput()
+        let ctl = AutoSteerController(input: input)
+        var tapped = false
+        let (sim, _) = race(player: ctl, seconds: 8) { sim in
+            if !tapped && sim.time > 2 { input.steer = 1; tapped = true } else { input.steer = 0 }
+        }
+        let car = sim.cars[0]
+        XCTAssertEqual(car.d, 0.55 * sim.track.halfWidth, accuracy: 1.5)
+    }
+}

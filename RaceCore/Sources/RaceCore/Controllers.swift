@@ -25,6 +25,54 @@ public final class PlayerController: Controller {
     }
 }
 
+/// Wspólna „kierownica” rywali i auto-prowadzenia: trzyma pas i z wyprzedzeniem wchodzi w zakręty.
+public enum LineFollower {
+    /// Skręt potrzebny, żeby jechać pasem `lane` (przesunięcie w bok, m).
+    public static func steer(car: Car, track: Track, lane: Double) -> Double {
+        let near = track.sample(at: car.s + clamp(car.speed * 0.25, 4, 20))
+        let handling = car.def.handling * (car.drifting ? Physics.driftSteerFactor : 1)
+        let curveSteer = near.curvature * car.speed / handling
+        let desiredAlpha = clamp((lane - car.d) * 0.04, -0.25, 0.25)
+        return clamp(curveSteer + (desiredAlpha - car.alphaVel) * 2.5, -1, 1)
+    }
+
+    /// Czy zakręt przed autem jest za ciasny na zwykły skręt (trzeba driftować).
+    public static func needsDrift(car: Car, track: Track, steer: Double) -> Bool {
+        let far = track.sample(at: car.s + clamp(car.speed * 0.9, 15, 70))
+        return abs(far.curvature * car.speed) > car.def.handling * 0.9 && abs(steer) > 0.25
+    }
+}
+
+/// Auto-prowadzenie gracza: auto samo trzyma pas i pokonuje zakręty (także driftem),
+/// a ◀ ▶ przestawiają je o jeden pas. DRIFT i NITRO działają jak przy ręcznym sterowaniu.
+public final class AutoSteerController: Controller {
+    private let input: PlayerInputSource
+    /// Pasy jako ułamek połowy szerokości trasy: prawy, środek, lewy.
+    private static let lanes = [-0.55, 0.0, 0.55]
+    private var laneIndex: Int?
+    private var prevSteer = 0.0
+
+    public init(input: PlayerInputSource) { self.input = input }
+
+    public func read(car: Car, dt: Double, ctx: RaceContext) -> CarInput {
+        let track = ctx.track
+        if laneIndex == nil {
+            let rel = car.d / track.halfWidth
+            laneIndex = Self.lanes.indices.min { abs(Self.lanes[$0] - rel) < abs(Self.lanes[$1] - rel) }
+        }
+        // Zmiana pasa na wciśnięcie (zbocze), nie na przytrzymanie.
+        let raw = input.steer
+        if raw > 0.5 && prevSteer <= 0.5 { laneIndex = min(Self.lanes.count - 1, laneIndex! + 1) }
+        if raw < -0.5 && prevSteer >= -0.5 { laneIndex = max(0, laneIndex! - 1) }
+        prevSteer = raw
+
+        let lane = Self.lanes[laneIndex!] * track.halfWidth
+        let steer = LineFollower.steer(car: car, track: track, lane: lane)
+        let drift = input.drift || LineFollower.needsDrift(car: car, track: track, steer: steer)
+        return CarInput(steer: steer, drift: drift, nitro: input.consumeNitro())
+    }
+}
+
 /// Rywal: trzyma się wybranego pasa, z wyprzedzeniem kontruje zakręty, driftuje w ciasnych,
 /// odpala nitro na prostych i trafia w perfect nitro zależnie od umiejętności.
 public final class AIController: Controller {
@@ -46,15 +94,9 @@ public final class AIController: Controller {
             laneTimer = 3 + rng.next() * 4
         }
 
-        let near = track.sample(at: car.s + clamp(car.speed * 0.25, 4, 20))
         let far = track.sample(at: car.s + clamp(car.speed * 0.9, 15, 70))
-        let handling = car.def.handling * (car.drifting ? Physics.driftSteerFactor : 1)
-        let curveSteer = near.curvature * car.speed / handling
-        let desiredAlpha = clamp((lane - car.d) * 0.04, -0.25, 0.25)
-        let steer = clamp(curveSteer + (desiredAlpha - car.alphaVel) * 2.5, -1, 1)
-
-        let neededYaw = abs(far.curvature * car.speed)
-        let drift = neededYaw > car.def.handling * 0.9 && abs(steer) > 0.25
+        let steer = LineFollower.steer(car: car, track: track, lane: lane)
+        let drift = LineFollower.needsDrift(car: car, track: track, steer: steer)
 
         var nitro = false
         let straight = abs(far.curvature) < 0.004

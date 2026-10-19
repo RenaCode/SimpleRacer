@@ -6,8 +6,24 @@ import RaceCore
 struct Profile: Codable, Equatable {
     var carId: String
     var colorHex: String
+    /// Auto-prowadzenie: auto samo trzyma tor, ◀ ▶ zmieniają pas. Domyślnie włączone (dla dzieci).
+    var autoSteer: Bool = true
 
     static let `default` = Profile(carId: CarCatalog.all[0].id, colorHex: CarCatalog.colors[0])
+
+    init(carId: String, colorHex: String, autoSteer: Bool = true) {
+        self.carId = carId
+        self.colorHex = colorHex
+        self.autoSteer = autoSteer
+    }
+
+    // Zapis z wcześniejszej wersji nie ma `autoSteer` — wtedy przyjmujemy domyślne.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        carId = try c.decode(String.self, forKey: .carId)
+        colorHex = try c.decode(String.self, forKey: .colorHex)
+        autoSteer = try c.decodeIfPresent(Bool.self, forKey: .autoSteer) ?? true
+    }
 }
 
 struct RaceResult: Equatable {

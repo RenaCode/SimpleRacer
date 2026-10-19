@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MenuView: View {
-    let model: AppModel
+    @Bindable var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -20,6 +20,15 @@ struct MenuView: View {
             }
             .font(.system(size: 15, weight: .bold))
             .foregroundStyle(.secondary)
+            .padding(.bottom, 12)
+
+            Toggle(isOn: $model.profile.autoSteer) {
+                Label("Auto-prowadzenie", systemImage: "steeringwheel")
+                    .font(.system(size: 17, weight: .bold))
+            }
+            .toggleStyle(.switch)
+            .tint(Theme.accent)
+            .frame(width: 300)
             .padding(.bottom, 16)
 
             HStack(spacing: 14) {
