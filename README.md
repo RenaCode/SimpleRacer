@@ -94,9 +94,13 @@ app goes to the background (Home, a notification, Control Centre).
   [OpenGameArt](https://opengameart.org/content/4-chiptunes-adventure). The menu plays "Stage
   Select"; races alternate "Stage 1" and "Stage 2". Files are AAC in `App/Audio` (see
   `LICENSE-MUSIC.txt`).
-- Sound effects (countdown, start, nitro canister chime, nitro, crash, takedown) and the engine,
-  whose pitch follows the car's speed, are synthesised in code — no sound files. With nitro the
-  engine growls: an octave-lower rumble, a rough flutter and soft distortion, about 3× louder.
+- Sound effects (countdown, start, nitro canister chime, nitro, crash, takedown, wall impacts) and
+  the driving sounds are synthesised in code — no sound files. The engine (`App/Audio/EngineSynth.swift`)
+  is a V8 with a virtual 6-speed gearbox: revs follow speed and gear, each shift cuts the throttle for
+  ~80 ms, the tone comes from ignition pulses exciting exhaust resonators plus a load-dependent
+  low-pass (dull on the overrun, with exhaust pops). Tyre squeal follows the slip angle, wind noise
+  grows with speed², nitro adds bite and a whoosh. `tools/audition-engine.swift` renders a test drive
+  to WAV without a simulator.
 - The audio session is *ambient*: it respects the device mute and mixes with other audio. Music
   and sounds can be switched off separately in the menu; audio stops when the app leaves the
   foreground and resumes after interruptions (calls, Siri).
