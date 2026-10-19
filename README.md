@@ -68,7 +68,8 @@ app goes to the background (Home, a notification, Control Centre).
   Select"; races alternate "Stage 1" and "Stage 2". Files are AAC in `App/Audio` (see
   `LICENSE-MUSIC.txt`).
 - Sound effects (countdown, start, nitro canister chime, nitro, crash, takedown) and the engine,
-  whose pitch follows the car's speed, are synthesised in code — no sound files.
+  whose pitch follows the car's speed, are synthesised in code — no sound files. With nitro the
+  engine growls: an octave-lower rumble, a rough flutter and soft distortion, about 3× louder.
 - The audio session is *ambient*: it respects the device mute and mixes with other audio. Music
   and sounds can be switched off separately in the menu; audio stops when the app leaves the
   foreground and resumes after interruptions (calls, Siri).

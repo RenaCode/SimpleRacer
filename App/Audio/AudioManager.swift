@@ -136,14 +136,15 @@ final class AudioManager {
 
     /// Dźwięk silnika: `speed` 0…1+ (względem prędkości maksymalnej), `nitro` podbija ton i głośność.
     func setEngine(speed: Double, nitro: Bool, running: Bool) {
-        synth.target(pitch: 55 + 140 * min(1.4, max(0, speed)) + (nitro ? 25 : 0),
-                     volume: running && soundOn ? (nitro ? 0.22 : 0.15) : 0)
+        synth.target(pitch: 55 + 140 * min(1.4, max(0, speed)) + (nitro ? 30 : 0),
+                     volume: running && soundOn ? (nitro ? 0.3 : 0.15) : 0,
+                     growl: running && nitro ? 1 : 0)
     }
 
     private func applyVolumes() {
         music.volume = musicOn ? Self.musicVolume : 0
         for n in sfx { n.volume = Self.sfxVolume }
-        if !soundOn { synth.target(pitch: 55, volume: 0) }
+        if !soundOn { synth.target(pitch: 55, volume: 0, growl: 0) }
     }
 
     // MARK: - Synteza efektów
@@ -202,15 +203,17 @@ final class AudioManager {
 }
 
 /// Syntezator silnika na wątku audio: piłokształtny ton z harmoniczną, wygładzane zmiany wysokości i głośności.
+/// Przy nitro (`growl`) dochodzi pomruk oktawę niżej, szorstkie drganie i przester — silnik „warczy”.
 /// Wartości docelowe ustawia wątek główny; drobne wyścigi przy odczycie Float są tu nieszkodliwe.
 final class EngineSynth: @unchecked Sendable {
-    private var pitch = 55.0, volume = 0.0
-    private var targetPitch = 55.0, targetVolume = 0.0
-    private var phase = 0.0, phase2 = 0.0
+    private var pitch = 55.0, volume = 0.0, growl = 0.0
+    private var targetPitch = 55.0, targetVolume = 0.0, targetGrowl = 0.0
+    private var phase = 0.0, phase2 = 0.0, phaseSub = 0.0, phaseRough = 0.0
 
-    func target(pitch: Double, volume: Double) {
+    func target(pitch: Double, volume: Double, growl: Double) {
         targetPitch = pitch
         targetVolume = volume
+        targetGrowl = growl
     }
 
     func render(frames: Int, into buffers: UnsafeMutableAudioBufferListPointer) {
@@ -218,13 +221,24 @@ final class EngineSynth: @unchecked Sendable {
         for i in 0..<frames {
             pitch += (targetPitch - pitch) * 0.0008
             volume += (targetVolume - volume) * 0.0005
+            growl += (targetGrowl - growl) * 0.0004
             phase += pitch / sr
             phase2 += pitch * 2.01 / sr
+            phaseSub += pitch * 0.5 / sr
+            phaseRough += 31 / sr
             if phase >= 1 { phase -= 1 }
             if phase2 >= 1 { phase2 -= 1 }
+            if phaseSub >= 1 { phaseSub -= 1 }
+            if phaseRough >= 1 { phaseRough -= 1 }
             let saw = 2 * phase - 1
             let saw2 = 2 * phase2 - 1
-            let v = Float((saw * 0.7 + saw2 * 0.3) * volume)
+            let sub = phaseSub < 0.5 ? 1.0 : -1.0
+            // Szorstkość: szybkie „trzepotanie” głośności, słyszalne jako warkot.
+            let rough = 1 + 0.35 * growl * sin(2 * .pi * phaseRough)
+            let raw = (saw * 0.7 + saw2 * 0.3 + sub * 0.6 * growl) * rough
+            // Miękki przester rośnie z nitro.
+            let drive = 1 + 2.5 * growl
+            let v = Float(tanh(raw * drive) / tanh(drive) * volume)
             for b in buffers {
                 b.mData?.assumingMemoryBound(to: Float.self)[i] = v
             }
