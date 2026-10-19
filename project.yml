@@ -11,7 +11,13 @@ targets:
   SimpleRacer:
     type: application
     platform: iOS
-    sources: [App]
+    sources:
+      - path: App
+        excludes: ["Models/**"]
+      # Modele 3D jako katalog w paczce aplikacji (Bundle: Models/Cars, Models/City, Models/Track).
+      - path: App/Models
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: RaceCore
     settings:

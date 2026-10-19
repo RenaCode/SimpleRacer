@@ -1,8 +1,10 @@
+import CoreGraphics
 import RaceCore
 import RealityKit
 import UIKit
 
-/// Auto o opływowym nadwoziu wygenerowanym z przekrojów; przód patrzy w +Z.
+/// Auto: gotowy model OBJ (App/Models/Cars), a gdy go brak — opływowe nadwozie generowane z przekrojów.
+/// Przód patrzy w +Z.
 @MainActor
 final class CarEntity {
     /// Pozycja i kierunek auta.
@@ -15,13 +17,21 @@ final class CarEntity {
     private var smoke: [Entity] = []
     private var smoking = false
     private var flameMode: NitroMode = .off
-    private let wheelRadius: Float = 0.36
+    private var wheelRadius: Float = 0.36
+    /// Paleta modelu i pole lakieru — lakier przemalowuje się, podmieniając to pole.
+    private var basePalette: CGImage?
+    private var paintRef: CarModelRef?
 
     init(def: CarDef, color: UIColor) {
         let s = def.shape
         let L = Float(s.length), W = Float(s.width)
         let hScale = Float(s.height) / 1.2
         root.addChild(body)
+        if let ref = def.model, let d = buildModel(ref: ref, def: def, color: color) {
+            addEffects(width: d.width, rearZ: d.rearZ, exhaustY: d.exhaustY, backWheelX: d.backWheelX, backWheelZ: d.backWheelZ)
+            spinWheels(distance: 0)
+            return
+        }
         let paint = Materials.paint(color)
 
         func add(_ mesh: MeshResource?, _ material: any Material, painted: Bool = false) {
@@ -152,26 +162,100 @@ final class CarEntity {
             }
         }
 
-        // Płomień nitro z wydechów.
+        addEffects(width: W, rearZ: -L / 2 - 0.1, exhaustY: 0.38, backWheelX: halfWidth(0.18) - 0.1, backWheelZ: -L / 2 + 0.18 * L)
+        spinWheels(distance: 0)
+    }
+
+    private struct ModelDims {
+        var width: Float
+        var rearZ: Float
+        var exhaustY: Float
+        var backWheelX: Float
+        var backWheelZ: Float
+    }
+
+    /// Buduje auto z modelu OBJ, skalując je do długości z `CarDef`. Koła stają się osobnymi encjami
+    /// obracanymi wokół własnego środka; części z paletą dostają przemalowany lakier.
+    private func buildModel(ref: CarModelRef, def: CarDef, color: UIColor) -> ModelDims? {
+        let lib = ModelLibrary.shared
+        guard let l = lib.load("Cars/" + ref.file) else { return nil }
+        let b = l.model.bounds
+        let s = Float(def.shape.length) / (b.max.z - b.min.z)
+        if let tex = l.materials.values.compactMap(\.texture).first {
+            basePalette = lib.image(l.folder.appendingPathComponent(tex))
+        }
+        paintRef = ref
+        let paint = modelPaint(color)
+        let holder = Entity()
+        holder.scale = [s, s, s]
+        body.addChild(holder)
+
+        var backWheel = SIMD3<Float>((b.max.x - b.min.x) * 0.38, 0.3, b.min.z * 0.6)
+        for g in l.model.groups {
+            if g.name.hasPrefix("wheel") {
+                let pts = g.parts.flatMap(\.positions)
+                guard !pts.isEmpty else { continue }
+                let lo = pts.reduce(SIMD3<Float>(repeating: .infinity)) { pointwiseMin($0, $1) }
+                let hi = pts.reduce(SIMD3<Float>(repeating: -.infinity)) { pointwiseMax($0, $1) }
+                let center = (lo + hi) / 2
+                let pivot = Entity()
+                pivot.position = center * s
+                pivot.scale = [s, s, s]
+                for p in g.parts {
+                    guard let mesh = lib.mesh(p, offset: center) else { continue }
+                    pivot.addChild(ModelEntity(mesh: mesh, materials: [lib.material(l.materials[p.material] ?? ObjMaterial(), folder: l.folder)]))
+                }
+                root.addChild(pivot)
+                wheels.append(pivot)
+                wheelRadius = (hi.y - lo.y) / 2 * s
+                if g.name == "wheel-back-left" { backWheel = center }
+            } else {
+                for p in g.parts {
+                    guard let mesh = lib.mesh(p) else { continue }
+                    let usesPalette = l.materials[p.material]?.texture != nil
+                    let e = ModelEntity(mesh: mesh, materials: [usesPalette ? paint : lib.material(l.materials[p.material] ?? ObjMaterial(), folder: l.folder)])
+                    holder.addChild(e)
+                    if usesPalette { paintParts.append(e) }
+                }
+            }
+        }
+        return ModelDims(width: (b.max.x - b.min.x) * s, rearZ: b.min.z * s, exhaustY: 0.25 * s,
+                         backWheelX: abs(backWheel.x) * s, backWheelZ: backWheel.z * s)
+    }
+
+    /// Lakier modelu: paleta z przemalowanym polem, z połyskiem bezbarwnego lakieru.
+    private func modelPaint(_ color: UIColor) -> PhysicallyBasedMaterial {
+        var m = PhysicallyBasedMaterial()
+        m.roughness = 0.35
+        m.metallic = 0.2
+        m.clearcoat = 1.0
+        m.clearcoatRoughness = 0.05
+        let lib = ModelLibrary.shared
+        if let base = basePalette, let ref = paintRef,
+           let tex = lib.paletteTexture(lib.paintedPalette(base, row: ref.paintRow, column: ref.paintColumn, color: color)) {
+            m.baseColor = .init(tint: .white, texture: .init(tex, sampler: ModelLibrary.paletteSampler))
+        }
+        return m
+    }
+
+    /// Płomień nitro z wydechów i dym spod tylnych kół.
+    private func addEffects(width W: Float, rearZ: Float, exhaustY: Float, backWheelX: Float, backWheelZ: Float) {
         let flameMesh = MeshResource.generateCone(height: 1.3, radius: 0.16)
         for side: Float in [-1, 1] {
             let f = ModelEntity(mesh: flameMesh, materials: [Self.flame(.normal)])
             f.orientation = simd_quatf(angle: -.pi / 2, axis: [1, 0, 0]) // czubek do tyłu (−Z)
-            f.position = [side * W * 0.22, 0.38, -L / 2 - 0.75]
+            f.position = [side * W * 0.22, exhaustY, rearZ - 0.65]
             f.isEnabled = false
             body.addChild(f)
             flames.append(f)
         }
-
-        // Dym spod tylnych kół w drifcie.
         for sx: Float in [-1, 1] {
             let e = Entity()
-            e.position = [sx * (halfWidth(0.18) - 0.1), 0.15, -L / 2 + 0.18 * L]
+            e.position = [sx * backWheelX, 0.15, backWheelZ]
             e.components.set(Self.smokeEmitter())
             root.addChild(e)
             smoke.append(e)
         }
-        spinWheels(distance: 0)
     }
 
     /// Przekrój nadwozia: zaokrąglony prostokąt (superelipsa), zwężany ku górze o `topTaper`.
@@ -220,8 +304,13 @@ final class CarEntity {
     }
 
     func setColor(_ color: UIColor) {
-        let m = Materials.paint(color)
-        for p in paintParts { p.model?.materials = [m] }
+        if paintRef != nil {
+            let m = modelPaint(color)
+            for p in paintParts { p.model?.materials = [m] }
+        } else {
+            let m = Materials.paint(color)
+            for p in paintParts { p.model?.materials = [m] }
+        }
     }
 
     func setFlame(_ mode: NitroMode) {

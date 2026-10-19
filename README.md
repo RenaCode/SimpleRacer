@@ -125,26 +125,44 @@ latest stable Xcode and needs no specific simulator or code signing.
 - **The app** (SwiftUI + RealityKit) renders it. `RaceGame` wraps the simulation, places the car
   entities, drives the chase camera and publishes the HUD state to SwiftUI; menus, the garage,
   the HUD and the touch controls are SwiftUI views over a `RealityView` with a virtual camera.
-  Everything is generated in code, with no asset files: car bodies are smooth lofted meshes
-  (cross-sections along the car) with clear-coat paint, glass cabins, spoked wheels and light
-  strips; the sky is a procedural equirectangular image used both as the backdrop and as
-  image-based lighting, so the paint reflects it; the road, grass and building facades use
-  procedural textures; trees, street lights, drift smoke (particles) and nitro flames complete
-  the scene.
+  Cars, buildings, trees, street lights and the start area (gantry, grandstands, tents, flags)
+  are CC0 models by Kenney (see [3D models](#3d-models)), loaded from OBJ files at runtime by a
+  small parser in `RaceCore`. Every model has a code-generated fallback, used when its file is
+  missing: lofted car bodies, buildings with facade textures, simple trees and lamps. The road,
+  kerbs, walls, sky (also used as image-based lighting), drift smoke and nitro flames are
+  generated in code.
 - The selected car and colour are stored in `UserDefaults`. There is no backend.
+
+## 3D models
+
+`App/Models` holds CC0 models (public domain, no attribution required) from three packs by
+[Kenney](https://www.kenney.nl):
+
+| Folder | Pack | Used for |
+|---|---|---|
+| `Cars/` | [Car Kit](https://kenney.nl/assets/car-kit) 3.1 | the three cars (`sedan-sports`, `race-future`, `hatchback-sports`) |
+| `City/` | [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial) 2.1 | buildings and skyscrapers along the track |
+| `Track/` | [Racing Kit](https://kenney.nl/assets/racing-kit) 1.0 | start gantry, grandstands, tents, checkered flags, trees, street lights |
+
+To swap a model, replace its `.obj`/`.mtl` (and texture) with a file of the same name. Each car
+names its model and the palette cell that holds the paint in `CarCatalog.swift` (`CarModelRef`);
+the garage recolours that cell, keeping its shading. The tests check that every bundled model
+loads, that its materials and textures exist, and that each car has a body, four wheels and a
+paint cell its body actually uses.
 
 ## Project layout
 
 ```
 RaceCore/
   Sources/RaceCore/   Config, Car, Nitro, Pickups, Track, Collisions, Controllers (AI), RaceSim,
-                      CarCatalog, TrackData
+                      CarCatalog, TrackData, ObjModel (OBJ/MTL parser)
   Tests/RaceCoreTests/
 App/
   SimpleRacerApp.swift, AppModel.swift   app entry point, screens, saved profile
   Input/              touch, keyboard and controller input
-  Render/             RealityKit: car models, track, materials and textures, sky lighting,
-                      race (RaceGame), garage preview
+  Models/             CC0 3D models (OBJ + palette textures) and their licence
+  Render/             RealityKit: model library, cars, track, materials and textures,
+                      sky lighting, race (RaceGame), garage preview
   Views/              SwiftUI: menu, garage, HUD, touch controls, results
 project.yml           XcodeGen project definition
 ```

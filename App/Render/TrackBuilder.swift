@@ -77,6 +77,7 @@ enum TrackBuilder {
         try add(grass, "grass", Materials.grassMaterial)
 
         root.addChild(startGate(track))
+        root.addChild(startArea(track))
         root.addChild(buildings(track))
         root.addChild(roadside(track))
         return root
@@ -93,6 +94,13 @@ enum TrackBuilder {
                                materials: [SimpleMaterial(color: .white, roughness: 0.8, isMetallic: false)])
         line.position.y = 0.05
         gate.addChild(line)
+
+        let lib = ModelLibrary.shared
+        if let size = lib.size("Track/overhead"),
+           let overhead = lib.prop("Track/overhead", scale: (2 * hw + 4) / size.x) {
+            gate.addChild(overhead)
+            return gate
+        }
         let pillar = SimpleMaterial(color: UIColor(white: 0.14, alpha: 1), roughness: 0.5, isMetallic: true)
         for side: Float in [-1, 1] {
             let p = ModelEntity(mesh: .generateBox(width: 0.8, height: 8, depth: 0.8), materials: [pillar])
@@ -106,7 +114,52 @@ enum TrackBuilder {
         return gate
     }
 
+    /// Kąt obrotu wokół Y, przy którym lokalne +Z modelu patrzy z boku trasy na jej oś.
+    static func facingAxis(heading: Double, side: Double) -> Float {
+        Float(heading) + (side > 0 ? -.pi / 2 : .pi / 2)
+    }
+
+    private static let cityModels = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n"]
+        .map { "City/building-\($0)" }
+    private static let skyscrapers = ["a", "b", "c", "d", "e"].map { "City/building-skyscraper-\($0)" }
+
+    /// Strefa przy linii startu zarezerwowana na trybuny i namioty (bez budynków).
+    private static func isStartArea(_ s: Double, _ track: Track) -> Bool {
+        s > track.length - 110 || s < 15
+    }
+
     private static func buildings(_ track: Track) -> Entity {
+        let lib = ModelLibrary.shared
+        let regular = cityModels.filter { lib.size($0) != nil }
+        let tall = skyscrapers.filter { lib.size($0) != nil }
+        guard !regular.isEmpty else { return boxBuildings(track) }
+
+        let root = Entity()
+        let rng = SeededRandom(seed: 1234)
+        let hw = track.halfWidth
+        for side in [1.0, -1.0] {
+            var s = 0.0
+            while s < track.length {
+                let path = (!tall.isEmpty && rng.next() < 0.25) ? rng.pick(tall) : rng.pick(regular)
+                let size = lib.size(path)!
+                let scale = Float(12 + rng.next() * 6)
+                let footprint = Double(max(size.x, size.z) * scale)
+                let offset = side * (hw + 9 + footprint / 2 + rng.next() * 12)
+                let pos = track.toWorld(s: s + footprint / 2, d: offset)
+                let skip = isStartArea(s, track) || track.distanceToAxis(x: pos.x, z: pos.z) < hw + 6 + footprint * 0.6
+                if !skip, let b = lib.prop(path, scale: scale) {
+                    b.position = [Float(pos.x), 0, Float(pos.z)]
+                    b.orientation = simd_quatf(angle: facingAxis(heading: pos.heading, side: side), axis: [0, 1, 0])
+                    root.addChild(b)
+                }
+                s += footprint + 3 + rng.next() * 6
+            }
+        }
+        return root
+    }
+
+    /// Zapas, gdy modeli budynków nie ma w paczce: bryły z elewacją z oknami.
+    private static func boxBuildings(_ track: Track) -> Entity {
         let root = Entity()
         let rng = SeededRandom(seed: 1234)
         let mesh = MeshResource.generateBox(size: 1)
@@ -143,6 +196,28 @@ enum TrackBuilder {
         return root
     }
 
+    /// Trybuny, namioty i flagi w szachownicę wokół linii startu.
+    private static func startArea(_ track: Track) -> Entity {
+        let root = Entity()
+        let lib = ModelLibrary.shared
+        let hw = track.halfWidth
+        func place(_ path: String, scale: Float, s: Double, d: Double, side: Double) {
+            guard let e = lib.prop(path, scale: scale) else { return }
+            let p = track.toWorld(s: s, d: d)
+            e.position = [Float(p.x), 0, Float(p.z)]
+            e.orientation = simd_quatf(angle: facingAxis(heading: p.heading, side: side), axis: [0, 1, 0])
+            root.addChild(e)
+        }
+        // Trybuny po obu stronach tuż przed metą, namioty dalej.
+        for (k, s) in [-28.0, -52.0, -76.0].enumerated() {
+            place("Track/grandStandCovered", scale: 13, s: s, d: hw + 10, side: 1)
+            if k < 2 { place("Track/grandStandCovered", scale: 13, s: s - 10, d: -(hw + 10), side: -1) }
+        }
+        for s in [-96.0, -104.0] { place("Track/tent", scale: 7, s: s, d: -(hw + 7), side: -1) }
+        for side in [1.0, -1.0] { place("Track/flagCheckers", scale: 3.2, s: 3, d: side * (hw + 2.2), side: side) }
+        return root
+    }
+
     /// Drzewa i latarnie między bandą a budynkami.
     private static func roadside(_ track: Track) -> Entity {
         let root = Entity()
@@ -160,6 +235,13 @@ enum TrackBuilder {
                 let off = side * (hw + 5 + rng.next() * 4)
                 let pos = track.toWorld(s: s, d: off)
                 guard track.distanceToAxis(x: pos.x, z: pos.z) > hw + 3.5 else { continue }
+                let treePath = rng.next() < 0.6 ? "Track/treeLarge" : "Track/treeSmall"
+                if let model = ModelLibrary.shared.prop(treePath, scale: Float(5.5 + rng.next() * 2.5)) {
+                    model.position = [Float(pos.x), 0, Float(pos.z)]
+                    model.orientation = simd_quatf(angle: Float(rng.next() * 2 * .pi), axis: [0, 1, 0])
+                    root.addChild(model)
+                    continue
+                }
                 let tree = Entity()
                 tree.position = [Float(pos.x), 0, Float(pos.z)]
                 let t = ModelEntity(mesh: trunk, materials: [bark])
@@ -187,6 +269,13 @@ enum TrackBuilder {
         while s < track.length {
             for side in [1.0, -1.0] {
                 let pos = track.toWorld(s: s, d: side * (hw + 2.6))
+                // Latarnia z modelu ma ramię w stronę −Z, więc obracamy ją o 180° względem „frontem do toru”.
+                if let model = ModelLibrary.shared.prop("Track/lightPostModern", scale: 9) {
+                    model.position = [Float(pos.x), 0, Float(pos.z)]
+                    model.orientation = simd_quatf(angle: facingAxis(heading: pos.heading, side: side) + .pi, axis: [0, 1, 0])
+                    root.addChild(model)
+                    continue
+                }
                 let e = Entity()
                 e.position = [Float(pos.x), 0, Float(pos.z)]
                 // Ramię latarni sięga nad jezdnię: obracamy całość tak, by lokalne +Z patrzyło w stronę osi trasy.

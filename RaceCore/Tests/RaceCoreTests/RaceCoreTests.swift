@@ -214,3 +214,98 @@ final class PickupTests: XCTestCase {
         XCTAssertTrue(sim.pickups[0].isActive)
     }
 }
+
+final class ObjModelTests: XCTestCase {
+    func testParsesGroupsMaterialsAndTriangulates() {
+        let obj = """
+        mtllib car.mtl
+        v 0 0 0
+        v 1 0 0
+        v 1 1 0
+        v 0 1 0
+        vt 0 0
+        vt 1 0
+        vt 1 1
+        vt 0 1
+        vn 0 0 1
+        g body
+        usemtl paint
+        f 1/1/1 2/2/1 3/3/1 4/4/1
+        g wheel-front-left
+        usemtl rubber
+        f 1/1/1 2/2/1 3/3/1
+        """
+        let m = ObjModel.parse(obj)
+        XCTAssertEqual(m.materialLibrary, "car.mtl")
+        XCTAssertEqual(m.groups.map(\.name), ["body", "wheel-front-left"])
+        let body = m.group(named: "body")!.parts[0]
+        XCTAssertEqual(body.material, "paint")
+        XCTAssertEqual(body.indices.count, 6, "czworokąt → 2 trójkąty")
+        XCTAssertEqual(body.positions.count, 4)
+        XCTAssertEqual(body.uvs.count, 4)
+        XCTAssertEqual(body.normals.count, 4)
+        XCTAssertEqual(m.bounds.max, [1, 1, 0])
+    }
+
+    func testParsesMaterialLibrary() {
+        let mats = ObjModel.parseMaterials("""
+        newmtl colormap
+        Kd 1 1 1
+        map_Kd Textures/colormap.png
+        newmtl red
+        Kd 0.9 0.3 0.3
+        """)
+        XCTAssertEqual(mats["colormap"]?.texture, "Textures/colormap.png")
+        XCTAssertEqual(mats["red"]?.diffuse, [0.9, 0.3, 0.3])
+        XCTAssertNil(mats["red"]?.texture)
+    }
+
+    /// Katalog z modelami aplikacji (App/Models) względem tego pliku.
+    private var modelsDir: URL {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../App/Models").standardized
+    }
+
+    /// Każdy model w aplikacji się wczytuje, a jego materiały i tekstury istnieją.
+    func testAllBundledModelsLoad() throws {
+        let fm = FileManager.default
+        var count = 0
+        for dir in ["Cars", "City", "Track"] {
+            let folder = modelsDir.appendingPathComponent(dir)
+            for file in try fm.contentsOfDirectory(atPath: folder.path) where file.hasSuffix(".obj") {
+                let model = ObjModel.parse(try String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8))
+                XCTAssertFalse(model.groups.isEmpty, file)
+                let lib = try XCTUnwrap(model.materialLibrary, file)
+                let mats = ObjModel.parseMaterials(try String(contentsOf: folder.appendingPathComponent(lib), encoding: .utf8))
+                for g in model.groups { for p in g.parts {
+                    XCTAssertNotNil(mats[p.material], "\(file): brak materiału \(p.material)")
+                    if let tex = mats[p.material]?.texture {
+                        XCTAssertTrue(fm.fileExists(atPath: folder.appendingPathComponent(tex).path), "\(file): brak \(tex)")
+                        XCTAssertFalse(p.uvs.isEmpty, "\(file): tekstura bez UV")
+                    }
+                } }
+                count += 1
+            }
+        }
+        XCTAssertEqual(count, 3 + 19 + 7)
+    }
+
+    /// Każde auto ma nadwozie i cztery koła, a wskazane pole palety naprawdę jest jego lakierem.
+    func testCarModelsHaveWheelsAndPaintCell() throws {
+        for car in CarCatalog.all {
+            let ref = try XCTUnwrap(car.model)
+            let url = modelsDir.appendingPathComponent("Cars/\(ref.file).obj")
+            let model = ObjModel.parse(try String(contentsOf: url, encoding: .utf8))
+            for w in ["wheel-front-left", "wheel-front-right", "wheel-back-left", "wheel-back-right"] {
+                XCTAssertNotNil(model.group(named: w), "\(ref.file): brak \(w)")
+            }
+            let body = try XCTUnwrap(model.group(named: "body"))
+            let uvs = body.parts.flatMap(\.uvs)
+            let inCell = uvs.filter { uv in
+                let u = uv.x - uv.x.rounded(.down), v = uv.y - uv.y.rounded(.down)
+                return min(7, Int(u * 8)) == ref.paintColumn && min(3, Int((1 - v) * 4)) == ref.paintRow
+            }
+            XCTAssertGreaterThan(Double(inCell.count) / Double(uvs.count), 0.1, "\(ref.file): pole lakieru nieużywane")
+        }
+    }
+}

@@ -9,6 +9,14 @@ public struct CarShape: Sendable {
     public var spoiler: Bool
 }
 
+/// Model 3D auta z pliku OBJ (App/Models/Cars) i pole palety tekstury, które jest lakierem.
+/// Pole palety: tekstura 512×512 podzielona na 8 kolumn × 4 wiersze; wiersz 0 to góra obrazu.
+public struct CarModelRef: Sendable {
+    public var file: String
+    public var paintRow: Int
+    public var paintColumn: Int
+}
+
 public struct CarDef: Identifiable, Sendable {
     public var id: String
     public var name: String
@@ -22,6 +30,8 @@ public struct CarDef: Identifiable, Sendable {
     /// Mnożnik siły nitro.
     public var nitroPower: Double
     public var shape: CarShape
+    /// Gotowy model; nil = nadwozie generowane z `shape`.
+    public var model: CarModelRef? = nil
 }
 
 public enum CarCatalog {
@@ -29,17 +39,20 @@ public enum CarCatalog {
         CarDef(
             id: "strzala", name: "Strzała", description: "Wszechstronna — dobra na każdą trasę.",
             topSpeed: 75, accel: 14, handling: 1.6, nitroPower: 1.0,
-            shape: CarShape(length: 4.4, width: 2.0, height: 1.2, cabinLength: 0.42, cabinOffset: -0.2, spoiler: false)
+            shape: CarShape(length: 4.4, width: 2.0, height: 1.2, cabinLength: 0.42, cabinOffset: -0.2, spoiler: false),
+            model: CarModelRef(file: "sedan-sports", paintRow: 1, paintColumn: 6)
         ),
         CarDef(
             id: "grom", name: "Grom", description: "Najszybsza na prostych, ciężka w zakrętach.",
             topSpeed: 82, accel: 11, handling: 1.35, nitroPower: 1.15,
-            shape: CarShape(length: 4.7, width: 2.05, height: 1.05, cabinLength: 0.34, cabinOffset: -0.45, spoiler: true)
+            shape: CarShape(length: 4.7, width: 2.05, height: 1.05, cabinLength: 0.34, cabinOffset: -0.45, spoiler: true),
+            model: CarModelRef(file: "race-future", paintRow: 1, paintColumn: 7)
         ),
         CarDef(
             id: "zwinny", name: "Zwinny", description: "Mocno przyspiesza i świetnie driftuje.",
             topSpeed: 70, accel: 16, handling: 1.9, nitroPower: 0.95,
-            shape: CarShape(length: 4.0, width: 1.9, height: 1.3, cabinLength: 0.5, cabinOffset: -0.1, spoiler: false)
+            shape: CarShape(length: 4.0, width: 1.9, height: 1.3, cabinLength: 0.5, cabinOffset: -0.1, spoiler: false),
+            model: CarModelRef(file: "hatchback-sports", paintRow: 1, paintColumn: 3)
         ),
     ]
 
