@@ -60,102 +60,123 @@ struct GarageView: View {
         }
     }
 
+    /// Ile aut widać od razu (3 × 3); reszta po rozwinięciu.
+    private static let visibleCars = 9
+    @State private var showAllCars = false
+
+    private var carGrid: some View {
+        let cars = showAllCars ? CarCatalog.all : Array(CarCatalog.all.prefix(Self.visibleCars))
+        return VStack(spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                ForEach(cars) { car in carTile(car) }
+            }
+            if CarCatalog.all.count > Self.visibleCars {
+                Button { withAnimation { showAllCars.toggle() } } label: {
+                    Label(showAllCars ? "Mniej aut" : "Więcej aut (\(CarCatalog.all.count - Self.visibleCars))",
+                          systemImage: showAllCars ? "chevron.up" : "chevron.down")
+                        .font(.footnote.weight(.bold))
+                }
+            }
+        }
+    }
+
+    private func carTile(_ car: CarDef) -> some View {
+        let active = car.id == model.previewCar.id
+        let owned = model.campaign.ownedCars.contains(car.id)
+        return Button {
+            model.garageCarId = car.id
+            if owned { model.profile.carId = car.id }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(car.name).font(.system(size: 13, weight: .bold)).lineLimit(2).minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
+                HStack(spacing: 3) {
+                    if owned {
+                        Text("moc \(Campaign.rating(Campaign.upgraded(car, in: model.campaign)))")
+                    } else {
+                        Image(systemName: "lock.fill")
+                        Text("\(Campaign.price(of: car))")
+                    }
+                }
+                .font(.caption2.weight(.semibold))
+                .opacity(0.8)
+            }
+            .padding(8)
+            .foregroundStyle(active ? Color.black : Color.white)
+            .background(active ? Theme.accent : Color.white.opacity(owned ? 0.08 : 0.03), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(active ? 0 : 0.15)))
+        }
+    }
+
+    private var colors: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(36), spacing: 10), count: 5), alignment: .leading, spacing: 10) {
+            ForEach(CarCatalog.colors, id: \.self) { hex in
+                Button { model.profile.colorHex = hex } label: {
+                    Circle().fill(Color(hex: hex)).frame(width: 36, height: 36)
+                        .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 2))
+                        .overlay(Circle().stroke(Theme.accent, lineWidth: 3).padding(-4)
+                            .opacity(hex == model.profile.colorHex ? 1 : 0))
+                }
+                .accessibilityLabel("Kolor \(hex)")
+            }
+            ColorPicker("Własny kolor", selection: customColor, supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: 36, height: 36)
+        }
+    }
+
     var body: some View {
         HStack {
             Spacer()
-            ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Garaż").font(Theme.display(32))
-                    Spacer()
-                    StatPill(icon: "dollarsign.circle.fill", text: "\(model.campaign.coins)", color: Theme.shock)
-                }
-
-                // Siatka aut w dwóch kolumnach — przy wielu autach nic się nie ucina.
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                    ForEach(CarCatalog.all) { car in
-                        let active = car.id == model.previewCar.id
-                        let owned = model.campaign.ownedCars.contains(car.id)
-                        Button {
-                            model.garageCarId = car.id
-                            if owned { model.profile.carId = car.id }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(car.name).font(.system(size: 14, weight: .bold)).lineLimit(1).minimumScaleFactor(0.8)
-                                HStack(spacing: 4) {
-                                    if owned {
-                                        Text("moc \(Campaign.rating(Campaign.upgraded(car, in: model.campaign)))")
-                                    } else {
-                                        Image(systemName: "lock.fill")
-                                        Text("\(Campaign.price(of: car)) $")
-                                    }
-                                }
-                                .font(.caption.weight(.semibold))
-                                .opacity(0.8)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .foregroundStyle(active ? Color.black : Color.white)
-                            .background(active ? Theme.accent : Color.white.opacity(owned ? 0.08 : 0.03),
-                                        in: RoundedRectangle(cornerRadius: 8))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(active ? 0 : 0.15)))
-                        }
+            // Dwie kolumny: auta po lewej, moc/ulepszenia/kolory po prawej — wszystko mieści się bez przewijania.
+            HStack(alignment: .top, spacing: 22) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Garaż").font(Theme.display(32))
+                        Spacer()
+                        StatPill(icon: "dollarsign.circle.fill", text: "\(model.campaign.coins)", color: Theme.shock)
                     }
+                    carGrid
+                    Text(shown.description)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                    Spacer(minLength: 0)
+                    Button { showCredits = true } label: { Label("Autorzy", systemImage: "info.circle") }
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
+                .frame(width: 300)
 
-                Text(shown.description)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(minHeight: 40, alignment: .topLeading)
-
-                VStack(spacing: 8) {
-                    StatRow(label: "Prędkość", value: stats.topSpeed, range: CarCatalog.topSpeedRange,
-                            text: "\(Int((stats.topSpeed * 3.6).rounded())) km/h")
-                    StatRow(label: "Przyspieszenie", value: stats.accel, range: CarCatalog.accelRange,
-                            text: String(format: "%.0f", stats.accel))
-                    StatRow(label: "Prowadzenie", value: stats.handling, range: CarCatalog.handlingRange,
-                            text: String(format: "%.1f", stats.handling))
-                    StatRow(label: "Nitro", value: stats.nitroPower, range: CarCatalog.nitroRange,
-                            text: String(format: "×%.2f", stats.nitroPower))
-                }
-
-                workshop
-
-                Text("KOLOR").font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary).padding(.top, 6)
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(40), spacing: 10), count: 5), alignment: .leading, spacing: 10) {
-                    ForEach(CarCatalog.colors, id: \.self) { hex in
-                        Button { model.profile.colorHex = hex } label: {
-                            Circle().fill(Color(hex: hex)).frame(width: 40, height: 40)
-                                .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 2))
-                                .overlay(Circle().stroke(Theme.accent, lineWidth: 3).padding(-5)
-                                    .opacity(hex == model.profile.colorHex ? 1 : 0))
-                        }
-                        .accessibilityLabel("Kolor \(hex)")
+                VStack(alignment: .leading, spacing: 12) {
+                    workshop
+                    VStack(spacing: 7) {
+                        StatRow(label: "Prędkość", value: stats.topSpeed, range: CarCatalog.topSpeedRange,
+                                text: "\(Int((stats.topSpeed * 3.6).rounded())) km/h")
+                        StatRow(label: "Przyspieszenie", value: stats.accel, range: CarCatalog.accelRange,
+                                text: String(format: "%.0f", stats.accel))
+                        StatRow(label: "Prowadzenie", value: stats.handling, range: CarCatalog.handlingRange,
+                                text: String(format: "%.1f", stats.handling))
+                        StatRow(label: "Nitro", value: stats.nitroPower, range: CarCatalog.nitroRange,
+                                text: String(format: "×%.2f", stats.nitroPower))
                     }
-                    ColorPicker("Własny kolor", selection: customColor, supportsOpacity: false)
-                        .labelsHidden()
-                        .frame(width: 40, height: 40)
+                    Text("KOLOR").font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary)
+                    colors
+                    Spacer(minLength: 0)
+                    Button {
+                        model.garageCarId = nil
+                        model.screen = .menu
+                    } label: { Label("Gotowe", systemImage: "checkmark") }
+                        .buttonStyle(RaceButtonStyle(primary: true))
+                        .frame(maxWidth: .infinity)
                 }
-
-                Button { showCredits = true } label: { Label("Autorzy", systemImage: "info.circle") }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Button {
-                    model.garageCarId = nil
-                    model.screen = .menu
-                } label: { Label("Gotowe", systemImage: "checkmark") }
-                    .buttonStyle(RaceButtonStyle(primary: true))
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 8)
+                .frame(width: 310)
             }
-            }
-            .padding(24)
-            .frame(width: 400)
+            .padding(22)
             .background(Theme.panel, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.12)))
         }
-        .padding(24)
+        .padding(20)
         .sheet(isPresented: $showCredits) { CreditsView() }
     }
 }

@@ -65,7 +65,8 @@ final class GaragePreview {
 
     /// W menu przyciski są z lewej, w garażu panel z prawej — auto staje po drugiej stronie.
     func setLayout(_ layout: Layout, narrow: Bool) {
-        let target: SIMD3<Float> = narrow ? [0, -1.2, 0] : [layout == .garage ? 1.8 : -2.2, 0.6, 0]
+        // W garażu panel zajmuje ponad połowę ekranu — auto mocno w lewo.
+        let target: SIMD3<Float> = narrow ? [0, -1.2, 0] : [layout == .garage ? 3.6 : -2.2, 0.6, 0]
         camera.look(at: target, from: [0, 3.2, narrow ? 13 : 10], relativeTo: nil)
     }
 
