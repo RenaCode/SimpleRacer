@@ -106,10 +106,10 @@ final class ScenePreloader {
     private static func jobs(for region: Region) -> [Job] {
         let key = LocalAssets.regionKey(region)
         var jobs = skyJobs(key)
-        jobs += ["ground-\(key)", "wall-\(key)", "road-asphalt"].compactMap { Bundle.main.url(forResource: $0, withExtension: "jpg") }
+        jobs += ["ground-\(key)", "wall-\(key)", "road-asphalt", "road-paint", "kerb", "start-line"].compactMap { Bundle.main.url(forResource: $0, withExtension: "jpg") }
             .map { Job(url: $0, mask: false) }
         // Mapy normalnych i chropowatości to dane, nie kolor — `semantic: .raw` (patrz `rawNames`).
-        jobs += ["road-asphalt-normal", "road-asphalt-rough", "wall-\(key)-normal"].compactMap { Bundle.main.url(forResource: $0, withExtension: "jpg") }
+        jobs += ["road-asphalt-normal", "road-asphalt-rough", "wall-\(key)-normal", "kerb-normal", "props-steel", "props-steel-normal", "props-steel-rough"].compactMap { Bundle.main.url(forResource: $0, withExtension: "jpg") }
             .map { Job(url: $0, mask: false) }
         if TrackTheme.of(region).buildings > 0 {
             jobs += Buildings.textureNames.compactMap { Bundle.main.url(forResource: $0, withExtension: "jpg") }

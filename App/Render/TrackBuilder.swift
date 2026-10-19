@@ -2,7 +2,7 @@ import RaceCore
 import RealityKit
 import UIKit
 
-/// Buduje trasę: jezdnia, linie, krawężniki, bandy, trawa, brama startowa i budynki dla poczucia prędkości.
+/// Buduje trasę: jezdnia, linie, krawężniki, pobocze, bandy, grunt, linia startu, budynki i rekwizyty przydrożne.
 @MainActor
 enum TrackBuilder {
     /// Obiekty otoczenia rozstawione wzdłuż trasy (do ukrywania tych daleko od gracza) — `s` to ich miejsce na trasie.
@@ -64,27 +64,50 @@ enum TrackBuilder {
         try add(road, "road", Materials.photoAsphalt() ?? Materials.roadSurfaceMaterial)
 
         // Linie: ciągłe przy krawędziach, przerywane między pasami. Farba 8 mm nad asfaltem — opona
-        // najeżdżająca na linię nie znika w niej.
+        // najeżdżająca na linię nie znika w niej. UV jak jezdni (kafel 4 m): w wytarciach farby prześwituje
+        // ten sam asfalt co obok. Linie omijają pas startowy (szachownica leży na tej samej wysokości).
         var lines = MeshBuilder()
-        for edge in [-hw + 0.3, hw - 0.3] { strip(&lines, edge - 0.12, edge + 0.12, 0, track.length, y: 0.028) }
+        let startGap = 0.75
+        for edge in [-hw + 0.3, hw - 0.3] {
+            strip(&lines, edge - 0.12, edge + 0.12, startGap, track.length - startGap, y: 0.028, tile: 4)
+        }
         for lane in [-hw / 3, hw / 3] {
-            var s = 0.0
-            while s < track.length { strip(&lines, lane - 0.08, lane + 0.08, s, min(track.length, s + 5), y: 0.028); s += 12 }
-        }
-        try add(lines, "lines", matte(UIColor(white: 0.93, alpha: 1)))
-
-        // Krawężniki w czerwono-białe pasy po 3 m.
-        var red = MeshBuilder(), white = MeshBuilder()
-        var s = 0.0, k = 0
-        while s < track.length {
-            let e = min(track.length, s + 3)
-            for (dRight, dLeft) in [(hw, hw + 1.2), (-hw - 1.2, -hw)] {
-                if k % 2 == 0 { strip(&red, dRight, dLeft, s, e, y: 0.03) } else { strip(&white, dRight, dLeft, s, e, y: 0.03) }
+            var s = startGap
+            while s < track.length - startGap {
+                strip(&lines, lane - 0.08, lane + 0.08, s, min(track.length - startGap, s + 5), y: 0.028, tile: 4)
+                s += 12
             }
-            s = e; k += 1
         }
-        try add(red, "kerb-red", matte(UIColor(red: 0.84, green: 0.16, blue: 0.16, alpha: 1)))
-        try add(white, "kerb-white", matte(UIColor(white: 0.96, alpha: 1)))
+        try add(lines, "lines", roadPaint() ?? matte(UIColor(white: 0.93, alpha: 1)))
+
+        // Krawężniki: jedna siatka z teksturą czerwono-białych bloków po 3 m (zużyta farba, guma, kurz)
+        // i mapą normalnych (zaokrąglona krawędź od jezdni, spoiny). u = 0 przy jezdni, 1 przy murze.
+        var kerbs = MeshBuilder()
+        // Pobocze między krawężnikiem a murem (hw + 1,2 … hw + 1,4): zasypany rowek, grunt krainy.
+        var shoulder = MeshBuilder()
+        for side in [1.0, -1.0] {
+            var s = 0.0
+            while s < track.length - 1e-6 {
+                let e = min(track.length, s + track.ds)
+                let v0 = Float(s / 6), v1 = Float(e / 6)
+                let (dRight, dLeft) = side > 0 ? (hw, hw + 1.2) : (-hw - 1.2, -hw)
+                let (uR, uL): (Float, Float) = side > 0 ? (0, 1) : (1, 0)
+                kerbs.quad(p(s, dRight, 0.03), p(e, dRight, 0.03), p(e, dLeft, 0.03), p(s, dLeft, 0.03),
+                           uv: [[uR, v0], [uR, v1], [uL, v1], [uL, v0]])
+                let (gRight, gLeft) = side > 0 ? (hw + 1.2, hw + 1.4) : (-hw - 1.4, -hw - 1.2)
+                let g0 = Float(s / 5), g1 = Float(e / 5), gu0 = Float(gRight / 5), gu1 = Float(gLeft / 5)
+                shoulder.quad(p(s, gRight, 0.03), p(e, gRight, 0.03), p(e, gLeft, 0.03), p(s, gLeft, 0.03),
+                              uv: [[gu0, g0], [gu0, g1], [gu1, g1], [gu1, g0]])
+                s = e
+            }
+        }
+        try add(kerbs, "kerbs", kerbMaterial() ?? matte(UIColor(red: 0.84, green: 0.16, blue: 0.16, alpha: 1)))
+        let groundPhoto = Bundle.main.url(forResource: "ground-\(LocalAssets.regionKey(region))", withExtension: "jpg")
+            .flatMap(SkyEnvironment.texture)
+        var shoulderMaterial = groundPhoto.map { Materials.tiled($0, roughness: 1) } ?? Materials.ground(theme.ground)
+        // Pobocze ciemniejsze od gruntu: kurz, guma i cień muru.
+        shoulderMaterial.baseColor.tint = UIColor(white: 0.62, alpha: 1)
+        try add(shoulder, "shoulder", shoulderMaterial)
 
         // Mur wzdłuż trasy: bryła z grubością i daszkiem, z teksturą krainy (cegła, piaskowiec, kamień, deski).
         // Kafel 2 m — tyle ma zdjęcie ściany w rzeczywistości. Grunt poza jezdnią leży niżej (groundY).
@@ -158,24 +181,64 @@ enum TrackBuilder {
         debugLog("trasa: grunt i budynki gotowe")
         root.addChild(roadside(track, theme: theme, region: region))
         debugLog("trasa: drzewa gotowe")
+        // Rekwizyty tuż za bandą (latarnie, bariery, odblaski, tablice) — rytm, który czuć przy prędkości.
+        var withProps = true
+        #if DEBUG || FAMILY
+        // `-noRoadside` — bez rekwizytów (pomiar A/B kosztu klatki na tym samym buildzie).
+        withProps = !ProcessInfo.processInfo.arguments.contains("-noRoadside")
+        #endif
+        if withProps { root.addChild(RoadsideProps.build(track, region: region)) }
         root.addChild(backdrop(track, region: region))
         return root
     }
 
     private static func startGate(_ track: Track) -> Entity {
-        let hw = Float(track.halfWidth)
-        let start = track.toWorld(s: 0, d: 0)
-        let gate = Entity()
-        gate.position = [Float(start.x), 0, Float(start.z)]
-        gate.orientation = simd_quatf(angle: Float(start.heading), axis: [0, 1, 0])
-
-        let line = ModelEntity(mesh: .generatePlane(width: hw * 2, depth: 1.5),
-                               materials: [SimpleMaterial(color: .white, roughness: 0.8, isMetallic: false)])
-        line.position.y = 0.05
-        gate.addChild(line)
-        return gate
+        // Szachownica (kafel 6 × 1,5 m, zużyta farba i ślady opon) na wysokości linii — pod cieniami aut
+        // (0,032) i śladami opon (0,036); linie omijają ten pas, więc nic się nie przenika.
+        let hw = track.halfWidth
+        var b = MeshBuilder()
+        var s = -0.75
+        while s < 0.75 - 1e-6 {
+            let e = min(0.75, s + 0.25)
+            func q(_ s: Double, _ d: Double) -> SIMD3<Float> { let w = track.toWorld(s: s, d: d); return [Float(w.x), 0.028, Float(w.z)] }
+            let v0 = Float((s + 0.75) / 1.5), v1 = Float((e + 0.75) / 1.5)
+            let u0 = Float(0), u1 = Float(2 * hw / 6)
+            b.quad(q(s, -hw), q(e, -hw), q(e, hw), q(s, hw), uv: [[u0, v0], [u0, v1], [u1, v1], [u1, v0]])
+            s = e
+        }
+        var material: any Material = Materials.matte(.white, roughness: 0.6)
+        if let tex = Bundle.main.url(forResource: "start-line", withExtension: "jpg").flatMap(SkyEnvironment.texture) {
+            var m = Materials.tiled(tex, roughness: 0.62)
+            if let n = Bundle.main.url(forResource: "road-asphalt-normal", withExtension: "jpg").flatMap(SkyEnvironment.texture) {
+                m.normal = .init(texture: .init(n))
+            }
+            material = m
+        }
+        guard let mesh = try? b.mesh(name: "start-line") else { return Entity() }
+        return ModelEntity(mesh: mesh, materials: [material])
     }
 
+    /// Farba linii: zdjęcie asfaltu pod wytartą farbą (App/Ground/road-paint.jpg) i normalne asfaltu —
+    /// farba leży cienko i odwzorowuje kamyki.
+    private static func roadPaint() -> PhysicallyBasedMaterial? {
+        guard let tex = Bundle.main.url(forResource: "road-paint", withExtension: "jpg").flatMap(SkyEnvironment.texture)
+        else { return nil }
+        var m = Materials.tiled(tex, roughness: 0.6)
+        if let n = Bundle.main.url(forResource: "road-asphalt-normal", withExtension: "jpg").flatMap(SkyEnvironment.texture) {
+            m.normal = .init(texture: .init(n))
+        }
+        return m
+    }
+
+    private static func kerbMaterial() -> PhysicallyBasedMaterial? {
+        guard let tex = Bundle.main.url(forResource: "kerb", withExtension: "jpg").flatMap(SkyEnvironment.texture)
+        else { return nil }
+        var m = Materials.tiled(tex, roughness: 0.66)
+        if let n = Bundle.main.url(forResource: "kerb-normal", withExtension: "jpg").flatMap(SkyEnvironment.texture) {
+            m.normal = .init(texture: .init(n))
+        }
+        return m
+    }
 
     /// Kąt obrotu wokół Y, przy którym lokalne +Z modelu patrzy z boku trasy na jej oś.
     static func facingAxis(heading: Double, side: Double) -> Float {
