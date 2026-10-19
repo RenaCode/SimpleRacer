@@ -37,8 +37,11 @@ public enum LineFollower {
 
     /// Czy przed autem jest zakręt ciaśniejszy, niż auto zdoła pokonać nawet w drifcie przy obecnej prędkości.
     public static func needsBrake(car: Car, track: Track) -> Bool {
-        let ahead = stride(from: 10.0, through: max(20, car.speed * 1.6), by: 8)
-        let maxK = ahead.map { abs(track.sample(at: car.s + $0).curvature) }.max() ?? 0
+        // Pętla zamiast `map` — bez tablicy na każdy krok fizyki (120 Hz × 6 aut).
+        var maxK = 0.0
+        for ahead in stride(from: 10.0, through: max(20, car.speed * 1.6), by: 8) {
+            maxK = max(maxK, abs(track.sample(at: car.s + ahead).curvature))
+        }
         let capacity = car.yawRatePerSteer / (car.drifting ? 1 : 1 / Physics.driftSteerFactor) * 0.85
         return maxK * car.speed > capacity
     }
@@ -107,9 +110,15 @@ public final class AIController: Controller {
         let drift = LineFollower.needsDrift(car: car, track: track, steer: steer)
 
         var nitro = false
-        // Nitro tylko, gdy na całym odcinku spalania (ok. 200 m) nie ma ostrego zakrętu.
-        let straight = stride(from: 10.0, through: 200, by: 10).allSatisfy { abs(track.sample(at: car.s + $0).curvature) < 0.004 }
-        if car.nitro.mode == .off && car.nitro.gauge > 0.4 && straight && rng.next() < dt * 1.5 { nitro = true }
+        // Nitro tylko, gdy na całym odcinku spalania (ok. 200 m) nie ma ostrego zakrętu. Odcinek
+        // sprawdzamy dopiero, gdy nitro w ogóle wchodzi w grę (20 próbek trasy na krok to drogo).
+        func straightAhead() -> Bool {
+            for ahead in stride(from: 10.0, through: 200, by: 10) where abs(track.sample(at: car.s + ahead).curvature) >= 0.004 {
+                return false
+            }
+            return true
+        }
+        if car.nitro.mode == .off && car.nitro.gauge > 0.4 && straightAhead() && rng.next() < dt * 1.5 { nitro = true }
         if car.nitro.inPerfectWindow && rng.next() < skill * dt * 6 { nitro = true }
 
         // Gumka: dystans do gracza lekko zmienia prędkość, żeby wyścig był wyrównany.

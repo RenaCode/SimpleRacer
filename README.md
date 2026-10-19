@@ -21,7 +21,7 @@ the App Store or TestFlight. The in-game interface is in Polish.
 - **Controls**: on-screen touch buttons, a hardware keyboard and game controllers
   (GameController framework), all at the same time.
 
-Not implemented yet: ramps and jumps (barrel rolls, 360s), traffic, a takedown camera, sound,
+Not implemented yet: ramps and jumps (barrel rolls, 360s), traffic, a takedown camera,
 more tracks, tilt steering.
 
 ## Campaign
@@ -84,7 +84,8 @@ app goes to the background (Home, a notification, Control Centre).
 - **Drift**: press DRIFT at speed — with or without steering. The car slides into the drift by
   itself (towards the steering direction, or towards the next corner when not steering), turns
   tighter, smokes from the rear tyres and fills the nitro gauge; steering the other way
-  counter-steers. Below about 65 km/h the same button brakes.
+  counter-steers. When the car is too slow to drift, the button waits (it never brakes) and the
+  drift starts by itself once the car is fast enough.
 - **Takedown**: hitting a rival hard from the side or from behind wrecks it and adds nitro.
 - **Wreck**: hitting a wall at a steep angle. The car is back on the track after 2 seconds.
 
@@ -104,6 +105,9 @@ app goes to the background (Home, a notification, Control Centre).
 - The audio session is *ambient*: it respects the device mute and mixes with other audio. Music
   and sounds can be switched off separately in the menu; audio stops when the app leaves the
   foreground and resumes after interruptions (calls, Siri).
+- Haptics: iPads have no haptic engine, so vibration goes to a connected game controller that has
+  one (`GCController.haptics`, `App/Input/Haptics.swift`) — short pulses on wall hits, wrecks,
+  takedowns and nitro.
 
 ## App icon and privacy
 
@@ -191,8 +195,10 @@ cd RaceCore && swift test
 
 The tests cover auto-steering (a full race with no input and no wall crash, much faster than not
 steering at all, one tap moves exactly one lane), the nitro rules (activation, perfect window, shockwave), drifting (the DRIFT
-button alone starts a drift instead of braking, its direction follows the next corner, it brakes
-when slow), nitro canisters (layout on the track, pickup and respawn), the track geometry (closed
+button alone starts a drift instead of braking, its direction follows the next corner, it never
+brakes and kicks in at speed), wall hits (event without a wreck, no speed jump after a wreck),
+collisions (rivals never wreck the player, wrecked cars are obstacles), standings after the finish,
+nitro canisters (layout on the track, pickup and respawn), the track geometry (closed
 loop, minimum corner radius, side orientation) and a full headless race of six AI cars, which
 must all finish without a single wall crash.
 

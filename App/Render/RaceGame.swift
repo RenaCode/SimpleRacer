@@ -374,18 +374,21 @@ final class RaceGame {
                 if attacker === p {
                     toast("TAKEDOWN!", .good)
                     AudioManager.shared.play(.takedown)
+                    Haptics.shared.pulse(intensity: 0.8, sharpness: 0.7, duration: 0.25)
                     shake = max(shake, 0.6)
                 } else if victim === p {
                     toast("ROZBITY!", .bad)
                 }
             case let .wreck(car) where car === p:
                 shake = 1
+                Haptics.shared.pulse(intensity: 1, sharpness: 0.3, duration: 0.5)
                 AudioManager.shared.play(.crash)
                 let byRival = events.contains { if case let .takedown(_, v) = $0 { return v === p }; return false }
                 if !byRival { toast("ROZBITY!", .bad) }
             case let .nitro(car, mode) where car === p:
                 AudioManager.shared.play(.nitro)
                 camKick = mode == .shockwave ? 1.4 : 0.9
+                Haptics.shared.pulse(intensity: mode == .shockwave ? 1 : 0.6, sharpness: 0.4, duration: 0.35)
                 if mode == .perfect { toast("PERFECT NITRO", .good) }
                 if mode == .shockwave {
                     toast("FALA UDERZENIOWA", .good)
@@ -405,6 +408,7 @@ final class RaceGame {
                 if car === p {
                     shake = max(shake, min(0.7, 0.2 + intensity / 25))
                     AudioManager.shared.impact(intensity: min(1, intensity / 25))
+                    Haptics.shared.pulse(intensity: Float(min(1, 0.3 + intensity / 25)), sharpness: 0.8)
                 }
             case let .pickup(car) where car === p:
                 toast("+NITRO", .info)

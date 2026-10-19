@@ -592,6 +592,31 @@ final class TrackCatalogTests: XCTestCase {
             XCTAssertEqual(wrecks - takedowns, 0, "trasa \(spec.id) \(spec.name): rozbicia o bandę")
         }
     }
+
+    /// Klasyfikacja: auta na mecie w kolejności przyjazdu, przed wszystkimi, które jeszcze jadą;
+    /// zdarzenie mety podaje to samo miejsce co `position(of:)`.
+    func testStandingsFollowFinishOrder() {
+        let spec = TrackCatalog.all[0]
+        let entries = (0..<6).map { (i: Int) -> Entry in
+            Entry(name: "AI \(i)", def: CarCatalog.builtIn[i % 3], color: "#FFFFFF", isPlayer: i == 5,
+                  controller: AIController(skill: 0.8 + Double(i) * 0.03, rng: SeededRandom(seed: UInt64(i) + 7)))
+        }
+        let sim = RaceSim(track: spec.makeTrack(), entries: entries, laps: 1)
+        var reported: [ObjectIdentifier: Int] = [:]
+        while sim.finishOrder.count < 3 && sim.time < 200 {
+            sim.advance()
+            for e in sim.events { if case let .finish(car, position) = e { reported[ObjectIdentifier(car)] = position } }
+            sim.events.removeAll()
+        }
+        XCTAssertEqual(sim.finishOrder.count, 3)
+        let standings = sim.standings()
+        for (i, car) in sim.finishOrder.enumerated() {
+            XCTAssertTrue(standings[i] === car, "meta \(i + 1) na swoim miejscu")
+            XCTAssertEqual(sim.position(of: car), i + 1)
+            XCTAssertEqual(reported[ObjectIdentifier(car)], i + 1)
+        }
+        XCTAssertTrue(standings.dropFirst(3).allSatisfy { !$0.finished })
+    }
 }
 
 final class CampaignTests: XCTestCase {
