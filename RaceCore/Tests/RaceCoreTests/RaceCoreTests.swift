@@ -87,7 +87,7 @@ final class RaceSimTests: XCTestCase {
     func testAIFinishesWithoutWallWrecks() {
         let track = TrackData.makeCityLoop()
         let rng = SeededRandom(seed: 7)
-        let entries = (0..<6).map { i in
+        let entries = (0..<6).map { (i: Int) -> Entry in
             Entry(name: "AI \(i)", def: CarCatalog.all[i % CarCatalog.all.count], color: "#FFFFFF",
                   isPlayer: i == 5,
                   controller: AIController(skill: 0.92 + rng.next() * 0.06, rng: SeededRandom(seed: UInt64(100 + i))))
@@ -529,9 +529,9 @@ final class TrackCatalogTests: XCTestCase {
     func testAIDrivesEveryTrackCleanly() {
         for spec in TrackCatalog.all {
             let track = spec.makeTrack()
-            let entries = (0..<6).map { i in
+            let entries = (0..<6).map { (i: Int) -> Entry in
                 Entry(name: "AI \(i)", def: CarCatalog.builtIn[i % 3], color: "#FFFFFF", isPlayer: i == 5,
-                      controller: AIController(skill: 0.95, rng: SeededRandom(seed: UInt64(i + spec.id * 10))))
+                      controller: AIController(skill: 0.95, rng: SeededRandom(seed: UInt64(i) + UInt64(spec.id) * 10)))
             }
             let sim = RaceSim(track: track, entries: entries, laps: 1)
             var wrecks = 0, takedowns = 0
@@ -642,20 +642,13 @@ final class CampaignTests: XCTestCase {
     func testAutopilotReachesPodiumAcrossCampaign() {
         for id in [1, 10, 20, 30, 40] {
             let spec = TrackCatalog.track(id: id)
-            // Najmniej ulepszeń, które dają wymaganą moc (po kolei: silnik, przyspieszenie, prowadzenie, nitro).
-            var levels: [Upgrade: Int] = [:]
-            var def = Campaign.upgraded(starter, levels: levels)
-            outer: for lvl in 1...Campaign.maxLevel {
-                for u in Upgrade.allCases where Campaign.rating(def) < Campaign.requiredRating(spec) {
-                    levels[u] = lvl
-                    def = Campaign.upgraded(starter, levels: levels)
-                }
-                if Campaign.rating(def) >= Campaign.requiredRating(spec) { break outer }
-            }
+            // Auto gracza: startowe z najmniejszymi ulepszeniami dającymi wymaganą moc.
+            let def = Campaign.upgraded(starter, levels: Campaign.minimalUpgrades(starter, toReach: Campaign.requiredRating(spec)))
             let track = spec.makeTrack()
-            var entries = (0..<5).map { i in
-                Entry(name: "AI \(i)", def: CarCatalog.builtIn[i % 3], color: "#FFFFFF", isPlayer: false,
-                      controller: AIController(skill: Campaign.aiSkill(spec), rng: SeededRandom(seed: UInt64(i * 31 + id))))
+            // Rywale jak w grze: dowolny wygląd, statystyki dopasowane do trasy.
+            var entries = (0..<5).map { (i: Int) -> Entry in
+                Entry(name: "AI \(i)", def: Campaign.rival(looking: CarCatalog.builtIn[i % 3], on: spec), color: "#FFFFFF", isPlayer: false,
+                      controller: AIController(skill: Campaign.aiSkill(spec), rng: SeededRandom(seed: UInt64(i) * 31 + UInt64(id))))
             }
             entries.append(Entry(name: "Gracz", def: def, color: "#FFFFFF", isPlayer: true,
                                  controller: AutoSteerController(input: FakeInput())))
@@ -665,5 +658,23 @@ final class CampaignTests: XCTestCase {
             print("trasa \(id) (\(spec.name)): auto-prowadzenie na miejscu \(place), moc \(Campaign.rating(def))/\(Campaign.requiredRating(spec))")
             XCTAssertLessThanOrEqual(place, 3, "trasa \(id)")
         }
+    }
+}
+
+final class RivalTests: XCTestCase {
+    /// Rywal z mocnym wyglądem nie jest mocniejszy, niż wymaga trasa.
+    func testRivalStatsMatchTrackNotLooks() {
+        var strong = CarCatalog.builtIn[1]
+        strong.topSpeed = 120
+        let spec = TrackCatalog.track(id: 5)
+        let r = Campaign.rival(looking: strong, on: spec)
+        XCTAssertEqual(r.id, strong.id)
+        let starter = Campaign.rating(CarCatalog.car(id: Campaign.starterCar))
+        XCTAssertLessThanOrEqual(Campaign.rating(r), max(starter, Campaign.requiredRating(spec)))
+        // Na najtrudniejszej trasie rywal jest słabszy od wymaganej mocy, ale nie dużo.
+        let last = TrackCatalog.all.last!
+        let hard = Campaign.rating(Campaign.rival(looking: strong, on: last))
+        XCTAssertLessThan(hard, Campaign.requiredRating(last))
+        XCTAssertGreaterThan(hard, Campaign.requiredRating(last) - 60)
     }
 }

@@ -65,6 +65,32 @@ public enum Campaign {
         upgraded(def, levels: state.upgrades[def.id] ?? [:])
     }
 
+    /// Najmniej ulepszeń (po kolei: silnik, przyspieszenie, prowadzenie, nitro), które dają co najmniej `rating`.
+    public static func minimalUpgrades(_ def: CarDef, toReach target: Int) -> [Upgrade: Int] {
+        var levels: [Upgrade: Int] = [:]
+        for lvl in 1...maxLevel {
+            for u in Upgrade.allCases where rating(upgraded(def, levels: levels)) < target { levels[u] = lvl }
+            if rating(upgraded(def, levels: levels)) >= target { break }
+        }
+        return levels
+    }
+
+    /// O ile rywale są słabsi od mocy wymaganej na trasie (gra dla dzieci).
+    public static let rivalHandicap = 25
+
+    /// Rywal na trasie: wygląd (model, nazwa) z dowolnego auta, ale statystyki auta startowego
+    /// ulepszonego tylko do mocy nieco poniżej wymaganej na tej trasie — żeby rywale nie byli za mocni.
+    public static func rival(looking visual: CarDef, on spec: TrackSpec) -> CarDef {
+        let base = CarCatalog.car(id: starterCar)
+        let stats = upgraded(base, levels: minimalUpgrades(base, toReach: requiredRating(spec) - rivalHandicap))
+        var d = visual
+        d.topSpeed = stats.topSpeed
+        d.accel = stats.accel
+        d.handling = stats.handling
+        d.nitroPower = stats.nitroPower
+        return d
+    }
+
     /// Koszt wejścia na `level` (1…5).
     public static func upgradeCost(toLevel level: Int) -> Int { 100 * level }
 
