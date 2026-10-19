@@ -18,11 +18,19 @@ enum SkyEnvironment {
         if let cached = panoramaCache[name] { return cached }
         guard let url = Bundle.main.url(forResource: "sky-\(name)", withExtension: "jpg"),
               let image = UIImage(contentsOfFile: url.path)?.cgImage else { return nil }
+        // Jak ScenePreloader: w pamięci garaż i jedna kraina — panoramę i oświetlenie poprzedniej krainy zwalniamy.
+        if name != "garage" {
+            for key in panoramaCache.keys where key != "garage" {
+                panoramaCache[key] = nil
+                environments[key] = nil
+            }
+        }
         panoramaCache[name] = image
         return image
     }
 
-    /// Małe kopie panoram (2048 px) — ten sam obraz przy każdym wyścigu, więc oświetlenie liczy się raz.
+    /// Małe kopie panoram (2048 px) garażu i bieżącej krainy — ten sam obraz przy każdym wyścigu w krainie,
+    /// więc oświetlenie liczy się raz.
     private static var panoramaCache: [String: CGImage] = [:]
 
     static func skyDome(radius: Float, image: CGImage = Materials.sky) -> ModelEntity {
@@ -92,6 +100,9 @@ enum SkyEnvironment {
         if ScenePreloader.isRaw(url) {
             return try? TextureResource(image: image, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll))
         }
+        if !ScenePreloader.needsMipmaps(url) {
+            return try? TextureResource(image: image, options: .init(semantic: .color, mipmapsMode: .none))
+        }
         return try? Materials.texture(image)
     }
 
@@ -102,15 +113,17 @@ enum SkyEnvironment {
         let previous = lightingQueue
         let task = Task { @MainActor () -> Void in
             await previous?.value
-            let key = ObjectIdentifier(image)
+            // Klucz to nazwa panoramy (garaż, kraina) albo "default" dla nieba rysowanego w kodzie.
+            let key = image === Materials.sky ? "default" : panoramaCache.first { $0.value === image }?.key
             let env: EnvironmentResource
-            if let cached = environments[key] {
+            if let key, let cached = environments[key] {
                 env = cached
             } else {
                 // Do światła wystarczy mała kopia — pełna panorama tylko spowalnia start.
                 let source = scaled(image, width: 1024) ?? image
                 guard let made = try? await EnvironmentResource(equirectangular: source) else { return }
-                environments[key] = made
+                // Zapamiętujemy tylko, jeśli panorama nie została w międzyczasie zwolniona (zmiana krainy).
+                if let key, key == "default" || panoramaCache[key] === image { environments[key] = made }
                 env = made
             }
             let ibl = Entity()
@@ -122,8 +135,8 @@ enum SkyEnvironment {
     }
 
     private static var lightingQueue: Task<Void, Never>?
-    /// Policzone środowiska wg obrazu (panoramy są trzymane przez `panoramaCache`, więc klucz jest stabilny).
-    private static var environments: [ObjectIdentifier: EnvironmentResource] = [:]
+    /// Policzone środowiska wg nazwy panoramy — zwalniane razem z panoramą w `panorama(named:)`.
+    private static var environments: [String: EnvironmentResource] = [:]
 
     private static func scaled(_ image: CGImage, width: Int) -> CGImage? {
         guard image.width > width else { return image }

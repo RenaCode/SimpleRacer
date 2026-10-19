@@ -280,8 +280,15 @@ Like most mobile racers, the scenery is built from photos rather than heavy 3D m
   faces the tyre barriers. A concrete floor under the turntable covers the tyres standing right next
   to the camera in the photo and fades into the photo's floor.
 - **Ground:** a tiled photo texture per region (`App/Ground/`) drawn by a small Metal shader
-  (`App/Render/Ground.metal`). It fades out with distance from the camera, so the 3D ground blends
-  into the ground in the panorama with no visible edge on the horizon.
+  (`App/Render/Ground.metal`). The same photo is sampled at two scales (5 m and a rotated ~41 m) and
+  modulated by low-frequency brightness/tint noise, so no tile grid shows near or far. It fades out
+  with distance from the camera (taken from the view matrix, no per-frame material update), so the
+  3D ground blends into the ground in the panorama with no visible edge on the horizon. The ground is
+  a disc that follows the camera: an opaque centre and a transparent fade ring only, instead of a
+  4 km transparent quad.
+- **Texture memory:** the scene keeps the garage and one region in memory; switching regions also
+  drops the previous region's panorama image and its lighting environment. The 8K horizon bands have
+  no mipmaps — they are always magnified on screen.
 - **Along the road:** trees and buildings are *impostors*, photos of a 3D model taken from the front
   and the side with a transparent background. A tree is two crossed planes. A building is a box
   wrapped in its facade photos, and buildings stand side by side with their fronts in one line, like

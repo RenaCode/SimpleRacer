@@ -63,7 +63,7 @@ final class ScenePreloader {
                         let semantic: TextureResource.Semantic = Self.isRaw(job.url) ? .raw : .color
                         // Synchronicznie, po jednej teksturze na klatkę: asynchroniczne tworzenie tekstur
                         // w RealityKit co kilka uruchomień psuło cały proces (żaden model się nie wczytywał).
-                        textures[job.url.path] = Self.makeTexture(image, semantic: semantic)
+                        textures[job.url.path] = Self.makeTexture(image, semantic: semantic, mipmaps: Self.needsMipmaps(job.url))
                         await Task.yield()
                     }
                     if let mask = decoded.mask {
@@ -84,8 +84,16 @@ final class ScenePreloader {
     }
 
     /// Zwykła (synchroniczna) funkcja, żeby kompilator wybrał synchroniczny konstruktor tekstury.
-    private static func makeTexture(_ image: CGImage, semantic: TextureResource.Semantic) -> TextureResource? {
-        try? TextureResource(image: image, options: .init(semantic: semantic, mipmapsMode: .allocateAndGenerateAll))
+    private static func makeTexture(_ image: CGImage, semantic: TextureResource.Semantic, mipmaps: Bool = true) -> TextureResource? {
+        try? TextureResource(image: image, options: .init(semantic: semantic, mipmapsMode: mipmaps ? .allocateAndGenerateAll : .none))
+    }
+
+    /// Pas horyzontu panoramy (8K) zawsze jest na ekranie powiększony (8192 px na 360°, a ekran ma ~2400 px
+    /// na 70–96° pola widzenia), więc mniejsze mipy nigdy nie są używane — bez nich o 1/3 mniej pamięci (~12 MB).
+    /// Garaż mipy zachowuje — jego scena bywa pokazywana w mniejszym oknie.
+    nonisolated static func needsMipmaps(_ url: URL) -> Bool {
+        let name = url.deletingPathExtension().lastPathComponent
+        return !(name.hasSuffix("-band") && name != "sky-garage-band")
     }
 
     // MARK: - Co wczytać

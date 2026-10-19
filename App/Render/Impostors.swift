@@ -206,29 +206,70 @@ struct ImpostorBatch {
     }
 }
 
-/// Materiał gruntu z shaderem `groundSurface` (Ground.metal): tekstura w układzie świata i zanikanie w oddali.
+/// Materiał gruntu z shaderem `groundSurface` (Ground.metal): tekstura w układzie świata w dwóch skalach,
+/// makro-szum jasności i odcienia oraz zanikanie w oddali.
+///
+/// Grunt to krążek, który jedzie z kamerą (tekstura jest w układzie świata, więc ruch krążka jej nie przesuwa):
+/// środek, gdzie grunt jest w pełni widoczny, rysuje się jako nieprzezroczysty, a przezroczysty jest tylko
+/// pierścień zanikania. Dawny czworokąt 4 × 4 km cały szedł przez przebieg przezroczysty (overdraw).
+/// Odległość od kamery shader liczy z macierzy widoku, więc nie trzeba podmieniać materiału co kilka metrów.
 @MainActor
 struct GroundMaterial {
+    /// Materiał przezroczysty (pierścień zanikania; też dla posadzki garażu).
     private(set) var material: CustomMaterial
+    /// Ten sam shader bez przezroczystości — środek krążka.
+    private(set) var opaque: CustomMaterial
     /// Rozmiar kafla tekstury (m) i odległość, od której grunt zaczyna znikać (m).
     static let tile: Float = 5, fadeStart: Float = 170
+    /// Zanik kończy się na `fadeStart * fadeEnd` (musi się zgadzać z Ground.metal).
+    static let fadeEnd: Float = 2.5
 
     static func make(_ tex: TextureResource, tile: Float = tile, fadeStart: Float = fadeStart) -> GroundMaterial? {
         guard let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary(),
               var m = try? CustomMaterial(surfaceShader: .init(named: "groundSurface", in: library), lightingModel: .lit)
         else { return nil }
         m.baseColor = .init(tint: .white, texture: .init(tex))
+        // x = kafel, y = początek zanikania; z = 1 włącza zanikanie (materiał nieprzezroczysty go nie potrzebuje).
+        m.custom.value = [tile, fadeStart, 0, 0]
+        let o = m
         m.blending = .transparent(opacity: 1.0)
-        m.custom.value = [0, 0, tile, fadeStart]
-        return GroundMaterial(material: m, tile: tile, fadeStart: fadeStart)
+        m.custom.value = [tile, fadeStart, 1, 0]
+        return GroundMaterial(material: m, opaque: o, tile: tile, fadeStart: fadeStart)
     }
 
     private(set) var tile: Float = Self.tile
     private(set) var fadeStart: Float = Self.fadeStart
 
-    /// Środek zanikania podąża za kamerą.
-    mutating func follow(_ camera: SIMD3<Float>, on entity: ModelEntity) {
-        material.custom.value = [camera.x, camera.z, tile, fadeStart]
-        entity.model?.materials = [material]
+    /// O tyle (m) krążek może zostać za kamerą — `follow` wołane co kilka metrów ruchu (RaceGame: 4 m).
+    static let followSlack: Float = 6
+
+    /// Krążek gruntu na wysokości `y`: nieprzezroczysty środek do `fadeStart` i przezroczysty pierścień zanikania.
+    func entity(y: Float) throws -> ModelEntity {
+        let n = 64
+        let inner = fadeStart - Self.followSlack
+        // Wielokąt opisany na okręgu końca zanikania (z zapasem na spóźnione `follow`).
+        let outer = (fadeStart * Self.fadeEnd + Self.followSlack) / cos(.pi / Float(n))
+        func point(_ i: Int, _ r: Float) -> SIMD3<Float> {
+            let a = Float(i % n) / Float(n) * 2 * .pi
+            return [r * cos(a), y, -r * sin(a)]
+        }
+        var center = MeshBuilder(), ring = MeshBuilder()
+        for i in 0..<n {
+            center.quad([0, y, 0], point(i, inner), point(i + 1, inner), [0, y, 0])
+            ring.quad(point(i, inner), point(i, outer), point(i + 1, outer), point(i + 1, inner))
+        }
+        let e = ModelEntity(mesh: try ring.mesh(name: "ground-ring"), materials: [material])
+        e.name = Self.discName
+        e.addChild(ModelEntity(mesh: try center.mesh(name: "ground-center"), materials: [opaque]))
+        return e
+    }
+
+    private static let discName = "ground-disc"
+
+    /// Krążek gruntu jedzie z kamerą (tylko przesunięcie encji, bez podmiany materiału). Inne siatki
+    /// z tym materiałem (posadzka garażu) stoją w miejscu — zanikanie i tak liczy shader od kamery.
+    func follow(_ camera: SIMD3<Float>, on entity: ModelEntity) {
+        guard entity.name == Self.discName else { return }
+        entity.position = [camera.x, entity.position.y, camera.z]
     }
 }
