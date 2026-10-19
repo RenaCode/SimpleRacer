@@ -46,6 +46,8 @@ extension RootView {
     /// i — w czasie, gdy dziecko jest w menu — przygotowanie krainy następnej trasy.
     private func startUp() async {
         let start = ProcessInfo.processInfo.systemUptime
+        // Shadery obróbki obrazu kompilują się w tle, zanim dziecko wybierze trasę.
+        PostFXPipelines.warmUp()
         // Najpierw pierwszy widok 3D: tworzenie tekstur w tle, zanim RealityKit się zainicjalizuje,
         // psuło cały proces (żaden model się nie wczytywał, a potem awaria).
         // Start prosto w wyścigu (argument testowy): splash znika, wyścig ma własny ekran ładowania.

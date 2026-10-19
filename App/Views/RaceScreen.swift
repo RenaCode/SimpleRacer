@@ -74,6 +74,21 @@ private struct RaceContent: View {
         ZStack {
             RealityView { content in
                 content.camera = .virtual
+                // Wygładzanie krawędzi (linie jezdni, krawędzie budynków i aut) i obróbka obrazu (iOS 26+).
+                #if DEBUG || FAMILY
+                if !ProcessInfo.processInfo.arguments.contains("-noMSAA") { content.renderingEffects.antialiasing = .multisample4X }
+                #else
+                content.renderingEffects.antialiasing = .multisample4X
+                #endif
+                #if DEBUG || FAMILY
+                let postFXOn = !ProcessInfo.processInfo.arguments.contains("-noPostFX")
+                #else
+                let postFXOn = true
+                #endif
+                if #available(iOS 26.0, *), postFXOn {
+                    content.renderingEffects.customPostProcessing = .effect(RacePostEffect(settings: game.postFX))
+                    debugLog("obróbka obrazu: włączona")
+                }
                 content.add(game.root)
                 let game = self.game
                 // Słaba referencja: gra trzyma subskrypcję, więc mocna dawałaby cykl i wyciek całej sceny po każdym wyścigu.
@@ -101,6 +116,9 @@ private struct RaceContent: View {
                 PauseView(resume: { game.paused = false },
                           restart: { model.startRace() },
                           menu: { model.screen = .menu })
+            }
+            if game.buildFailed {
+                TrackErrorView(retry: { model.startRace() }, menu: { model.screen = .menu })
             }
             if let r = settled {
                 ResultsView(result: r,
@@ -177,6 +195,33 @@ private struct PauseView: View {
             .padding(32)
             .background(Theme.panel, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.12)))
+        }
+    }
+}
+
+/// Budowa trasy się nie udała (np. brak pamięci) — zamiast pustej sceny prośba o ponowną próbę.
+private struct TrackErrorView: View {
+    let retry: () -> Void
+    let menu: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.85).ignoresSafeArea()
+            VStack(spacing: 24) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 56, weight: .bold))
+                    .foregroundStyle(Theme.accent)
+                Text("Nie udało się przygotować trasy")
+                    .font(Theme.display(36))
+                    .foregroundStyle(.white)
+                HStack(spacing: 20) {
+                    Button("Spróbuj ponownie", action: retry)
+                    Button("Menu", action: menu)
+                }
+                .font(.system(size: 22, weight: .bold))
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.accent)
+            }
         }
     }
 }

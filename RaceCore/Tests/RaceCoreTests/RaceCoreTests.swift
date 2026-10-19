@@ -502,6 +502,36 @@ final class ArcadePhysicsTests: XCTestCase {
         XCTAssertGreaterThan(c.speed, before * 0.93)
     }
 
+    /// Uderzenie w bandę pod kątem (bez rozbicia) zgłasza zdarzenie z prędkością wbicia.
+    func testWallHitEmitsEvent() {
+        let c = car(speed: 40, lane: track.halfWidth - Physics.carWidth / 2 - 0.05)
+        c.alphaVel = 0.3
+        var hit: Double?
+        for _ in 0..<30 {
+            c.step(dt: RaceSim.step, input: CarInput(steer: 0), track: track)
+            for e in c.events { if case let .wallHit(v) = e { hit = v } }
+            c.events.removeAll()
+        }
+        XCTAssertFalse(c.wrecked)
+        XCTAssertNotNil(hit)
+        XCTAssertGreaterThan(hit ?? 0, Physics.wallHitMin)
+    }
+
+    /// Po rozbiciu auto rusza bez skoku prędkości.
+    func testWreckRestartHasNoSpeedJump() {
+        let c = car(speed: 60)
+        c.wreck()
+        var last = c.speed
+        var maxJump = 0.0
+        for _ in 0..<Int(3 / RaceSim.step) {
+            c.step(dt: RaceSim.step, input: CarInput(steer: 0), track: track)
+            maxJump = max(maxJump, c.speed - last)
+            last = c.speed
+        }
+        XCTAssertFalse(c.wrecked)
+        XCTAssertLessThan(maxJump, Physics.wreckRestartSpeed + 1)
+    }
+
     /// Odpalenie nitro daje natychmiastowego „kopa”.
     func testNitroGivesInstantKick() {
         let c = car(speed: 50)
@@ -745,6 +775,18 @@ final class KidSafetyTests: XCTestCase {
         let out = Collisions.resolve([p, r], trackLength: len)
         XCTAssertTrue(r.wrecked)
         XCTAssertEqual(out.count, 1)
+        XCTAssertFalse(p.wrecked)
+    }
+
+    /// Rozbite auto nie jest duchem: jadące obok odsuwa się od niego bokiem, nie tracąc prędkości.
+    func testWreckedCarIsObstacleNotGhost() {
+        let (p, r, len) = pair(playerBehind: true)
+        r.wreck()
+        p.s = r.s; p.distance = r.s; p.d = r.d + 0.5
+        let speed = p.speed, d0 = p.d
+        _ = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertGreaterThan(p.d, d0)
+        XCTAssertEqual(p.speed, speed)
         XCTAssertFalse(p.wrecked)
     }
 

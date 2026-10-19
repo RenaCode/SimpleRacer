@@ -14,8 +14,24 @@ enum TrackBuilder {
     /// Grunt zanikający w oddali (do przesuwania środka zanikania za kamerą); `nil`, gdy grunt jest zwykły.
     static var ground: (entity: ModelEntity, material: GroundMaterial)?
 
+    /// Rzut budynku na grunt: środek, kierunek do drogi `f`, kierunek wzdłuż fasady `r`, połowy wymiarów.
+    struct Footprint {
+        let center: SIMD2<Double>, f: SIMD2<Double>, r: SIMD2<Double>
+        let halfWidth: Double, halfDepth: Double
+        /// Odległość punktu od bryły (0 w środku).
+        func distance(to p: SIMD2<Double>) -> Double {
+            let v = p - center
+            let dx = max(abs(simd_dot(v, r)) - halfWidth, 0), dz = max(abs(simd_dot(v, f)) - halfDepth, 0)
+            return (dx * dx + dz * dz).squareRoot()
+        }
+    }
+
+    /// Budynki postawione na tej trasie — drzewa nie mogą w nie wchodzić koroną.
+    private static var footprints: [Footprint] = []
+
     static func build(_ track: Track, theme: TrackTheme = .of(.city), region: Region = .city) throws -> Entity {
         cullables = []
+        footprints = []
         let root = Entity()
         let hw = track.halfWidth
 
@@ -333,6 +349,7 @@ enum TrackBuilder {
             let corners: [SIMD2<Double>] = [center + hd + hwv, center + hd - hwv, center - hd + hwv, center - hd - hwv,
                                             center + hwv, center - hwv]
             for c in corners where track.distanceToAxis(x: c.x, z: c.y) < hw + 4 { return false }
+            footprints.append(Footprint(center: center, f: f, r: r, halfWidth: width / 2 + 0.3, halfDepth: depth / 2 + 0.3))
             let span = Double(style.floors.upperBound - style.floors.lowerBound + 1)
             let floors = style.floors.lowerBound + min(Int(rng.next() * span), style.floors.count - 1)
             batch.add(style, floors: floors, at: [Float(pos.x), groundY, Float(pos.z)],
@@ -420,13 +437,27 @@ enum TrackBuilder {
             let pos = track.toWorld(s: s, d: d)
             guard track.distanceToAxis(x: pos.x, z: pos.z) > hw + clearance else { return }
             let item = rng.pick(items)
-            batch.plant(item, height: item.randomHeight(rng), at: [Float(pos.x), groundY, Float(pos.z)],
+            var height = item.randomHeight(rng)
+            // Korona nie może wchodzić w budynek: przy fasadzie rośnie niższe drzewo, którego korona
+            // (promień z proporcji zdjęcia) mieści się przed ścianą; za mało miejsca — bez drzewa.
+            let size = item.def.size
+            let crownPerHeight = max(size[0], size[2]) / size[1] / 2
+            let p = SIMD2<Double>(pos.x, pos.z)
+            if let near = footprints.map({ $0.distance(to: p) }).min() {
+                let maxHeight = (near - 0.5) / 0.85 / crownPerHeight
+                guard maxHeight >= 4.5 else { return }
+                height = min(height, maxHeight)
+            }
+            batch.plant(item, height: height, at: [Float(pos.x), groundY, Float(pos.z)],
                         heading: pos.heading + (rng.next() - 0.5) * 0.6)
         }
+        // W mieście drzewa rosną w pasie chodnika między bandą a pierzeją (fasady od hw + 9 m),
+        // poza miastem dalej od drogi.
+        let row = theme.buildings > 0 ? (hw + 4.2, 1.2) : (hw + 6, 4.0)
         var s = 6.0
         while s < track.length {
             for side in [1.0, -1.0] where rng.next() < theme.trees {
-                plant(trees, s: s, d: side * (hw + 6 + rng.next() * 4), clearance: 4)
+                plant(trees, s: s, d: side * (row.0 + rng.next() * row.1), clearance: 4)
                 if rng.next() < 0.6 {
                     plant(bushes, s: s + 6, d: side * (hw + 3.5 + rng.next() * 2), clearance: 3)
                 }

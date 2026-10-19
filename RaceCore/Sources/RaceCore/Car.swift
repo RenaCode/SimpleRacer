@@ -24,6 +24,8 @@ public enum CarEvent {
     case nitro(NitroMode)
     /// Zryw po zakończonym drifcie (mini-turbo).
     case driftBoost
+    /// Uderzenie w bandę bez rozbicia: prędkość wbicia w ścianę (m/s) — do iskier, dźwięku i wstrząsu.
+    case wallHit(Double)
 }
 
 /// Arkadowy model jazdy we współrzędnych trasy. `alphaVel` to kąt toru jazdy względem osi trasy,
@@ -190,7 +192,8 @@ public final class Car {
             wreckTimer = 0
             alphaVel = 0
             slide = 0
-            speed = def.topSpeed * 0.5
+            // Rusza z tego, co zostało po koziołkowaniu (bez skoku prędkości) — dalej przyspiesza samo.
+            speed = max(speed, Physics.wreckRestartSpeed)
         }
     }
 
@@ -217,6 +220,7 @@ public final class Car {
         if speed * into > Physics.wreckImpact {
             wreck()
         } else {
+            if speed * into > Physics.wallHitMin { events.append(.wallHit(speed * into)) }
             // Muśnięcie prawie nic nie kosztuje, uderzenie pod kątem — wyraźnie; auto odbija się od bandy.
             speed *= 1 - Physics.wallFriction * into * into * 2
             alphaVel = -alphaVel * 0.25

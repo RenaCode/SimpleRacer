@@ -16,6 +16,9 @@ public enum Collisions {
                 victim.speed = max(victim.speed, attacker.speed * 0.9)
                 return
             }
+            // Rywale między sobą tylko się przepychają: rozbicia w ścisku na starcie (ok. 1–2 na wyścig)
+            // tylko zaśmiecały ekran koziołkującymi autami. Takedown to nagroda gracza.
+            if !attacker.isPlayer && !victim.isPlayer { return }
             victim.wreck()
             attacker.takedowns += 1
             attacker.nitro.add(Physics.takedownNitro)
@@ -29,12 +32,20 @@ public enum Collisions {
         for i in 0..<cars.count {
             for j in (i + 1)..<cars.count {
                 let a = cars[i], b = cars[j]
-                if a.wrecked || b.wrecked { continue }
+                if a.wrecked && b.wrecked { continue }
                 let ds = wrapDelta(a.s, b.s, trackLength)
                 let dd = a.d - b.d
                 let overS = L - abs(ds)
                 let overD = W - abs(dd)
                 if overS <= 0 || overD <= 0 { continue }
+                // Rozbite auto to przeszkoda, nie duch: jadące auto łagodnie omija je bokiem,
+                // bez utraty prędkości i bez kolejnego rozbicia.
+                if a.wrecked || b.wrecked {
+                    let live = a.wrecked ? b : a
+                    let sign: Double = (live === a ? dd : -dd) >= 0 ? 1 : -1
+                    live.d += sign * min(overD, Physics.wreckAvoidStep)
+                    continue
+                }
 
                 let shockA = a.nitro.mode == .shockwave
                 let shockB = b.nitro.mode == .shockwave

@@ -74,7 +74,18 @@ final class RaceGame {
     @ObservationIgnored private var acc = 0.0
     @ObservationIgnored private var camHeading = 0.0
     @ObservationIgnored private var fov = 70.0
+    /// „Trauma” kamery (0…1): rośnie przy uderzeniach, maleje z czasem; wstrząs ∝ trauma².
     @ObservationIgnored private var shake = 0.0
+    /// Odległość kamery za autem (sprężyna) i odrzut przy nitro / uderzeniu.
+    @ObservationIgnored private var camBack = 6.2
+    @ObservationIgnored private var camKick = 0.0
+    @ObservationIgnored private var camHeight = 2.1
+    /// Stan aut przed ostatnim krokiem fizyki — obraz rysuje pozycję pomiędzy nim a stanem bieżącym.
+    @ObservationIgnored private var prevPoses: [ObjectIdentifier: Pose] = [:]
+    /// Budowa trasy się nie udała — ekran wyścigu pokazuje komunikat zamiast pustej sceny.
+    private(set) var buildFailed = false
+    /// Obróbka obrazu dopasowana do krainy (kolor mgły z panoramy).
+    @ObservationIgnored let postFX: PostFXSettings
     @ObservationIgnored private var hudTimer = 0.0
     @ObservationIgnored private var pendingResult: RaceResult?
 
@@ -84,6 +95,7 @@ final class RaceGame {
 
     init(profile: Profile, spec: TrackSpec, playerCar: CarDef) {
         self.spec = spec
+        postFX = .forRegion(LocalAssets.regionKey(spec.region))
         debugLog("wyścig: start budowania (trasa \(spec.id))")
         defer {
             #if DEBUG || FAMILY
@@ -116,7 +128,8 @@ final class RaceGame {
             scenery = TrackBuilder.cullables
             debugLog("wyścig: trasa zbudowana")
         } catch {
-            assertionFailure("Nie udało się zbudować trasy: \(error)")
+            debugLog("wyścig: BŁĄD budowy trasy: \(error)")
+            buildFailed = true
         }
         #if DEBUG || FAMILY
         func count(_ e: Entity) -> (models: Int, all: Int) {
@@ -138,11 +151,19 @@ final class RaceGame {
             cars.append((car, e))
         }
 
+        // Słońce z panoramy krainy: kierunek z najjaśniejszego miejsca nieba, barwa z jego otoczenia —
+        // cienie padają tam, gdzie wskazuje zdjęcie, a światło ma kolor nieba, nie czystą biel.
+        let sunInfo = SunEstimate.from(region: LocalAssets.regionKey(spec.region))
         let sun = DirectionalLight()
         sun.light.intensity = 3500
-        sun.shadow = DirectionalLightComponent.Shadow(maximumDistance: 60, depthBias: 2)
-        sun.look(at: .zero, from: [80, 140, 40], relativeTo: nil)
+        sun.light.color = sunInfo.color
+        if #available(iOS 18.0, *) {
+            sun.shadow = DirectionalLightComponent.Shadow(shadowProjection: .automatic(maximumDistance: 80), depthBias: 2)
+        }
+        sun.look(at: .zero, from: sunInfo.direction * 160, relativeTo: nil)
         root.addChild(sun)
+        debugLog(String(format: "słońce: kierunek (%.2f, %.2f, %.2f), z panoramy: %@", sunInfo.direction.x, sunInfo.direction.y,
+                        sunInfo.direction.z, sunInfo.fromPhoto ? "tak" : "nie"))
 
         let panorama = SkyEnvironment.panorama(spec.region)
         debugLog("wyścig: panorama…")
@@ -179,6 +200,29 @@ final class RaceGame {
     }
 
     private var player: Car { sim.player! }
+
+    /// Położenie auta do rysowania. Fizyka liczy się stałym krokiem 1/120 s, a klatki przychodzą
+    /// w swoim rytmie (60/120 Hz, z wahaniami) — bez interpolacji auto co którąś klatkę stoi, a w następnej
+    /// przeskakuje o dwa kroki (przy 250 km/h to ok. pół metra). Rysujemy stan pomiędzy dwoma ostatnimi
+    /// krokami fizyki (`acc / step`), jak w „Fix Your Timestep” — ruch jest równy przy każdym odświeżaniu.
+    struct Pose {
+        var s, d, alphaVel, slide, distance: Double
+        init(_ car: Car) { s = car.s; d = car.d; alphaVel = car.alphaVel; slide = car.slide; distance = car.distance }
+        var alphaFace: Double { alphaVel + slide }
+    }
+
+    private func pose(_ car: Car) -> Pose {
+        var cur = Pose(car)
+        guard phase != .countdown, let p = prevPoses[ObjectIdentifier(car)] else { return cur }
+        let a = min(1, max(0, acc / RaceSim.step))
+        let L = sim.track.length
+        cur.s = wrap(p.s + wrapDelta(cur.s, p.s, L) * a, L)
+        cur.d = p.d + (cur.d - p.d) * a
+        cur.alphaVel = p.alphaVel + (cur.alphaVel - p.alphaVel) * a
+        cur.slide = p.slide + (cur.slide - p.slide) * a
+        cur.distance = p.distance + (cur.distance - p.distance) * a
+        return cur
+    }
 
     /// Butla nitro: błyszcząca niebieska kapsuła (jedna siatka) w świetlistej poświacie — dwie części,
     /// bo przy kilkudziesięciu butlach na trasie każda część to osobne polecenie rysowania.
@@ -287,6 +331,7 @@ final class RaceGame {
             #endif
             acc += dt
             while acc >= RaceSim.step {
+                for car in sim.cars { prevPoses[ObjectIdentifier(car)] = Pose(car) }
                 sim.advance()
                 acc -= RaceSim.step
             }
@@ -328,27 +373,37 @@ final class RaceGame {
                 if attacker === p {
                     toast("TAKEDOWN!", .good)
                     AudioManager.shared.play(.takedown)
-                    shake = 0.5
+                    shake = max(shake, 0.6)
                 } else if victim === p {
                     toast("ROZBITY!", .bad)
                 }
             case let .wreck(car) where car === p:
-                shake = 0.8
+                shake = 1
                 AudioManager.shared.play(.crash)
                 let byRival = events.contains { if case let .takedown(_, v) = $0 { return v === p }; return false }
                 if !byRival { toast("ROZBITY!", .bad) }
             case let .nitro(car, mode) where car === p:
                 AudioManager.shared.play(.nitro)
+                camKick = mode == .shockwave ? 1.4 : 0.9
                 if mode == .perfect { toast("PERFECT NITRO", .good) }
                 if mode == .shockwave {
                     toast("FALA UDERZENIOWA", .good)
-                    shake = 0.4
+                    shake = max(shake, 0.55)
                 }
             case .nearMiss:
                 toast("NA WŁOS! +nitro", .info)
             case let .driftBoost(car) where car === p:
                 toast("MINI-TURBO!", .good)
                 AudioManager.shared.play(.nitro)
+                camKick = 0.6
+            case let .wallHit(car, intensity):
+                // Uderzenie w bandę: iskry u każdego auta w pobliżu, wstrząs tylko u gracza.
+                if let e = cars.first(where: { $0.0 === car })?.1 {
+                    e.sparks(side: car.d > 0 ? 1 : -1, intensity: intensity)
+                }
+                if car === p {
+                    shake = max(shake, min(0.7, 0.2 + intensity / 25))
+                }
             case let .pickup(car) where car === p:
                 toast("+NITRO", .info)
                 AudioManager.shared.play(.pickup)
@@ -384,25 +439,26 @@ final class RaceGame {
             let near = car.isPlayer || abs(wrapDelta(car.s, playerS, sim.track.length)) < Self.drawDistance
             setVisible(e.root, near)
             guard near else { continue }
-            let w = sim.track.toWorld(s: car.s, d: car.d)
+            let pose = pose(car)
+            let w = sim.track.toWorld(s: pose.s, d: pose.d)
             e.root.position = [Float(w.x), Self.roadSurface, Float(w.z)]
-            e.root.orientation = simd_quatf(angle: Float(w.heading + car.alphaFace), axis: [0, 1, 0])
+            e.root.orientation = simd_quatf(angle: Float(w.heading + pose.alphaFace), axis: [0, 1, 0])
             if car.wrecked {
                 e.setWreck(Float(1 - car.wreckTimer / Physics.wreckTime))
             } else {
                 // Prędkość kątowa toru jazdy (do skrętu kół i przechyłu na zawieszeniu).
-                let yaw = w.heading + car.alphaVel
+                let yaw = w.heading + pose.alphaVel
                 let id = ObjectIdentifier(car)
                 let yawRate = lastYaw[id].map { wrapAngle(yaw - $0) / frameDt } ?? 0
                 lastYaw[id] = yaw
-                e.updateSuspension(yawRate: yawRate, speed: car.speed, slide: car.slide, dt: frameDt)
+                e.updateSuspension(yawRate: yawRate, speed: car.speed, slide: pose.slide, dt: frameDt)
             }
             // Pierwsze klatki odliczania: płomień i dym pojawiają się na moment, zanim ruszy wyścig —
             // przygotowanie efektów nie wypada już na pierwsze nitro rywali po starcie.
             let rev = phase == .countdown && clock < 0.15
             e.setFlame(rev ? .normal : car.nitro.mode)
             e.setSmoke((rev && clock < 0.05) || car.drifting)
-            e.spinWheels(distance: car.distance)
+            e.spinWheels(distance: pose.distance)
             // Ślady opon: w drifcie, gdy auto jest blisko gracza (dalej i tak ich nie widać).
             if abs(wrapDelta(car.s, playerS, sim.track.length)) < 80 {
                 let base = cars.firstIndex { $0.0 === car }.map { $0 * 4 } ?? 0
@@ -413,7 +469,7 @@ final class RaceGame {
         }
         skidMarks.flush(dt: frameDt)
         // Otoczenie: co 0,2 s ukrywamy obiekty dalej niż 320 m po trasie (bliżej przed autem widać dalej).
-        cullTimer -= 1.0 / 60
+        cullTimer -= frameDt
         if cullTimer <= 0 {
             cullTimer = 0.2
             for item in scenery {
@@ -436,15 +492,27 @@ final class RaceGame {
 
     private func updateCamera(dt: Double) {
         let p = player
-        let w = sim.track.toWorld(s: p.s, d: p.d)
+        let pp = pose(p)
+        let w = sim.track.toWorld(s: pp.s, d: pp.d)
         // Kamera podąża za torem jazdy, nie za przodem auta — w drifcie widać poślizg.
-        camHeading = dampAngle(camHeading, w.heading + p.alphaVel, rate: 6, dt: dt)
+        camHeading = dampAngle(camHeading, w.heading + pp.alphaVel, rate: 6, dt: dt)
         let fx = sin(camHeading), fz = cos(camHeading)
-        let back = 6.2 + p.speed * 0.02
-        shake = max(0, shake - dt)
-        let sh = shake * 0.4 + (p.nitro.mode == .shockwave ? 0.08 : 0)
-        let jitter = { sh > 0 ? Double.random(in: -0.5...0.5) * sh : 0 }
-        var from = SIMD3<Float>(Float(w.x - fx * back + jitter()), Float(2.1 + jitter()), Float(w.z - fz * back))
+        // Kamera na sprężynie: przy nitro odjeżdża do tyłu i obniża się (auto „ucieka” do przodu),
+        // odrzut (`camKick`) dokłada szarpnięcie w chwili odpalenia lub uderzenia.
+        let nitroOn = p.nitro.mode != .off
+        camBack = damp(camBack, 6.2 + p.speed * 0.02 + (nitroOn ? 0.9 : 0), rate: 3, dt: dt)
+        camHeight = damp(camHeight, nitroOn ? 1.85 : 2.1, rate: 3, dt: dt)
+        camKick = damp(camKick, 0, rate: 5, dt: dt)
+        let back = camBack + camKick
+        // Wstrząs z gładkiego szumu (suma sinusów o niewspółmiernych częstotliwościach), nie z losowania
+        // co klatkę — uderzenie „bije” i wygasa, zamiast brzęczeć. Amplituda ∝ trauma².
+        shake = max(0, shake - dt * 1.2)
+        let trauma = min(1, shake) * min(1, shake) + (p.nitro.mode == .shockwave ? 0.03 : 0)
+        let t = clock * 28
+        let nx = (sin(t * 1.0) + sin(t * 2.31 + 1.3) * 0.5) / 1.5
+        let ny = (sin(t * 1.47 + 0.7) + sin(t * 2.93 + 2.1) * 0.5) / 1.5
+        let side = SIMD3<Double>(fz, 0, -fx) * nx * trauma * 0.35
+        var from = SIMD3<Float>(Float(w.x - fx * back + side.x), Float(camHeight + ny * trauma * 0.25), Float(w.z - fz * back + side.z))
         var at = SIMD3<Float>(Float(w.x + fx * 6), 1.15, Float(w.z + fz * 6))
         #if DEBUG || FAMILY
         // `-sideCam`: kamera nisko z boku auta gracza — do sprawdzania styku opon z jezdnią.

@@ -21,6 +21,8 @@ public enum SimEvent {
     case nearMiss(Car)
     case pickup(Car)
     case driftBoost(Car)
+    /// Uderzenie w bandę bez rozbicia; `intensity` — prędkość wbicia (m/s).
+    case wallHit(Car, intensity: Double)
     case finish(Car, position: Int)
 }
 
@@ -97,6 +99,7 @@ public final class RaceSim {
                 case .wreck: events.append(.wreck(car))
                 case .nitro(let mode): events.append(.nitro(car, mode))
                 case .driftBoost: events.append(.driftBoost(car))
+                case .wallHit(let v): events.append(.wallHit(car, intensity: v))
                 }
             }
             car.events.removeAll()

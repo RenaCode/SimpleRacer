@@ -310,6 +310,42 @@ final class CarEntity {
     }
 
     private var contactShadows: [Entity] = []
+    private var sparkEmitters: [Entity] = []
+
+    /// Snop iskier z boku auta (`side` +1 — lewy, −1 — prawy, jak `d` na trasie); `intensity` — prędkość
+    /// wbicia w bandę (m/s), od niej zależy liczba iskier.
+    func sparks(side: Double, intensity: Double) {
+        guard sparkEmitters.count == 2 else { return }
+        let e = sparkEmitters[side > 0 ? 1 : 0]
+        guard var emitter = e.components[ParticleEmitterComponent.self] else { return }
+        emitter.burstCount = Int(min(160, 30 + intensity * 8))
+        emitter.burst()
+        e.components.set(emitter)
+    }
+
+    private static func sparkEmitter(side: Float) -> ParticleEmitterComponent {
+        var p = ParticleEmitterComponent()
+        p.emitterShape = .point
+        p.isEmitting = false
+        p.speed = 7
+        p.speedVariation = 4
+        p.emissionDirection = [side, 0.6, -0.4]
+        p.birthDirection = .local
+        p.mainEmitter.birthRate = 0
+        p.mainEmitter.lifeSpan = 0.35
+        p.mainEmitter.lifeSpanVariation = 0.2
+        p.mainEmitter.spreadingAngle = 0.7
+        p.mainEmitter.size = 0.035
+        p.mainEmitter.sizeVariation = 0.015
+        p.mainEmitter.stretchFactor = 6
+        p.mainEmitter.acceleration = [0, -9.8, 0]
+        p.mainEmitter.dampingFactor = 1.5
+        p.mainEmitter.blendMode = .additive
+        p.mainEmitter.color = .evolving(start: .single(UIColor(red: 1, green: 0.95, blue: 0.7, alpha: 1)),
+                                        end: .single(UIColor(red: 1, green: 0.35, blue: 0.05, alpha: 0)))
+        p.burstCountVariation = 10
+        return p
+    }
     /// Nad asfaltem i liniami, pod śladami opon (względem wierzchu jezdni 0,02: 0,032).
     private static let shadowLift: Float = 0.012
 
@@ -381,6 +417,14 @@ final class CarEntity {
             body.addChild(exhaust)
             flames.append(core)
             flameEmitters.append(exhaust)
+        }
+        // Iskry przy uderzeniu w bandę: po jednym emiterze na bok, przy przednim narożniku.
+        for sx: Float in [-1, 1] {
+            let e = Entity()
+            e.position = [sx * W * 0.5, 0.25, -rearZ * 0.55]
+            e.components.set(Self.sparkEmitter(side: sx))
+            root.addChild(e)
+            sparkEmitters.append(e)
         }
         for sx: Float in [-1, 1] {
             let e = Entity()

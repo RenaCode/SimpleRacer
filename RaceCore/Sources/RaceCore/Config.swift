@@ -55,6 +55,12 @@ public enum Physics {
     public static let maxAlpha = 0.6
     /// Prędkość poprzeczna (m/s), przy której uderzenie w bandę rozbija auto.
     public static let wreckImpact = 32.0
+    /// Od jakiej prędkości wbicia w bandę (m/s) gra pokazuje uderzenie (iskry, wstrząs).
+    public static let wallHitMin = 1.5
+    /// O ile metrów na krok fizyki auto odsuwa się bokiem od rozbitego (omijanie bez szarpnięcia).
+    public static let wreckAvoidStep = 0.08
+    /// Prędkość, z jaką auto rusza po rozbiciu (m/s).
+    public static let wreckRestartSpeed = 12.0
     public static let wallFriction = 0.5
     public static let wreckTime = 2.0
     public static let driftNitroGain = 0.22
