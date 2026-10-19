@@ -5,7 +5,11 @@ import UIKit
 /// Buduje trasę: jezdnia, linie, krawężniki, bandy, trawa, brama startowa i budynki dla poczucia prędkości.
 @MainActor
 enum TrackBuilder {
-    static func build(_ track: Track, theme: TrackTheme = .of(.city)) throws -> Entity {
+    /// Obiekty otoczenia rozstawione wzdłuż trasy (do ukrywania tych daleko od gracza) — `s` to ich miejsce na trasie.
+    static var cullables: [(entity: Entity, s: Double)] = []
+
+    static func build(_ track: Track, theme: TrackTheme = .of(.city), region: Region = .city) throws -> Entity {
+        cullables = []
         let root = Entity()
         let hw = track.halfWidth
 
@@ -78,8 +82,11 @@ enum TrackBuilder {
 
         root.addChild(startGate(track))
         root.addChild(startArea(track))
-        root.addChild(buildings(track, theme: theme))
-        root.addChild(roadside(track, theme: theme))
+        let realBuildings = LocalAssets.shared.scenery("building", region: region)
+        root.addChild(realBuildings.isEmpty ? buildings(track, theme: theme)
+                      : realisticBuildings(track, theme: theme, pieces: realBuildings))
+        root.addChild(roadside(track, theme: theme, region: region))
+        root.addChild(backdrop(track, region: region))
         return root
     }
 
@@ -135,7 +142,7 @@ enum TrackBuilder {
         let tall = skyscrapers.filter { lib.size($0) != nil }
         guard !regular.isEmpty else { return boxBuildings(track) }
 
-        let root = Entity()
+        let batch = PropBatcher()
         let rng = SeededRandom(seed: 1234)
         let hw = track.halfWidth
         for side in [1.0, -1.0] {
@@ -149,15 +156,14 @@ enum TrackBuilder {
                 let pos = track.toWorld(s: s + footprint / 2, d: offset)
                 let skip = isStartArea(s, track) || rng.next() > theme.buildings
                     || track.distanceToAxis(x: pos.x, z: pos.z) < hw + 6 + footprint * 0.6
-                if !skip, let b = lib.prop(path, scale: scale) {
-                    b.position = [Float(pos.x), 0, Float(pos.z)]
-                    b.orientation = simd_quatf(angle: facingAxis(heading: pos.heading, side: side), axis: [0, 1, 0])
-                    root.addChild(b)
+                if !skip {
+                    batch.add(path, scale: scale, yaw: facingAxis(heading: pos.heading, side: side),
+                              position: [Float(pos.x), 0, Float(pos.z)])
                 }
                 s += footprint + 3 + rng.next() * 6
             }
         }
-        return root
+        return batch.build()
     }
 
     /// Zapas, gdy modeli budynków nie ma w paczce: bryły z elewacją z oknami.
@@ -221,8 +227,82 @@ enum TrackBuilder {
     }
 
     /// Drzewa i latarnie między bandą a budynkami.
-    private static func roadside(_ track: Track, theme: TrackTheme) -> Entity {
+    /// Klon obiektu otoczenia przeskalowany do wysokości `height` m, obrócony i postawiony w `position`.
+    private static func place(_ piece: SceneryPiece, height: Float, yaw: Float, position: SIMD3<Float>) -> Entity {
+        let e = piece.template.clone(recursive: true)
+        let k = height / piece.height
+        e.scale = [k, k, k]
+        e.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0])
+        e.position = position
+        return e
+    }
+
+    private static func randomHeight(_ piece: SceneryPiece, _ rng: SeededRandom) -> Float {
+        let lo = piece.entry.height.first ?? 10, hi = piece.entry.height.last ?? lo
+        return Float(lo + (hi - lo) * rng.next())
+    }
+
+    /// Realistyczne budynki (modele lokalne) wzdłuż trasy, frontem do niej; limit sztuk dla ciężkich modeli.
+    private static func realisticBuildings(_ track: Track, theme: TrackTheme, pieces: [SceneryPiece]) -> Entity {
         let root = Entity()
+        let rng = SeededRandom(seed: 4321)
+        let hw = track.halfWidth
+        var used: [String: Int] = [:]
+        for side in [1.0, -1.0] {
+            var s = 0.0
+            while s < track.length {
+                let available = pieces.filter { ($0.entry.max ?? .max) > (used[$0.entry.file] ?? 0) }
+                guard let piece = available.isEmpty ? nil : rng.pick(available) else { break }
+                let height = randomHeight(piece, rng)
+                let footprint = Double(piece.footprint * height / piece.height)
+                let offset = side * (hw + 8 + footprint / 2 + rng.next() * 8)
+                let pos = track.toWorld(s: s + footprint / 2, d: offset)
+                let skip = isStartArea(s, track) || rng.next() > theme.buildings
+                    || track.distanceToAxis(x: pos.x, z: pos.z) < hw + 5 + footprint * 0.55
+                if !skip {
+                    let e = place(piece, height: height, yaw: facingAxis(heading: pos.heading, side: side),
+                                  position: [Float(pos.x), 0, Float(pos.z)])
+                    root.addChild(e)
+                    cullables.append((e, s + footprint / 2))
+                    used[piece.entry.file, default: 0] += 1
+                }
+                s += footprint + 4 + rng.next() * 8
+            }
+        }
+        return root
+    }
+
+    /// Daleki pierścień tła (np. góry w krainie Śnieg) wokół całej trasy — zawsze widoczny.
+    private static func backdrop(_ track: Track, region: Region) -> Entity {
+        let root = Entity()
+        let pieces = LocalAssets.shared.scenery("backdrop", region: region)
+        guard !pieces.isEmpty else { return root }
+        var cx = 0.0, cz = 0.0, n = 0.0
+        var s = 0.0
+        while s < track.length { let p = track.toWorld(s: s, d: 0); cx += p.x; cz += p.z; n += 1; s += 20 }
+        cx /= n; cz /= n
+        var radius = 0.0
+        s = 0
+        while s < track.length { let p = track.toWorld(s: s, d: 0); radius = max(radius, hypot(p.x - cx, p.z - cz)); s += 20 }
+        let rng = SeededRandom(seed: 77)
+        let count = 8
+        for i in 0..<count {
+            let a = Double(i) / Double(count) * 2 * .pi + rng.next() * 0.3
+            let r = radius + 260 + rng.next() * 120
+            let piece = pieces[i % pieces.count]
+            let e = place(piece, height: randomHeight(piece, rng), yaw: Float(-a + .pi / 2),
+                          position: [Float(cx + cos(a) * r), -0.5, Float(cz + sin(a) * r)])
+            root.addChild(e)
+        }
+        return root
+    }
+
+    private static func roadside(_ track: Track, theme: TrackTheme, region: Region) -> Entity {
+        let root = Entity()
+        let batch = PropBatcher()
+        defer { root.addChild(batch.build()) }
+        let realTrees = LocalAssets.shared.scenery("tree", region: region)
+        let realBushes = LocalAssets.shared.scenery("bush", region: region)
         let rng = SeededRandom(seed: 99)
         let hw = track.halfWidth
 
@@ -237,11 +317,29 @@ enum TrackBuilder {
                 let off = side * (hw + 5 + rng.next() * 4)
                 let pos = track.toWorld(s: s, d: off)
                 guard track.distanceToAxis(x: pos.x, z: pos.z) > hw + 3.5 else { continue }
+                // Realistyczne drzewa i krzaki (modele lokalne), jeśli są; inaczej scalone drzewa Kenney.
+                if !realTrees.isEmpty {
+                    let pos3 = SIMD3<Float>(Float(pos.x), 0, Float(pos.z))
+                    let yaw = Float(rng.next() * 2 * .pi)
+                    let piece = rng.pick(realTrees)
+                    let tree = place(piece, height: randomHeight(piece, rng), yaw: yaw, position: pos3)
+                    root.addChild(tree)
+                    cullables.append((tree, s))
+                    if !realBushes.isEmpty && rng.next() < 0.6 {
+                        let bp = track.toWorld(s: s + 6, d: side * (hw + 3.5 + rng.next() * 2))
+                        let bush = rng.pick(realBushes)
+                        let b = place(bush, height: randomHeight(bush, rng), yaw: yaw,
+                                      position: [Float(bp.x), 0, Float(bp.z)])
+                        root.addChild(b)
+                        cullables.append((b, s + 6))
+                    }
+                    continue
+                }
                 let treePath = rng.next() < theme.largeTrees ? "Track/treeLarge" : "Track/treeSmall"
-                if let model = ModelLibrary.shared.prop(treePath, scale: Float(5.5 + rng.next() * 2.5)) {
-                    model.position = [Float(pos.x), 0, Float(pos.z)]
-                    model.orientation = simd_quatf(angle: Float(rng.next() * 2 * .pi), axis: [0, 1, 0])
-                    root.addChild(model)
+                let treeScale = Float(5.5 + rng.next() * 2.5)
+                let treeYaw = Float(rng.next() * 2 * .pi)
+                let treePos = SIMD3<Float>(Float(pos.x), 0, Float(pos.z))
+                if batch.add(treePath, scale: treeScale, yaw: treeYaw, position: treePos) {
                     continue
                 }
                 let tree = Entity()
@@ -273,10 +371,8 @@ enum TrackBuilder {
             for side in [1.0, -1.0] {
                 let pos = track.toWorld(s: s, d: side * (hw + 2.6))
                 // Latarnia z modelu ma ramię w stronę −Z, więc obracamy ją o 180° względem „frontem do toru”.
-                if let model = ModelLibrary.shared.prop("Track/lightPostModern", scale: 9) {
-                    model.position = [Float(pos.x), 0, Float(pos.z)]
-                    model.orientation = simd_quatf(angle: facingAxis(heading: pos.heading, side: side) + .pi, axis: [0, 1, 0])
-                    root.addChild(model)
+                if batch.add("Track/lightPostModern", scale: 9, yaw: facingAxis(heading: pos.heading, side: side) + .pi,
+                             position: [Float(pos.x), 0, Float(pos.z)]) {
                     continue
                 }
                 let e = Entity()
@@ -308,10 +404,10 @@ struct TrackTheme {
     static func of(_ region: Region) -> TrackTheme {
         switch region {
         case .city: TrackTheme(ground: UIColor(red: 0.30, green: 0.45, blue: 0.24, alpha: 1), buildings: 1, trees: 0.7, largeTrees: 0.6, lamps: true)
-        case .coast: TrackTheme(ground: UIColor(red: 0.86, green: 0.78, blue: 0.56, alpha: 1), buildings: 0.35, trees: 0.45, largeTrees: 0.9, lamps: true)
-        case .desert: TrackTheme(ground: UIColor(red: 0.85, green: 0.62, blue: 0.36, alpha: 1), buildings: 0.15, trees: 0.08, largeTrees: 0.2, lamps: false)
+        case .coast: TrackTheme(ground: UIColor(red: 0.86, green: 0.78, blue: 0.56, alpha: 1), buildings: 0.12, trees: 0.45, largeTrees: 0.9, lamps: true)
+        case .desert: TrackTheme(ground: UIColor(red: 0.85, green: 0.62, blue: 0.36, alpha: 1), buildings: 0, trees: 0.08, largeTrees: 0.2, lamps: false)
         case .forest: TrackTheme(ground: UIColor(red: 0.20, green: 0.36, blue: 0.17, alpha: 1), buildings: 0, trees: 1, largeTrees: 0.8, lamps: false)
-        case .snow: TrackTheme(ground: UIColor(red: 0.93, green: 0.95, blue: 0.98, alpha: 1), buildings: 0.2, trees: 0.8, largeTrees: 0.15, lamps: true)
+        case .snow: TrackTheme(ground: UIColor(red: 0.93, green: 0.95, blue: 0.98, alpha: 1), buildings: 0.05, trees: 0.8, largeTrees: 0.15, lamps: true)
         }
     }
 }

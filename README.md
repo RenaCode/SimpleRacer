@@ -154,6 +154,7 @@ Debug builds accept launch arguments for testing in the simulator:
 - `-holdDrift` holds DRIFT from 8 seconds after launch,
 - `-finishSoon` puts the player 150 m before the finish line (to reach the results screen quickly),
 - `-track <n>` picks the campaign track, `-screen campaign|garage` opens a screen,
+- `-mute` turns music and sound effects off (simulator tests play through the Mac speakers),
 - `-rich` gives coins and stars (to look at the shop and unlocks), `-car <id>` picks and owns a car,
 - `-autoNitro` presses nitro every 4 s, `-toggleMuteAt <s>` toggles sound after <s> seconds.
 
@@ -243,6 +244,18 @@ names its model and the palette cell that holds the paint in `CarCatalog.swift` 
 the garage recolours that cell, keeping its shading. The tests check that every bundled model
 loads, that its materials and textures exist, and that each car has a body, four wheels and a
 paint cell its body actually uses.
+
+## Region backdrops
+
+Like most mobile racers, the far scenery is a photo, not 3D geometry: each region has a 360°
+panorama (`App/Sky/sky-<region>.jpg`, 4096 × 2048) on a sky sphere that moves with the camera, so
+the horizon stays put and costs one draw call. The same image lights the scene and gives the cars
+their reflections. Near the road the game keeps light Kenney props. The panoramas are CC0
+tonemapped HDRIs from [Poly Haven](https://polyhaven.com/hdris): Wide Street 01 (city),
+Spiaggia di Mondello (coast), Goegap (desert), Je Gray 02 (forest) and Snowy Hillside (snow).
+
+Realistic 3D scenery from `LocalModels` (`scenery.json`) is switched off
+(`LocalAssets.sceneryEnabled`): it looked out of place and made frame times worse.
 
 ## Project layout
 

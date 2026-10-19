@@ -46,6 +46,10 @@ final class RaceGame {
     @ObservationIgnored private let sim: RaceSim
     @ObservationIgnored private var cars: [(Car, CarEntity)] = []
     @ObservationIgnored private var pickupEntities: [Entity] = []
+    /// Otoczenie wzdłuż trasy — rysowane tylko w pobliżu gracza.
+    @ObservationIgnored private var scenery: [(entity: Entity, s: Double)] = []
+    @ObservationIgnored private var skyDome = ModelEntity()
+    @ObservationIgnored private var cullTimer = 0.0
     @ObservationIgnored private var clock = 0.0
     @ObservationIgnored private var countdown = RaceConfig.countdown
     @ObservationIgnored private var finishTimer = 0.0
@@ -63,7 +67,14 @@ final class RaceGame {
     init(profile: Profile, spec: TrackSpec, playerCar: CarDef) {
         self.spec = spec
         debugLog("wyścig: start budowania (trasa \(spec.id))")
-        defer { debugLog("wyścig: scena gotowa") }
+        defer {
+            #if DEBUG || FAMILY
+            func models(_ e: Entity) -> Int { (e is ModelEntity ? 1 : 0) + e.children.reduce(0) { $0 + models($1) } }
+            debugLog("wyścig: scena gotowa — razem \(models(root)) modeli (auta: \(cars.map { models($0.1.root) }))")
+            #else
+            debugLog("wyścig: scena gotowa")
+            #endif
+        }
         let rng = SeededRandom(seed: UInt64(Date().timeIntervalSince1970 * 1000))
         let track = spec.makeTrack()
         let names = Self.rivals.shuffled()
@@ -82,11 +93,24 @@ final class RaceGame {
         countdownText = String(Int(RaceConfig.countdown))
 
         do {
-            root.addChild(try TrackBuilder.build(track, theme: .of(spec.region)))
+            root.addChild(try TrackBuilder.build(track, theme: .of(spec.region), region: spec.region))
+            scenery = TrackBuilder.cullables
             debugLog("wyścig: trasa zbudowana")
         } catch {
             assertionFailure("Nie udało się zbudować trasy: \(error)")
         }
+        #if DEBUG || FAMILY
+        func count(_ e: Entity) -> (models: Int, all: Int) {
+            e.children.reduce((e is ModelEntity ? 1 : 0, 1)) { acc, c in let r = count(c); return (acc.0 + r.0, acc.1 + r.1) }
+        }
+        for (i, child) in root.children.enumerated() {
+            for (j, sub) in child.children.enumerated() {
+                let c = count(sub)
+                if c.models > 20 { debugLog("scena: grupa \(i).\(j): \(c.models) modeli, \(c.all) encji") }
+            }
+        }
+        debugLog("scena: trasa razem \(count(root).models) modeli")
+        #endif
         debugLog("wyścig: auta…")
         for car in sim.cars {
             let e = CarEntity(def: car.def, color: UIColorHex.color(car.color))
@@ -100,7 +124,9 @@ final class RaceGame {
         sun.look(at: .zero, from: [80, 140, 40], relativeTo: nil)
         root.addChild(sun)
 
-        root.addChild(SkyEnvironment.skyDome(radius: 2000))
+        let panorama = SkyEnvironment.panorama(spec.region)
+        skyDome = SkyEnvironment.skyDome(radius: 2000, image: panorama ?? Materials.sky)
+        root.addChild(skyDome)
         let pickupModel = Self.pickupModel()
         for p in sim.pickups {
             let e = pickupModel.clone(recursive: true)
@@ -115,7 +141,7 @@ final class RaceGame {
         camera.camera.fieldOfViewInDegrees = Float(fov)
         root.addChild(camera)
 
-        SkyEnvironment.applyLighting(to: root)
+        SkyEnvironment.applyLighting(to: root, image: panorama ?? Materials.sky)
         #if DEBUG || FAMILY
         // Do zrzutów ekranu wyników: `-finishSoon` stawia gracza 150 m przed metą.
         if ProcessInfo.processInfo.arguments.contains("-finishSoon") {
@@ -130,46 +156,71 @@ final class RaceGame {
 
     private var player: Car { sim.player! }
 
-    /// Butla nitro: błyszcząca niebieska kapsuła z białym pasem i zaworem, w świetlistej poświacie,
-    /// otoczona wirującym pierścieniem.
+    /// Butla nitro: błyszcząca niebieska kapsuła (jedna siatka) w świetlistej poświacie — dwie części,
+    /// bo przy kilkudziesięciu butlach na trasie każda część to osobne polecenie rysowania.
     private static func pickupModel() -> Entity {
         let e = Entity()
         let blue = UIColor(red: 0.15, green: 0.6, blue: 1, alpha: 1)
         var shell = PhysicallyBasedMaterial()
         shell.baseColor = .init(tint: blue)
         shell.emissiveColor = .init(color: blue)
-        shell.emissiveIntensity = 1.6
+        shell.emissiveIntensity = 1.8
         shell.metallic = 0.6
         shell.roughness = 0.2
         shell.clearcoat = 1.0
-        // Kapsuła: walec z półkulami.
-        let tank = ModelEntity(mesh: .generateCylinder(height: 0.7, radius: 0.3), materials: [shell])
+        let tank = ModelEntity(mesh: .generateBox(width: 0.6, height: 1.3, depth: 0.6, cornerRadius: 0.3), materials: [shell])
         e.addChild(tank)
-        for y: Float in [-0.35, 0.35] {
-            let cap = ModelEntity(mesh: .generateSphere(radius: 0.3), materials: [shell])
-            cap.position.y = y
-            e.addChild(cap)
-        }
-        let band = ModelEntity(mesh: .generateCylinder(height: 0.14, radius: 0.31),
-                               materials: [Materials.glow(.white, intensity: 1.2)])
-        e.addChild(band)
-        let valve = ModelEntity(mesh: .generateCylinder(height: 0.16, radius: 0.1), materials: [Materials.chrome])
-        valve.position.y = 0.72
-        e.addChild(valve)
-        // Poświata i pierścień (półprzezroczyste, nieoświetlane — świecą same).
         var haloMat = UnlitMaterial(color: UIColor(red: 0.4, green: 0.8, blue: 1, alpha: 1))
-        haloMat.blending = .transparent(opacity: .init(floatLiteral: 0.18))
-        let halo = ModelEntity(mesh: .generateSphere(radius: 0.75), materials: [haloMat])
-        e.addChild(halo)
-        var ringMat = UnlitMaterial(color: UIColor(red: 0.55, green: 0.9, blue: 1, alpha: 1))
-        ringMat.blending = .transparent(opacity: .init(floatLiteral: 0.7))
-        let ring = ModelEntity(mesh: .generateCylinder(height: 0.03, radius: 0.62), materials: [ringMat])
-        ring.orientation = simd_quatf(angle: .pi / 7, axis: [1, 0, 0])
-        e.addChild(ring)
+        haloMat.blending = .transparent(opacity: .init(floatLiteral: 0.2))
+        e.addChild(ModelEntity(mesh: .generateSphere(radius: 0.8), materials: [haloMat]))
         return e
     }
 
+    #if DEBUG || FAMILY
+    /// Pomiar płynności: czasy klatek (s), przycięcia > 25 ms z chwilą i fazą.
+    @ObservationIgnored private var frameTimes: [Double] = []
+    @ObservationIgnored private var lastFrameAt = 0.0
+    @ObservationIgnored private var raceClock = 0.0
+
+    private func recordFrame() {
+        let now = ProcessInfo.processInfo.systemUptime
+        defer { lastFrameAt = now }
+        guard lastFrameAt > 0 else { return }
+        let ft = now - lastFrameAt
+        raceClock += ft
+        frameTimes.append(ft)
+        if ft > 0.025 && raceClock > 0.5 {
+            debugLog(String(format: "klatka: przycięcie %.0f ms (%.1f s wyścigu, faza %@)", ft * 1000, raceClock, "\(phase)"))
+        }
+        if frameTimes.count % 600 == 0 {
+            let sorted = frameTimes.sorted()
+            let p = { (q: Double) in sorted[min(sorted.count - 1, Int(Double(sorted.count) * q))] * 1000 }
+            let hitches = frameTimes.filter { $0 > 0.025 }.count
+            debugLog(String(format: "klatki: %d, mediana %.1f ms, p95 %.1f ms, max %.0f ms, przycięć %d",
+                            frameTimes.count, p(0.5), p(0.95), sorted.last! * 1000, hitches))
+        }
+    }
+    #endif
+
+    #if DEBUG || FAMILY
+    @ObservationIgnored private var workTimes: [Double] = []
+    @ObservationIgnored private var physTimes: [Double] = []
+    @ObservationIgnored private var entTimes: [Double] = []
+    #endif
+
     func update(dt rawDt: Double) {
+        #if DEBUG || FAMILY
+        recordFrame()
+        let t0 = ProcessInfo.processInfo.systemUptime
+        defer {
+            workTimes.append(ProcessInfo.processInfo.systemUptime - t0)
+            if workTimes.count % 600 == 0 {
+                func p95(_ a: [Double]) -> Double { a.sorted()[Int(Double(a.count) * 0.95)] * 1000 }
+                debugLog(String(format: "praca CPU w klatce: p95 %.2f ms (fizyka %.2f, encje %.2f), max %.1f ms",
+                                p95(workTimes), p95(physTimes), p95(entTimes), workTimes.max()! * 1000))
+            }
+        }
+        #endif
         let dt = min(rawDt, 0.05)
         input.poll()
         if paused {
@@ -197,11 +248,17 @@ final class RaceGame {
                 AudioManager.shared.play(.go)
             }
         case .racing, .finished:
+            #if DEBUG || FAMILY
+            let tp = ProcessInfo.processInfo.systemUptime
+            #endif
             acc += dt
             while acc >= RaceSim.step {
                 sim.advance()
                 acc -= RaceSim.step
             }
+            #if DEBUG || FAMILY
+            physTimes.append(ProcessInfo.processInfo.systemUptime - tp)
+            #endif
             handleEvents()
             if phase == .finished {
                 finishTimer -= dt
@@ -212,8 +269,14 @@ final class RaceGame {
             }
         }
 
+        #if DEBUG || FAMILY
+        let te = ProcessInfo.processInfo.systemUptime
+        #endif
         updateEntities()
         updateCamera(dt: dt)
+        #if DEBUG || FAMILY
+        entTimes.append(ProcessInfo.processInfo.systemUptime - te)
+        #endif
         hudTimer -= dt
         if hudTimer <= 0 {
             hudTimer = 1.0 / 20
@@ -269,8 +332,19 @@ final class RaceGame {
         }
     }
 
+    /// Rywale i butle dalej niż tyle metrów (po trasie) od gracza nie są rysowane — i tak ledwo je widać.
+    private static let drawDistance = 220.0
+
+    private func setVisible(_ e: Entity, _ visible: Bool) {
+        if e.isEnabled != visible { e.isEnabled = visible }
+    }
+
     private func updateEntities() {
+        let playerS = player.s
         for (car, e) in cars {
+            let near = car.isPlayer || abs(wrapDelta(car.s, playerS, sim.track.length)) < Self.drawDistance
+            setVisible(e.root, near)
+            guard near else { continue }
             let w = sim.track.toWorld(s: car.s, d: car.d)
             e.root.position = [Float(w.x), 0, Float(w.z)]
             e.root.orientation = simd_quatf(angle: Float(w.heading + car.alphaFace), axis: [0, 1, 0])
@@ -288,11 +362,23 @@ final class RaceGame {
             e.setSmoke(car.drifting)
             e.spinWheels(distance: car.distance)
         }
+        // Otoczenie: co 0,2 s ukrywamy obiekty dalej niż 320 m po trasie (bliżej przed autem widać dalej).
+        cullTimer -= 1.0 / 60
+        if cullTimer <= 0 {
+            cullTimer = 0.2
+            for item in scenery {
+                let ahead = wrapDelta(item.s, playerS, sim.track.length)
+                setVisible(item.entity, ahead > -120 && ahead < 320)
+            }
+        }
         // Butle wirują i unoszą się; zebrane znikają do czasu odnowienia.
         let spin = simd_quatf(angle: Float(clock * 2), axis: [0, 1, 0])
         let bob = Float(sin(clock * 3)) * 0.12
         for (i, e) in pickupEntities.enumerated() {
-            e.isEnabled = sim.pickups[i].isActive
+            let p = sim.pickups[i]
+            let visible = p.isActive && abs(wrapDelta(p.s, playerS, sim.track.length)) < Self.drawDistance
+            setVisible(e, visible)
+            guard visible else { continue }
             e.orientation = spin
             e.position.y = 0.9 + bob
         }
@@ -311,6 +397,8 @@ final class RaceGame {
         let from = SIMD3<Float>(Float(w.x - fx * back + jitter()), Float(2.1 + jitter()), Float(w.z - fz * back))
         let at = SIMD3<Float>(Float(w.x + fx * 6), 1.15, Float(w.z + fz * 6))
         camera.look(at: at, from: from, relativeTo: nil)
+        // Panorama jedzie z kamerą: zdjęcie to „nieskończenie daleki” plan, horyzont się nie przesuwa.
+        skyDome.position = from
         let target = 68 + clamp(p.speed / p.def.topSpeed, 0, 1.6) * 10 + (p.nitro.mode != .off ? 8 : 0)
         fov = damp(fov, target, rate: 4, dt: dt)
         camera.camera.fieldOfViewInDegrees = Float(fov)

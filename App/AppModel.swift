@@ -104,6 +104,15 @@ final class AppModel {
         Task { await ModelLibrary.shared.prefetch() }
         #if DEBUG || FAMILY
         // Do testów w symulatorze z wiersza poleceń: `simctl launch <udid> com.renacode.simpleracer -autostartRace`.
+        // `-mute` wycisza muzykę i efekty (testy w symulatorze grają przez głośniki Maca).
+        if ProcessInfo.processInfo.arguments.contains("-mute") {
+            // W init `didSet` nie działa — dźwięk wyciszamy i zapisujemy wprost.
+            profile.musicOn = false
+            profile.soundOn = false
+            AudioManager.shared.musicOn = false
+            AudioManager.shared.soundOn = false
+            save()
+        }
         if ProcessInfo.processInfo.arguments.contains("-autostartRace") { startRace() }
         // `-car <id>` wybiera auto (podgląd modeli w symulatorze).
         let args = ProcessInfo.processInfo.arguments

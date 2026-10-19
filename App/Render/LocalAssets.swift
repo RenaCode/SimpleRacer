@@ -21,6 +21,32 @@ struct LocalCarEntry: Decodable {
     var source: String
 }
 
+/// Model otoczenia (budynek, drzewo, krzak, tło) z `scenery.json`.
+struct SceneryEntry: Decodable {
+    var file: String
+    var kind: String
+    /// Nazwa węzła, którego dzieci to osobne obiekty (np. paczka budynków).
+    var split: String?
+    /// Tylko te węzły (np. góry i las w tle z większej sceny).
+    var only: [String]?
+    var regions: [String]
+    var height: [Double]
+    var max: Int?
+    var author: String
+    var license: String
+    var source: String
+    var title: String
+}
+
+/// Pojedynczy obiekt otoczenia gotowy do klonowania: wyśrodkowany w X/Z, stoi na y = 0, w skali pliku.
+struct SceneryPiece {
+    let entry: SceneryEntry
+    let template: Entity
+    let height: Float
+    let footprint: Float
+    var regions: Set<String> { Set(entry.regions) }
+}
+
 struct Credit: Identifiable {
     let id = UUID()
     let title: String
@@ -39,6 +65,28 @@ final class LocalAssets {
     private(set) var loadingDone = false
     @ObservationIgnored private(set) var cars: [LocalCarEntry] = []
     @ObservationIgnored private(set) var templates: [String: Entity] = [:]
+    @ObservationIgnored private(set) var sceneryEntries: [SceneryEntry] = []
+    /// Obiekty otoczenia wg rodzaju ("building", "tree", "bush", "backdrop").
+    @ObservationIgnored private(set) var scenery: [String: [SceneryPiece]] = [:]
+
+    /// Realistyczne otoczenie 3D (budynki, drzewa, góry) — wyłączone: wyglądało źle i spowalniało grę.
+    /// Daleki plan to teraz panorama krainy (SkyEnvironment), bliski — lekkie modele Kenney.
+    static let sceneryEnabled = false
+
+    func scenery(_ kind: String, region: Region) -> [SceneryPiece] {
+        guard Self.sceneryEnabled else { return [] }
+        return (scenery[kind] ?? []).filter { $0.regions.contains(Self.regionKey(region)) }
+    }
+
+    static func regionKey(_ r: Region) -> String {
+        switch r {
+        case .city: "city"
+        case .coast: "coast"
+        case .desert: "desert"
+        case .forest: "forest"
+        case .snow: "snow"
+        }
+    }
 
     var folder: URL? {
         Bundle.main.url(forResource: "Models", withExtension: nil)?.appendingPathComponent("Realistic")
@@ -96,8 +144,53 @@ final class LocalAssets {
                 group.addTask { await self.load(e, from: folder) }
             }
         }
+        if Self.sceneryEnabled { await preloadScenery(from: folder) }
         loadingDone = true
         debugLog("model: wszystkie wczytane")
+    }
+
+    /// Modele otoczenia: paczki rozbite na pojedyncze obiekty, każdy wyśrodkowany i postawiony na ziemi.
+    private func preloadScenery(from folder: URL) async {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("scenery.json")),
+              let entries = try? JSONDecoder().decode([SceneryEntry].self, from: data) else { return }
+        let fm = FileManager.default
+        sceneryEntries = entries.filter { fm.fileExists(atPath: folder.appendingPathComponent($0.file).path) }
+        await withTaskGroup(of: Void.self) { group in
+            for e in sceneryEntries {
+                group.addTask { await self.loadScenery(e, from: folder) }
+            }
+        }
+    }
+
+    private func loadScenery(_ e: SceneryEntry, from folder: URL) async {
+        guard let entity = try? await Entity(contentsOf: folder.appendingPathComponent(e.file)) else {
+            debugLog("otoczenie: \(e.file) — błąd wczytania")
+            return
+        }
+        var parts: [Entity] = []
+        if let split = e.split, let node = entity.findEntity(named: split) {
+            parts = Array(node.children)
+        } else if let only = e.only {
+            parts = only.compactMap { entity.findEntity(named: $0) }
+        } else {
+            parts = [entity]
+        }
+        var pieces: [SceneryPiece] = []
+        for part in parts {
+            // Zachowujemy transformację części względem pliku (skala, obrót z eksportu).
+            let world = part.transformMatrix(relativeTo: nil)
+            part.removeFromParent()
+            part.setTransformMatrix(world, relativeTo: nil)
+            let root = Entity()
+            root.addChild(part)
+            let b = part.visualBounds(relativeTo: root)
+            guard b.extents.y > 0.001 else { continue }
+            part.position -= SIMD3<Float>(b.center.x, b.min.y, b.center.z)
+            pieces.append(SceneryPiece(entry: e, template: root, height: b.extents.y,
+                                       footprint: max(b.extents.x, b.extents.z)))
+        }
+        scenery[e.kind, default: []] += pieces
+        debugLog("otoczenie: \(e.file) — \(pieces.count) obiektów")
     }
 
     private func load(_ e: LocalCarEntry, from folder: URL) async {
@@ -133,8 +226,11 @@ final class LocalAssets {
                    source: "https://opengameart.org/content/4-chiptunes-adventure"),
             Credit(title: "Modele aut, budynków i toru", author: "Kenney (kenney.nl)", license: "CC0",
                    source: "https://kenney.nl"),
+            Credit(title: "Panoramy krain (Wide Street 01, Spiaggia di Mondello, Goegap, Je Gray 02, Snowy Hillside)",
+                   author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/hdris"),
         ]
         out += cars.map { Credit(title: $0.name, author: $0.author, license: $0.license, source: $0.source) }
+        out += sceneryEntries.map { Credit(title: $0.title, author: $0.author, license: $0.license, source: $0.source) }
         return out
     }
 }

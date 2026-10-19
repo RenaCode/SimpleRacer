@@ -22,7 +22,8 @@ struct RootView: View {
             case .campaign:
                 CampaignView(model: model)
             case let .race(id):
-                if LocalAssets.shared.loadingDone || (LocalAssets.shared.loadedCount >= 0 && LocalAssets.shared.isLoaded(model.car)) {
+                // Start dopiero po wczytaniu wszystkich aut — wczytywanie w trakcie wyścigu dawało przycięcia.
+                if LocalAssets.shared.loadingDone {
                     RaceScreen(model: model).id(id)
                 } else {
                     VStack(spacing: 16) {
