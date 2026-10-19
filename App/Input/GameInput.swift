@@ -1,3 +1,4 @@
+import Foundation
 import GameController
 import RaceCore
 
@@ -61,7 +62,16 @@ final class GameInput: PlayerInputSource {
         return max(-1, min(1, s))
     }
 
-    var drift: Bool { deviceDrift || touchDrift }
+    var drift: Bool { deviceDrift || touchDrift || debugHoldDrift }
+
+    #if DEBUG
+    /// Do zrzutów w symulatorze: `-holdDrift` trzyma DRIFT wciśnięty od 8. sekundy po starcie aplikacji (po rozpędzeniu).
+    private let debugDriftFrom: Double? = ProcessInfo.processInfo.arguments.contains("-holdDrift")
+        ? ProcessInfo.processInfo.systemUptime + 8 : nil
+    private var debugHoldDrift: Bool { debugDriftFrom.map { ProcessInfo.processInfo.systemUptime > $0 } ?? false }
+    #else
+    private let debugHoldDrift = false
+    #endif
 
     func consumeNitro() -> Bool {
         defer { nitroQueued = false }

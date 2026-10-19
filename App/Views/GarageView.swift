@@ -63,7 +63,7 @@ struct GarageView: View {
                         .frame(width: 40, height: 40)
                 }
 
-                Button("Gotowe") { model.screen = .menu }
+                Button { model.screen = .menu } label: { Label("Gotowe", systemImage: "checkmark") }
                     .buttonStyle(RaceButtonStyle(primary: true))
                     .frame(maxWidth: .infinity)
                     .padding(.top, 8)

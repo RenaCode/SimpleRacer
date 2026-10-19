@@ -30,9 +30,12 @@ struct ResultsView: View {
                     row("Auto", result.carName)
                 }
                 HStack(spacing: 12) {
-                    Button("Jeszcze raz", action: again).buttonStyle(RaceButtonStyle(primary: true))
-                    Button("Garaż", action: garage).buttonStyle(RaceButtonStyle())
-                    Button("Menu", action: menu).buttonStyle(RaceButtonStyle())
+                    Button(action: again) { Label("Jeszcze raz", systemImage: "arrow.triangle.2.circlepath") }
+                        .buttonStyle(RaceButtonStyle(primary: true))
+                    Button(action: garage) { Label("Garaż", systemImage: "door.garage.closed") }
+                        .buttonStyle(RaceButtonStyle())
+                    Button(action: menu) { Label("Menu", systemImage: "house.fill") }
+                        .buttonStyle(RaceButtonStyle())
                 }
                 .padding(.top, 8)
             }

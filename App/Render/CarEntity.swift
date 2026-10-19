@@ -2,7 +2,7 @@ import RaceCore
 import RealityKit
 import UIKit
 
-/// Auto z prostych brył; przód auta patrzy w +Z.
+/// Auto o opływowym nadwoziu wygenerowanym z przekrojów; przód patrzy w +Z.
 @MainActor
 final class CarEntity {
     /// Pozycja i kierunek auta.
@@ -11,72 +11,201 @@ final class CarEntity {
     let body = Entity()
     private var paintParts: [ModelEntity] = []
     private var flames: [ModelEntity] = []
-    private var wheels: [ModelEntity] = []
+    private var wheels: [Entity] = []
+    private var smoke: [Entity] = []
+    private var smoking = false
+    private var flameMode: NitroMode = .off
     private let wheelRadius: Float = 0.36
 
     init(def: CarDef, color: UIColor) {
         let s = def.shape
-        let L = Float(s.length), W = Float(s.width), H = Float(s.height)
+        let L = Float(s.length), W = Float(s.width)
+        let hScale = Float(s.height) / 1.2
         root.addChild(body)
+        let paint = Materials.paint(color)
 
-        let paint = Self.paint(color)
-        let glass = SimpleMaterial(color: UIColor(red: 0.11, green: 0.17, blue: 0.23, alpha: 1), roughness: 0.1, isMetallic: true)
-        let dark = SimpleMaterial(color: UIColor(white: 0.08, alpha: 1), roughness: 0.8, isMetallic: false)
-        let headlight = UnlitMaterial(color: UIColor(red: 1, green: 0.97, blue: 0.85, alpha: 1))
-        let taillight = UnlitMaterial(color: UIColor(red: 1, green: 0.12, blue: 0.12, alpha: 1))
-
-        @discardableResult
-        func box(_ w: Float, _ h: Float, _ l: Float, _ m: any Material, _ p: SIMD3<Float>, painted: Bool = false) -> ModelEntity {
-            let e = ModelEntity(mesh: .generateBox(width: w, height: h, depth: l, cornerRadius: min(w, h, l) * 0.08), materials: [m])
-            e.position = p
+        func add(_ mesh: MeshResource?, _ material: any Material, painted: Bool = false) {
+            guard let mesh else { return }
+            let e = ModelEntity(mesh: mesh, materials: [material])
             body.addChild(e)
             if painted { paintParts.append(e) }
-            return e
         }
 
-        let baseH = H * 0.5
-        box(W, baseH, L, paint, [0, 0.3 + baseH / 2, 0], painted: true)
-        box(W * 0.98, baseH * 0.35, L * 0.25, paint, [0, 0.3 + baseH + 0.05, L * 0.3], painted: true) // maska
-        let cabinH = H * 0.42
-        let cabinL = L * Float(s.cabinLength), cabinZ = Float(s.cabinOffset)
-        box(W * 0.8, cabinH, cabinL, glass, [0, 0.3 + baseH + cabinH / 2, cabinZ])
-        box(W * 0.78, 0.06, cabinL * 0.8, paint, [0, 0.3 + baseH + cabinH + 0.03, cabinZ], painted: true)
+        // Nadwozie: przekroje od tyłu (t = 0) do przodu (t = 1).
+        let wheelT: [Float] = [0.18, 0.82]
+        func bump(_ t: Float) -> Float { wheelT.map { exp(-pow(($0 - t) / 0.07, 2)) }.max()! }
+        func bodyTop(_ t: Float) -> Float {
+            let base = curve(t, [(0, 0.52), (0.05, 0.70), (0.3, 0.74), (0.62, 0.70), (0.9, 0.58), (1, 0.44)])
+            return (base + 0.05 * bump(t)) * hScale
+        }
+        func bodyBottom(_ t: Float) -> Float { curve(t, [(0, 0.3), (0.05, 0.22), (0.95, 0.22), (1, 0.26)]) }
+        func halfWidth(_ t: Float) -> Float {
+            (curve(t, [(0, 0.88), (0.05, 0.96), (0.2, 0.98), (0.8, 0.98), (0.95, 0.92), (1, 0.8)]) + 0.05 * bump(t)) * W / 2
+        }
+        var bodyRings: [[SIMD3<Float>]] = []
+        let n = 40
+        for i in 0...n {
+            let t = Float(i) / Float(n)
+            bodyRings.append(Self.ring(z: -L / 2 + t * L, halfWidth: halfWidth(t), bottom: bodyBottom(t), top: bodyTop(t),
+                                       exponent: 4.5, topTaper: 0.08))
+        }
+        // Zaokrąglone końce: dwa coraz mniejsze przekroje za zderzakami.
+        for (end, dir) in [(0, Float(-1)), (n, Float(1))] {
+            let r = bodyRings[end]
+            let c = r.reduce(SIMD3<Float>(repeating: 0), +) / Float(r.count)
+            let extra = [0.94, 0.75].enumerated().map { k, sc in
+                r.map { p in c + (p - c) * Float(sc) + SIMD3<Float>(0, 0, dir * Float(k + 1) * 0.03) }
+            }
+            if end == 0 { bodyRings.insert(contentsOf: extra.reversed(), at: 0) } else { bodyRings += extra }
+        }
+        var lb = LoftBuilder()
+        lb.loft(bodyRings, closed: true, capEnds: true)
+        add(try? lb.mesh(name: "body"), paint, painted: true)
+
+        // Kabina: szkło, z pochyloną przednią i tylną szybą.
+        let tc = 0.5 + Float(s.cabinOffset) / L
+        let cl = Float(s.cabinLength)
+        let c0 = tc - cl / 2 - 0.1, c1 = tc + cl / 2 + 0.14
+        let roofH: Float = 0.46 * hScale
+        func cabinTop(_ t: Float) -> Float {
+            let u = (t - c0) / (c1 - c0)
+            let rise = smoothstep(0, 0.32, u) * (1 - smoothstep(0.62, 1, u))
+            return bodyTop(t) - 0.04 + roofH * rise
+        }
+        var cabinRings: [[SIMD3<Float>]] = []
+        let m = 28
+        for i in 0...m {
+            let t = c0 + (c1 - c0) * Float(i) / Float(m)
+            cabinRings.append(Self.ring(z: -L / 2 + t * L, halfWidth: halfWidth(t) * 0.84, bottom: bodyTop(t) - 0.12,
+                                        top: max(bodyTop(t) - 0.08, cabinTop(t)), exponent: 3, topTaper: 0.3))
+        }
+        var cb = LoftBuilder()
+        cb.loft(cabinRings, closed: true, capEnds: false)
+        add(try? cb.mesh(name: "cabin"), Materials.glass)
+
+        // Dach w kolorze lakieru: górny pas kabiny w jej płaskiej części, minimalnie nad szybą.
+        var roofRings: [[SIMD3<Float>]] = []
+        let r0 = c0 + (c1 - c0) * 0.36, r1 = c0 + (c1 - c0) * 0.6
+        for i in 0...10 {
+            let t = r0 + (r1 - r0) * Float(i) / 10
+            roofRings.append(Self.ring(z: -L / 2 + t * L, halfWidth: halfWidth(t) * 0.84 * 1.015, bottom: bodyTop(t) - 0.12,
+                                       top: cabinTop(t) + 0.012, exponent: 3, topTaper: 0.3, arc: 0.3...2.84))
+        }
+        var rb = LoftBuilder()
+        rb.loft(roofRings, closed: false, capEnds: false)
+        add(try? rb.mesh(name: "roof"), paint, painted: true)
+
+        // Światła: przednie reflektory i pas świateł tylnych.
+        let headY = bodyTop(0.97) - 0.08
+        for side: Float in [-1, 1] {
+            let h = ModelEntity(mesh: .generateBox(width: W * 0.24, height: 0.08, depth: 0.12, cornerRadius: 0.04),
+                                materials: [Materials.glow(UIColor(red: 0.85, green: 0.93, blue: 1, alpha: 1), intensity: 3)])
+            h.position = [side * W * 0.3, headY, L / 2 + 0.01]
+            body.addChild(h)
+            // Lusterka.
+            let mirror = ModelEntity(mesh: .generateBox(width: 0.18, height: 0.1, depth: 0.12, cornerRadius: 0.04), materials: [paint])
+            mirror.position = [side * (halfWidth(c1 - 0.06) * 0.86 + 0.06), bodyTop(c1 - 0.06) + 0.08, -L / 2 + (c1 - 0.06) * L]
+            body.addChild(mirror)
+            paintParts.append(mirror)
+        }
+        let tail = ModelEntity(mesh: .generateBox(width: W * 0.64, height: 0.07, depth: 0.08, cornerRadius: 0.03),
+                               materials: [Materials.glow(UIColor(red: 1, green: 0.08, blue: 0.1, alpha: 1), intensity: 2.5)])
+        tail.position = [0, bodyTop(0.02) - 0.09, -L / 2 - 0.03]
+        body.addChild(tail)
 
         if s.spoiler {
-            box(W * 0.95, 0.07, 0.45, paint, [0, 0.3 + baseH + 0.45, -L / 2 + 0.3], painted: true)
-            box(0.08, 0.4, 0.1, dark, [W * 0.3, 0.3 + baseH + 0.22, -L / 2 + 0.3])
-            box(0.08, 0.4, 0.1, dark, [-W * 0.3, 0.3 + baseH + 0.22, -L / 2 + 0.3])
-        }
-        for side: Float in [-1, 1] {
-            box(W * 0.22, 0.12, 0.05, headlight, [side * W * 0.32, 0.3 + baseH * 0.7, L / 2 + 0.01])
-            box(W * 0.25, 0.1, 0.05, taillight, [side * W * 0.3, 0.3 + baseH * 0.75, -L / 2 - 0.01])
-        }
-
-        let wheelMesh = MeshResource.generateCylinder(height: 0.3, radius: wheelRadius)
-        for sx: Float in [-1, 1] {
-            for sz: Float in [-1, 1] {
-                let w = ModelEntity(mesh: wheelMesh, materials: [dark])
-                w.position = [sx * (W / 2 - 0.08), wheelRadius, sz * L * 0.32]
-                root.addChild(w)
-                wheels.append(w)
+            let wing = ModelEntity(mesh: .generateBox(width: W * 0.95, height: 0.06, depth: 0.36, cornerRadius: 0.03), materials: [paint])
+            wing.position = [0, bodyTop(0.06) + 0.3, -L / 2 + 0.3]
+            body.addChild(wing)
+            paintParts.append(wing)
+            for side: Float in [-1, 1] {
+                let stand = ModelEntity(mesh: .generateBox(width: 0.05, height: 0.3, depth: 0.12, cornerRadius: 0.02),
+                                        materials: [Materials.matte(UIColor(white: 0.1, alpha: 1), roughness: 0.4, metallic: 0.6)])
+                stand.position = [side * W * 0.3, bodyTop(0.06) + 0.15, -L / 2 + 0.3]
+                body.addChild(stand)
             }
         }
 
-        let flameMesh = MeshResource.generateCone(height: 1.3, radius: 0.18)
+        // Koła: opona, felga i szprychy. Oś koła wzdłuż X.
+        let tire = MeshResource.generateCylinder(height: 0.26, radius: wheelRadius)
+        let rim = MeshResource.generateCylinder(height: 0.27, radius: 0.24)
+        let spoke = MeshResource.generateBox(width: 0.03, height: 0.4, depth: 0.05)
+        let rubber = Materials.matte(UIColor(white: 0.05, alpha: 1), roughness: 0.9)
+        let spokeMat = Materials.matte(UIColor(white: 0.25, alpha: 1), roughness: 0.3, metallic: 1)
+        for sx: Float in [-1, 1] {
+            for (k, t) in wheelT.enumerated() {
+                let wheel = Entity()
+                wheel.position = [sx * (halfWidth(t) - 0.12), wheelRadius, -L / 2 + t * L + (k == 0 ? 0.05 : -0.05)]
+                let lay = simd_quatf(angle: .pi / 2, axis: [0, 0, 1])
+                let t1 = ModelEntity(mesh: tire, materials: [rubber]); t1.orientation = lay
+                let r1 = ModelEntity(mesh: rim, materials: [Materials.chrome]); r1.orientation = lay
+                wheel.addChild(t1)
+                wheel.addChild(r1)
+                for i in 0..<5 {
+                    let sp = ModelEntity(mesh: spoke, materials: [spokeMat])
+                    sp.position = [sx * 0.14, 0, 0]
+                    sp.orientation = simd_quatf(angle: Float(i) * 2 * .pi / 5, axis: [1, 0, 0])
+                    wheel.addChild(sp)
+                }
+                root.addChild(wheel)
+                wheels.append(wheel)
+            }
+        }
+
+        // Płomień nitro z wydechów.
+        let flameMesh = MeshResource.generateCone(height: 1.3, radius: 0.16)
         for side: Float in [-1, 1] {
             let f = ModelEntity(mesh: flameMesh, materials: [Self.flame(.normal)])
-            // Czubek stożka (domyślnie +Y) obrócony do tyłu auta (−Z).
-            f.orientation = simd_quatf(angle: -.pi / 2, axis: [1, 0, 0])
-            f.position = [side * W * 0.22, 0.45, -L / 2 - 0.65]
+            f.orientation = simd_quatf(angle: -.pi / 2, axis: [1, 0, 0]) // czubek do tyłu (−Z)
+            f.position = [side * W * 0.22, 0.38, -L / 2 - 0.75]
             f.isEnabled = false
             body.addChild(f)
             flames.append(f)
         }
+
+        // Dym spod tylnych kół w drifcie.
+        for sx: Float in [-1, 1] {
+            let e = Entity()
+            e.position = [sx * (halfWidth(0.18) - 0.1), 0.15, -L / 2 + 0.18 * L]
+            e.components.set(Self.smokeEmitter())
+            root.addChild(e)
+            smoke.append(e)
+        }
         spinWheels(distance: 0)
     }
 
-    private static func paint(_ color: UIColor) -> SimpleMaterial {
-        SimpleMaterial(color: color, roughness: 0.3, isMetallic: true)
+    /// Przekrój nadwozia: zaokrąglony prostokąt (superelipsa), zwężany ku górze o `topTaper`.
+    private static func ring(z: Float, halfWidth: Float, bottom: Float, top: Float, exponent: Float, topTaper: Float,
+                             arc: ClosedRange<Float>? = nil, count: Int = 32) -> [SIMD3<Float>] {
+        let cy = (top + bottom) / 2, hh = max(0.01, (top - bottom) / 2)
+        let e = 2 / exponent
+        return (0..<count).map { i in
+            let a: Float = arc.map { $0.lowerBound + ($0.upperBound - $0.lowerBound) * Float(i) / Float(count - 1) }
+                ?? Float(i) / Float(count) * 2 * .pi
+            let c = cos(a), s = sin(a)
+            let y = cy + hh * copysign(pow(abs(s), e), s)
+            let k = 1 - topTaper * max(0, (y - bottom) / (top - bottom))
+            return [halfWidth * k * copysign(pow(abs(c), e), c), y, z]
+        }
+    }
+
+    private static func smokeEmitter() -> ParticleEmitterComponent {
+        var p = ParticleEmitterComponent()
+        p.emitterShape = .sphere
+        p.emitterShapeSize = [0.2, 0.05, 0.2]
+        p.birthLocation = .volume
+        p.speed = 0.8
+        p.speedVariation = 0.4
+        p.particlesInheritTransform = false
+        p.mainEmitter.birthRate = 140
+        p.mainEmitter.lifeSpan = 0.9
+        p.mainEmitter.size = 0.35
+        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 5
+        p.mainEmitter.spreadingAngle = 0.8
+        p.mainEmitter.color = .constant(.single(UIColor(white: 0.9, alpha: 0.45)))
+        p.mainEmitter.opacityCurve = .linearFadeOut
+        p.isEmitting = false
+        return p
     }
 
     private static func flame(_ mode: NitroMode) -> UnlitMaterial {
@@ -91,11 +220,9 @@ final class CarEntity {
     }
 
     func setColor(_ color: UIColor) {
-        let m = Self.paint(color)
+        let m = Materials.paint(color)
         for p in paintParts { p.model?.materials = [m] }
     }
-
-    private var flameMode: NitroMode = .off
 
     func setFlame(_ mode: NitroMode) {
         if mode != flameMode {
@@ -110,10 +237,34 @@ final class CarEntity {
         for f in flames { f.scale = [base, base * Float.random(in: 0.85...1.15), base] }
     }
 
+    func setSmoke(_ on: Bool) {
+        guard on != smoking else { return }
+        smoking = on
+        for e in smoke {
+            guard var p = e.components[ParticleEmitterComponent.self] else { continue }
+            p.isEmitting = on
+            e.components.set(p)
+        }
+    }
+
     func spinWheels(distance: Double) {
         let spin = simd_quatf(angle: Float(distance) / wheelRadius, axis: [1, 0, 0])
-        // Walec stoi domyślnie wzdłuż Y — kładziemy go na bok, oś wzdłuż X.
-        let lay = simd_quatf(angle: .pi / 2, axis: [0, 0, 1])
-        for w in wheels { w.orientation = spin * lay }
+        for w in wheels { w.orientation = spin }
     }
+}
+
+/// Gładka krzywa przez punkty (t, wartość) — interpolacja z wygładzeniem między sąsiednimi punktami.
+func curve(_ t: Float, _ pts: [(Float, Float)]) -> Float {
+    if t <= pts[0].0 { return pts[0].1 }
+    for i in 1..<pts.count where t <= pts[i].0 {
+        let (t0, v0) = pts[i - 1], (t1, v1) = pts[i]
+        let u = (t - t0) / (t1 - t0)
+        return v0 + (v1 - v0) * u * u * (3 - 2 * u)
+    }
+    return pts[pts.count - 1].1
+}
+
+func smoothstep(_ a: Float, _ b: Float, _ x: Float) -> Float {
+    let u = min(1, max(0, (x - a) / (b - a)))
+    return u * u * (3 - 2 * u)
 }

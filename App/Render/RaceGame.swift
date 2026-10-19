@@ -43,6 +43,8 @@ final class RaceGame {
     @ObservationIgnored private let camera = PerspectiveCamera()
     @ObservationIgnored private let sim: RaceSim
     @ObservationIgnored private var cars: [(Car, CarEntity)] = []
+    @ObservationIgnored private var pickupEntities: [Entity] = []
+    @ObservationIgnored private var clock = 0.0
     @ObservationIgnored private var countdown = RaceConfig.countdown
     @ObservationIgnored private var finishTimer = 0.0
     @ObservationIgnored private var acc = 0.0
@@ -85,13 +87,29 @@ final class RaceGame {
         sun.look(at: .zero, from: [80, 140, 40], relativeTo: nil)
         root.addChild(sun)
 
-        root.addChild(Self.sky())
+        root.addChild(SkyEnvironment.skyDome(radius: 2000))
+        let pickupModel = Self.pickupModel()
+        for p in sim.pickups {
+            let e = pickupModel.clone(recursive: true)
+            let w = track.toWorld(s: p.s, d: p.d)
+            e.position = [Float(w.x), 0.9, Float(w.z)]
+            root.addChild(e)
+            pickupEntities.append(e)
+        }
 
         camera.camera.near = 0.5
         camera.camera.far = 2500
         camera.camera.fieldOfViewInDegrees = Float(fov)
         root.addChild(camera)
 
+        SkyEnvironment.applyLighting(to: root)
+        #if DEBUG
+        // Do zrzutów ekranu wyników: `-finishSoon` stawia gracza 150 m przed metą.
+        if ProcessInfo.processInfo.arguments.contains("-finishSoon") {
+            player.distance = sim.raceDistance - 150
+            player.s = wrap(player.distance, track.length)
+        }
+        #endif
         camHeading = track.sample(at: player.s).heading
         updateEntities()
         updateCamera(dt: 1)
@@ -99,15 +117,23 @@ final class RaceGame {
 
     private var player: Car { sim.player! }
 
-    /// Kopuła nieba widziana od środka.
-    private static func sky() -> Entity {
-        var m = UnlitMaterial(color: UIColor(red: 0.62, green: 0.77, blue: 0.91, alpha: 1))
-        m.faceCulling = .front
-        return ModelEntity(mesh: .generateSphere(radius: 2000), materials: [m])
+    /// Butla nitro: świecący niebieski zbiornik z chromowanymi końcówkami.
+    private static func pickupModel() -> Entity {
+        let e = Entity()
+        let tank = ModelEntity(mesh: .generateBox(width: 0.55, height: 1.0, depth: 0.55, cornerRadius: 0.27),
+                               materials: [Materials.glow(UIColor(red: 0.2, green: 0.75, blue: 1, alpha: 1), intensity: 2.5)])
+        e.addChild(tank)
+        for y: Float in [-0.55, 0.55] {
+            let cap = ModelEntity(mesh: .generateCylinder(height: 0.12, radius: 0.2), materials: [Materials.chrome])
+            cap.position.y = y
+            e.addChild(cap)
+        }
+        return e
     }
 
     func update(dt rawDt: Double) {
         let dt = min(rawDt, 0.05)
+        clock += dt
         input.poll()
 
         switch phase {
@@ -171,6 +197,8 @@ final class RaceGame {
                 }
             case .nearMiss:
                 toast("NA WŁOS! +nitro", .info)
+            case let .pickup(car) where car === p:
+                toast("+NITRO", .info)
             case let .finish(car, position) where car === p:
                 phase = .finished
                 finishTimer = RaceConfig.finishDelay
@@ -201,7 +229,16 @@ final class RaceGame {
                 e.body.position.y = 0
             }
             e.setFlame(car.nitro.mode)
+            e.setSmoke(car.drifting)
             e.spinWheels(distance: car.distance)
+        }
+        // Butle wirują i unoszą się; zebrane znikają do czasu odnowienia.
+        let spin = simd_quatf(angle: Float(clock * 2), axis: [0, 1, 0])
+        let bob = Float(sin(clock * 3)) * 0.12
+        for (i, e) in pickupEntities.enumerated() {
+            e.isEnabled = sim.pickups[i].isActive
+            e.orientation = spin
+            e.position.y = 0.9 + bob
         }
     }
 
@@ -211,12 +248,12 @@ final class RaceGame {
         // Kamera podąża za torem jazdy, nie za przodem auta — w drifcie widać poślizg.
         camHeading = dampAngle(camHeading, w.heading + p.alphaVel, rate: 6, dt: dt)
         let fx = sin(camHeading), fz = cos(camHeading)
-        let back = 7 + p.speed * 0.02
+        let back = 6.2 + p.speed * 0.02
         shake = max(0, shake - dt)
         let sh = shake * 0.4 + (p.nitro.mode == .shockwave ? 0.08 : 0)
         let jitter = { sh > 0 ? Double.random(in: -0.5...0.5) * sh : 0 }
-        let from = SIMD3<Float>(Float(w.x - fx * back + jitter()), Float(2.6 + jitter()), Float(w.z - fz * back))
-        let at = SIMD3<Float>(Float(w.x + fx * 6), 1.1, Float(w.z + fz * 6))
+        let from = SIMD3<Float>(Float(w.x - fx * back + jitter()), Float(2.1 + jitter()), Float(w.z - fz * back))
+        let at = SIMD3<Float>(Float(w.x + fx * 6), 1.15, Float(w.z + fz * 6))
         camera.look(at: at, from: from, relativeTo: nil)
         let target = 68 + clamp(p.speed / p.def.topSpeed, 0, 1.6) * 10 + (p.nitro.mode != .off ? 8 : 0)
         fov = damp(fov, target, rate: 4, dt: dt)

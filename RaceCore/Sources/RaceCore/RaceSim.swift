@@ -19,6 +19,7 @@ public enum SimEvent {
     case wreck(Car)
     case nitro(Car, NitroMode)
     case nearMiss(Car)
+    case pickup(Car)
     case finish(Car, position: Int)
 }
 
@@ -32,6 +33,7 @@ public final class RaceSim {
     public var events: [SimEvent] = []
     public private(set) var finishOrder: [Car] = []
     public private(set) var time = 0.0
+    public private(set) var pickups: [NitroPickup]
     private var controllers: [ObjectIdentifier: Controller] = [:]
     /// Dla mijania „na włos”: znak różnicy pozycji gracz–rywal w poprzednim kroku.
     private var prevSide: [ObjectIdentifier: Double] = [:]
@@ -39,6 +41,7 @@ public final class RaceSim {
     public init(track: Track, entries: [Entry], laps: Int = RaceConfig.laps) {
         self.track = track
         self.laps = laps
+        pickups = Pickups.layout(track: track)
         var cars: [Car] = []
         for (i, e) in entries.enumerated() {
             let row = Double(i / 2)
@@ -101,12 +104,32 @@ public final class RaceSim {
         }
 
         if let player { checkNearMiss(player) }
+        collectPickups(dt: dt)
 
         for car in cars where !car.finished && car.distance >= raceDistance {
             car.finished = true
             car.finishTime = time
             finishOrder.append(car)
             events.append(.finish(car, position: finishOrder.count))
+        }
+    }
+
+    private func collectPickups(dt: Double) {
+        for i in pickups.indices {
+            if !pickups[i].isActive {
+                pickups[i].respawnIn -= dt
+                continue
+            }
+            let p = pickups[i]
+            for car in cars where !car.wrecked && !car.finished {
+                if abs(wrapDelta(car.s, p.s, track.length)) < Physics.carLength / 2 + 0.5
+                    && abs(car.d - p.d) < Physics.carWidth / 2 + 0.6 {
+                    car.nitro.add(Physics.pickupNitro)
+                    pickups[i].respawnIn = Physics.pickupRespawn
+                    events.append(.pickup(car))
+                    break
+                }
+            }
         }
     }
 

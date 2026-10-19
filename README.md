@@ -29,18 +29,24 @@ more tracks, tilt steering.
 | Action | Touch | Keyboard | Controller |
 |---|---|---|---|
 | Steer | ◀ ▶ | ← / → (A / D) | left stick, d-pad |
-| Brake; drift when steering | DRIFT | ↓ (S, Shift) | B, left trigger |
+| Drift (brake when slow) | DRIFT | ↓ (S, Shift) | B, left trigger |
 | Nitro | NITRO | Space (↑, W) | A, right trigger |
 | Shockwave | double-tap NITRO | double-tap Space | double-tap A |
 | Back to menu | — | Esc | Menu |
 
 The car accelerates by itself.
 
-- **Nitro** fills from drifting, near misses (overtaking a rival with a small gap) and takedowns.
+- **Nitro** fills from drifting, nitro canisters lying on the track, near misses (overtaking a
+  rival with a small gap) and takedowns.
   One press fires normal nitro. Pressing again at the end of a burn (the gauge glows and reads
   "TERAZ!") fires **perfect nitro**, which is stronger. A quick double press fires a
   **shockwave**: it burns the whole gauge, gives the biggest boost, and any contact wrecks a rival.
-- **Drift**: brake while steering at speed. The car turns tighter and the rear steps out.
+- **Nitro canisters**: rows of three glowing canisters sit on one lane every 130 m. Driving through
+  one adds nitro; it comes back after 6 seconds. Rivals collect them too.
+- **Drift**: press DRIFT at speed — with or without steering. The car slides into the drift by
+  itself (towards the steering direction, or towards the next corner when not steering), turns
+  tighter, smokes from the rear tyres and fills the nitro gauge; steering the other way
+  counter-steers. Below about 65 km/h the same button brakes.
 - **Takedown**: hitting a rival hard from the side or from behind wrecks it and adds nitro.
 - **Wreck**: hitting a wall at a steep angle. The car is back on the track after 2 seconds.
 
@@ -76,8 +82,19 @@ xcrun simctl install booted .build/dd/Build/Products/Debug-iphonesimulator/Simpl
 xcrun simctl launch booted com.renacode.simpleracer
 ```
 
-Debug builds accept the `-autostartRace` launch argument, which skips the menu and starts a race
-straight away (`xcrun simctl launch booted com.renacode.simpleracer -autostartRace`).
+Debug builds accept launch arguments for testing in the simulator:
+
+- `-autostartRace` skips the menu and starts a race straight away,
+- `-holdDrift` holds DRIFT from 8 seconds after launch,
+- `-finishSoon` puts the player 150 m before the finish line (to reach the results screen quickly).
+
+```sh
+xcrun simctl launch booted com.renacode.simpleracer -autostartRace -holdDrift
+```
+
+In Xcode 27 the simulator window is **Device Hub**
+(`Xcode.app/Contents/Applications/DeviceHub.app`); the game runs in landscape, so rotate the
+device with ⌘← / ⌘→.
 
 ## Tests and CI
 
@@ -88,9 +105,11 @@ a simulator:
 cd RaceCore && swift test
 ```
 
-The tests cover the nitro rules (activation, perfect window, shockwave), the track geometry
-(closed loop, minimum corner radius, side orientation) and a full headless race of six AI cars,
-which must all finish without a single wall crash.
+The tests cover the nitro rules (activation, perfect window, shockwave), drifting (the DRIFT
+button alone starts a drift instead of braking, its direction follows the next corner, it brakes
+when slow), nitro canisters (layout on the track, pickup and respawn), the track geometry (closed
+loop, minimum corner radius, side orientation) and a full headless race of six AI cars, which
+must all finish without a single wall crash.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs those tests and builds the app for a generic
 iOS Simulator destination on every push to `main` and on pull requests. The workflow uses the
@@ -106,20 +125,26 @@ latest stable Xcode and needs no specific simulator or code signing.
 - **The app** (SwiftUI + RealityKit) renders it. `RaceGame` wraps the simulation, places the car
   entities, drives the chase camera and publishes the HUD state to SwiftUI; menus, the garage,
   the HUD and the touch controls are SwiftUI views over a `RealityView` with a virtual camera.
-  The track and cars are generated in code from simple shapes; there are no asset files.
+  Everything is generated in code, with no asset files: car bodies are smooth lofted meshes
+  (cross-sections along the car) with clear-coat paint, glass cabins, spoked wheels and light
+  strips; the sky is a procedural equirectangular image used both as the backdrop and as
+  image-based lighting, so the paint reflects it; the road, grass and building facades use
+  procedural textures; trees, street lights, drift smoke (particles) and nitro flames complete
+  the scene.
 - The selected car and colour are stored in `UserDefaults`. There is no backend.
 
 ## Project layout
 
 ```
 RaceCore/
-  Sources/RaceCore/   Config, Car, Nitro, Track, Collisions, Controllers (AI), RaceSim,
+  Sources/RaceCore/   Config, Car, Nitro, Pickups, Track, Collisions, Controllers (AI), RaceSim,
                       CarCatalog, TrackData
   Tests/RaceCoreTests/
 App/
   SimpleRacerApp.swift, AppModel.swift   app entry point, screens, saved profile
   Input/              touch, keyboard and controller input
-  Render/             RealityKit: cars, track, race (RaceGame), garage preview
+  Render/             RealityKit: car models, track, materials and textures, sky lighting,
+                      race (RaceGame), garage preview
   Views/              SwiftUI: menu, garage, HUD, touch controls, results
 project.yml           XcodeGen project definition
 ```

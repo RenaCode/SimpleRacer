@@ -21,6 +21,8 @@ public enum Physics {
     public static let driftSpeedFactor = 0.94
     /// Drift skręca ostrzej niż zwykła jazda.
     public static let driftSteerFactor = 1.7
+    /// Ile skrętu dokłada sam poślizg, gdy gracz nie skręca (0…1).
+    public static let driftAutoSteer = 0.45
     /// Kąt, o jaki tył auta wychodzi w drifcie (wizualny poślizg).
     public static let driftSlideAngle = 0.5
     /// Asystent: bez skrętu auto samo ustawia się wzdłuż trasy.
@@ -40,6 +42,12 @@ public enum Physics {
     public static let sideSlamSpeed = 6.0
     /// Różnica prędkości przy uderzeniu w tył, która rozbija auto z przodu.
     public static let rearTakedownDelta = 12.0
+    /// Butle nitro na trasie: co ile metrów seria, ile butli w serii, odstęp, ile dolewa jedna, po ilu sekundach wraca.
+    public static let pickupGroupSpacing = 130.0
+    public static let pickupsPerGroup = 3
+    public static let pickupSpacing = 7.0
+    public static let pickupNitro = 0.06
+    public static let pickupRespawn = 6.0
     /// Rywale nie driftują, więc nitro rośnie im samo.
     public static let aiPassiveNitro = 0.04
 }

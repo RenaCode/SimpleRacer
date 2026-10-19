@@ -31,6 +31,7 @@ final class GaragePreview {
         bg.faceCulling = .front
         root.addChild(ModelEntity(mesh: .generateSphere(radius: 60), materials: [bg]))
 
+        SkyEnvironment.applyLighting(to: root)
         let key = DirectionalLight()
         key.light.intensity = 3000
         key.look(at: .zero, from: [3, 9, 6], relativeTo: nil)

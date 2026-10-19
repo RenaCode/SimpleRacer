@@ -23,8 +23,10 @@ struct MenuView: View {
             .padding(.bottom, 16)
 
             HStack(spacing: 14) {
-                Button("Wyścig") { model.startRace() }.buttonStyle(RaceButtonStyle(primary: true))
-                Button("Garaż") { model.screen = .garage }.buttonStyle(RaceButtonStyle())
+                Button { model.startRace() } label: { Label("Wyścig", systemImage: "flag.checkered") }
+                    .buttonStyle(RaceButtonStyle(primary: true))
+                Button { model.screen = .garage } label: { Label("Garaż", systemImage: "door.garage.closed") }
+                    .buttonStyle(RaceButtonStyle())
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

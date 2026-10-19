@@ -109,3 +109,108 @@ final class RaceSimTests: XCTestCase {
         XCTAssertEqual(wrecks - takedowns, 0, "żadnego rozbicia o bandę")
     }
 }
+
+final class DriftTests: XCTestCase {
+    let track = TrackData.makeCityLoop()
+
+    private func car(at s: Double, speed: Double) -> Car {
+        let c = Car(name: "T", def: CarCatalog.all[0], color: "#FFFFFF", isPlayer: true,
+                    startDistance: s, startLane: 0, trackLength: track.length)
+        c.speed = speed
+        return c
+    }
+
+    private func drive(_ c: Car, seconds: Double, input: CarInput) {
+        var t = 0.0
+        while t < seconds { c.step(dt: RaceSim.step, input: input, track: track); t += RaceSim.step }
+    }
+
+    /// Przycisk DRIFT bez skrętu wchodzi w poślizg zamiast hamować.
+    func testDriftButtonAloneDriftsInsteadOfBraking() {
+        let c = car(at: 50, speed: 60)
+        drive(c, seconds: 0.4, input: CarInput(steer: 0, drift: true))
+        XCTAssertTrue(c.drifting)
+        XCTAssertGreaterThan(c.speed, 50, "drift nie może działać jak hamulec")
+        XCTAssertNotEqual(c.slide, 0)
+    }
+
+    /// Wciśnięcie DRIFT przed skrętem też daje drift (kolejność przycisków nie ma znaczenia).
+    func testDriftThenSteerStillDrifts() {
+        let c = car(at: 50, speed: 60)
+        drive(c, seconds: 0.2, input: CarInput(steer: 0, drift: true))
+        drive(c, seconds: 0.15, input: CarInput(steer: 0.4, drift: true))
+        XCTAssertTrue(c.drifting)
+        XCTAssertGreaterThan(c.speed, 50)
+    }
+
+    /// Bez skrętu poślizg idzie w stronę najbliższego zakrętu.
+    func testDriftDirectionFollowsUpcomingCorner() {
+        // Szukamy miejsca, za którym trasa wyraźnie skręca.
+        var s = 0.0, found = false, expected = 0.0
+        while s < track.length && !found {
+            var sum = 0.0
+            var k = 20.0
+            while k <= 80 { sum += track.sample(at: s + k).curvature; k += 5 }
+            if abs(sum) > 0.05 { found = true; expected = sum > 0 ? 1 : -1 } else { s += 10 }
+        }
+        XCTAssertTrue(found)
+        let c = car(at: s, speed: 60)
+        drive(c, seconds: 0.1, input: CarInput(steer: 0, drift: true))
+        XCTAssertEqual(c.slide > 0 ? 1.0 : -1.0, expected)
+    }
+
+    /// Przy małej prędkości ten sam przycisk hamuje.
+    func testDriftButtonBrakesWhenSlow() {
+        let c = car(at: 50, speed: 10)
+        drive(c, seconds: 0.3, input: CarInput(steer: 0, drift: true))
+        XCTAssertFalse(c.drifting)
+        XCTAssertLessThan(c.speed, 10)
+    }
+}
+
+final class PickupTests: XCTestCase {
+    /// Butle leżą na trasie, w jej granicach i nie pod stawką startową.
+    func testLayoutStaysOnTrack() {
+        let track = TrackData.makeCityLoop()
+        let pickups = Pickups.layout(track: track)
+        XCTAssertGreaterThan(pickups.count, 20)
+        for p in pickups {
+            XCTAssertLessThan(abs(p.d), track.halfWidth - Physics.carWidth / 2)
+            XCTAssertGreaterThan(p.s, 50)
+            XCTAssertLessThan(p.s, track.length - 30)
+        }
+    }
+
+    /// Przejazd przez butlę dolewa nitro, butla znika i po czasie wraca.
+    func testDrivingThroughPickupAddsNitroAndRespawns() {
+        let track = TrackData.makeCityLoop()
+        let target = Pickups.layout(track: track)[0]
+
+        /// Kontroler trzymający auto na pasie butli.
+        final class HoldLane: Controller {
+            let lane: Double
+            init(lane: Double) { self.lane = lane }
+            func read(car: Car, dt: Double, ctx: RaceContext) -> CarInput {
+                car.d = lane
+                car.alphaVel = 0
+                return CarInput()
+            }
+        }
+        let sim = RaceSim(track: track, entries: [
+            Entry(name: "P", def: CarCatalog.all[0], color: "#FFFFFF", isPlayer: true, controller: HoldLane(lane: target.d)),
+        ])
+        let car = sim.cars[0]
+        car.nitro.gauge = 0
+        var collected = 0
+        while sim.time < 15 && car.distance < target.s + 30 {
+            sim.advance()
+            for e in sim.events { if case .pickup = e { collected += 1 } }
+            sim.events.removeAll()
+        }
+        XCTAssertEqual(collected, Physics.pickupsPerGroup, "cała seria na tym pasie")
+        XCTAssertEqual(car.nitro.gauge, Physics.pickupNitro * Double(Physics.pickupsPerGroup), accuracy: 1e-9)
+        XCTAssertFalse(sim.pickups[0].isActive)
+        for _ in 0..<Int((Physics.pickupRespawn + 0.1) / RaceSim.step) { sim.advance() }
+        XCTAssertTrue(sim.pickups[0].isActive)
+    }
+}

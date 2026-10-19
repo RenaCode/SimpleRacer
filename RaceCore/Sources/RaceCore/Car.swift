@@ -3,7 +3,7 @@ import Foundation
 public struct CarInput {
     /// −1…1, dodatnie = w lewo.
     public var steer: Double
-    /// Hamulec; ze skrętem przy prędkości — drift.
+    /// Drift przy prędkości (kierunek ze skrętu albo z najbliższego zakrętu); przy małej prędkości — hamulec.
     public var drift: Bool
     /// Wciśnięcie nitro w tym kroku (zbocze, nie stan przycisku).
     public var nitro: Bool
@@ -38,7 +38,8 @@ public final class Car {
     public var slide = 0.0
     public var speed = 0.0
     public private(set) var drifting = false
-    private var driftDir = 0.0
+    /// Strona poślizgu: +1 w lewo, −1 w prawo.
+    public private(set) var driftDir = 0.0
     public var wreckTimer = 0.0
     public var finished = false
     public var finishTime = 0.0
@@ -85,9 +86,10 @@ public final class Car {
         if let started = nitro.update(dt: dt, pressed: input.nitro) { events.append(.nitro(started)) }
 
         let steer = clamp(input.steer, -1, 1)
-        if !drifting && input.drift && abs(steer) > 0.25 && speed > Physics.driftMinSpeed {
+        if !drifting && input.drift && speed > Physics.driftMinSpeed {
+            // Kolejność przycisków nie ma znaczenia: DRIFT bez skrętu też wchodzi w poślizg.
             drifting = true
-            driftDir = steer > 0 ? 1 : -1
+            driftDir = abs(steer) > 0.25 ? (steer > 0 ? 1 : -1) : preferredDriftDir(track: track)
         } else if drifting && (!input.drift || speed < Physics.driftMinSpeed * 0.7) {
             drifting = false
         }
@@ -105,7 +107,9 @@ public final class Car {
         }
 
         let speedFactor = clamp(speed / 15, 0, 1)
-        let yaw = steer * def.handling * speedFactor * (drifting ? Physics.driftSteerFactor : 1)
+        // W poślizgu auto samo skręca w stronę driftu; skręt w przeciwną stronę je kontruje.
+        let effectiveSteer = drifting ? clamp(steer + driftDir * Physics.driftAutoSteer, -1, 1) : steer
+        let yaw = effectiveSteer * def.handling * speedFactor * (drifting ? Physics.driftSteerFactor : 1)
         alphaVel += yaw * dt
         let targetSlide = drifting ? driftDir * Physics.driftSlideAngle : 0
         slide = damp(slide, targetSlide, rate: drifting ? 6 : 8, dt: dt)
@@ -118,6 +122,15 @@ public final class Car {
         collideWalls(track: track)
 
         if drifting { nitro.add(Physics.driftNitroGain * speedFactor * dt) }
+    }
+
+    /// Kierunek zakrętu 20–80 m przed autem; na prostej — strona, w którą auto już jedzie.
+    private func preferredDriftDir(track: Track) -> Double {
+        var sum = 0.0
+        var k = 20.0
+        while k <= 80 { sum += track.sample(at: s + k).curvature; k += 5 }
+        if abs(sum) > 0.01 { return sum > 0 ? 1 : -1 }
+        return alphaVel >= 0 ? 1 : -1
     }
 
     private func stepWrecked(dt: Double, track: Track) {
