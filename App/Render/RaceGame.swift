@@ -114,6 +114,9 @@ final class RaceGame {
         var fx = PostFXSettings.forRegion(LocalAssets.regionKey(spec.region))
         // Poświata silnika (w HDR) zastępuje własną, liczoną z obrazu 8-bitowego.
         if CinematicLook.nativeBloom { fx.bloom = 0 }
+        // Mgła jest w materiałach otoczenia (SceneHaze) — tekstura głębi w obróbce obrazu przychodzi pusta,
+        // a gdyby na urządzeniu była pełna, mgła nałożyłaby się dwa razy.
+        fx.fogDensity = 0
         postFX = fx
         debugLog("wyścig: start budowania (trasa \(spec.id))")
         defer {

@@ -40,6 +40,8 @@ enum TrackBuilder {
     static func build(_ track: Track, theme: TrackTheme = .of(.city), region: Region = .city) throws -> Entity {
         cullables = []
         footprints = []
+        SceneHaze.current = .of(region)
+        defer { SceneHaze.current = .none }
         let root = Entity()
         let hw = track.halfWidth
 
@@ -69,7 +71,7 @@ enum TrackBuilder {
         var road = MeshBuilder()
         // Asfalt ze zdjęcia (CC0 Poly Haven) z mapą normalnych i chropowatości — kafel 4 m; bez plików proceduralny.
         strip(&road, -hw, hw, 0, track.length, y: 0.02, tile: 4)
-        try add(road, "road", Materials.photoAsphalt() ?? Materials.roadSurfaceMaterial)
+        try add(road, "road", Materials.roadAsphalt(halfWidth: hw) ?? Materials.photoAsphalt() ?? Materials.roadSurfaceMaterial)
 
         // Linie: ciągłe przy krawędziach, przerywane między pasami. Farba 8 mm nad asfaltem — opona
         // najeżdżająca na linię nie znika w niej. UV jak jezdni (kafel 4 m): w wytarciach farby prześwituje
@@ -162,7 +164,7 @@ enum TrackBuilder {
         grass.quad([-g, groundY, g], [g, groundY, g], [g, groundY, -g], [-g, groundY, -g], uv: [[0, 0], [reps, 0], [reps, reps], [0, reps]])
         ground = nil
         debugLog("trasa: jezdnia, krawężniki, bariery gotowe")
-        if let photo, let fading = GroundMaterial.make(photo) {
+        if let photo, let fading = GroundMaterial.make(photo, tile: groundTile(region), colorScale: groundColorScale(region)) {
             // Grunt zanika w oddali i przechodzi w grunt ze zdjęcia panoramy (RaceGame przesuwa krążek za kamerą).
             let e = try fading.entity(y: groundY)
             root.addChild(e)
@@ -191,7 +193,31 @@ enum TrackBuilder {
         withProps = !ProcessInfo.processInfo.arguments.contains("-noRoadside")
         #endif
         if withProps { root.addChild(RoadsideProps.build(track, region: region)) }
+        // Mgła w materiałach PBR (mury, linie, budynki, rekwizyty); grunt i jezdnia mają ją we własnych shaderach.
+        let hazy = SceneHaze.applyAll(root)
+        debugLog(String(format: "mgła: gęstość %.2f, zasięg %.0f m, materiały z mgłą w %d modelach",
+                        SceneHaze.current.density, SceneHaze.current.scale, hazy))
         return root
+    }
+
+    /// Kafel tekstury gruntu (m): płyty chodnika w mieście mają ok. 35 × 70 cm, zdjęcie mieści ich 7 rzędów.
+    static func groundTile(_ region: Region) -> Float { region == .city ? 2.5 : GroundMaterial.tile }
+
+    /// Mnożnik koloru gruntu krainy: zdjęcie gruntu (kafel) przesunięte w stronę barwy gruntu tuż pod horyzontem
+    /// na panoramie — grunt 3D w oddali przechodzi w zdjęcie bez zmiany koloru (wcześniej np. szarawy piasek
+    /// przed białą plażą). Siła 75% w skali logarytmicznej, mnożnik w granicach 0,5…1,8 na kanał.
+    static func groundColorScale(_ region: Region) -> SIMD3<Float> {
+        let key = LocalAssets.regionKey(region)
+        guard let groundURL = Bundle.main.url(forResource: "ground-\(key)", withExtension: "jpg"),
+              let skyURL = Bundle.main.url(forResource: "sky-\(key)", withExtension: "jpg"),
+              let ground = SkyEnvironment.meanColor(groundURL),
+              let horizon = SkyEnvironment.meanColor(skyURL, rows: 0.52...0.60) else { return [1, 1, 1] }
+        var scale = SIMD3<Float>(repeating: 1)
+        for i in 0..<3 {
+            scale[i] = min(1.8, max(0.5, powf(max(horizon[i], 1e-4) / max(ground[i], 1e-4), 0.75)))
+        }
+        debugLog(String(format: "grunt %@: mnożnik koloru (%.2f, %.2f, %.2f)", key, scale.x, scale.y, scale.z))
+        return scale
     }
 
     private static func startGate(_ track: Track) -> Entity {

@@ -318,6 +318,8 @@ final class LocalAssets {
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/hdris"),
             Credit(title: "Fasady budynków (Facade 018A, 019A, 020A, 006, 001)",
                    author: "ambientCG (ambientcg.com)", license: "CC0", source: "https://ambientcg.com/list?category=Facade"),
+            Credit(title: "Chodnik w mieście (Paving Stones 128)",
+                   author: "ambientCG (ambientcg.com)", license: "CC0", source: "https://ambientcg.com/view?id=PavingStones128"),
             Credit(title: "Stal barier, latarni i słupków (Metal 049 B)",
                    author: "ambientCG (ambientcg.com)", license: "CC0", source: "https://ambientcg.com/view?id=Metal049B"),
             Credit(title: "Parter i gzymsy budynków (Stone Tile Wall, Beige Wall 001)",
