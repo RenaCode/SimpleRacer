@@ -42,6 +42,10 @@ public enum Campaign {
     public static var starterCar = "strzala"
     /// Gwiazdki potrzebne do wejścia do krainy (Miasto, Wybrzeże, Pustynia, Las, Śnieg).
     public static let starsToUnlock = [0, 10, 22, 36, 52]
+    /// Pełna wersja: wszystkie auta w garażu i wszystkie trasy otwarte — bez kupowania aut za monety
+    /// i bez zbierania gwiazdek. Ustawia aplikacja (`FullVersion`); domyślnie wyłączona.
+    /// Moc wymagana na trasie i ulepszenia za monety działają tak samo (to zasady gry, nie blokada).
+    public static var fullVersion = false
 
     public static func newGame() -> CampaignState { CampaignState(coins: 0, ownedCars: [starterCar]) }
 
@@ -120,12 +124,18 @@ public enum Campaign {
         return Int((base * factor).rounded()) + 20 * takedowns
     }
 
+    /// Czy gracz ma auto: kupione albo dane przez pełną wersję.
+    public static func owns(_ car: String, _ state: CampaignState) -> Bool {
+        fullVersion || state.ownedCars.contains(car)
+    }
+
     public static func isRegionUnlocked(_ region: Region, _ state: CampaignState) -> Bool {
-        state.totalStars >= starsToUnlock[region.rawValue]
+        fullVersion || state.totalStars >= starsToUnlock[region.rawValue]
     }
 
     /// Trasa dostępna: kraina odblokowana, a poprzednia trasa w tej krainie ukończona.
     public static func isUnlocked(_ spec: TrackSpec, _ state: CampaignState) -> Bool {
+        if fullVersion { return true }
         guard isRegionUnlocked(spec.region, state) else { return false }
         let first = spec.region.rawValue * TrackCatalog.perRegion + 1
         return spec.id == first || (state.bestStars[spec.id - 1] ?? 0) > 0
@@ -147,7 +157,7 @@ public enum Campaign {
     public enum PurchaseError: Error, Equatable { case alreadyOwned, notEnoughCoins }
 
     public static func buyUpgrade(_ u: Upgrade, car: String, _ state: inout CampaignState) throws(UpgradeError) {
-        guard state.ownedCars.contains(car) else { throw .notOwned }
+        guard owns(car, state) else { throw .notOwned }
         let next = state.level(u, car: car) + 1
         guard next <= maxLevel else { throw .maxLevel }
         let cost = upgradeCost(toLevel: next)
@@ -157,7 +167,7 @@ public enum Campaign {
     }
 
     public static func buyCar(_ def: CarDef, _ state: inout CampaignState) throws(PurchaseError) {
-        guard !state.ownedCars.contains(def.id) else { throw .alreadyOwned }
+        guard !owns(def.id, state) else { throw .alreadyOwned }
         let p = price(of: def)
         guard state.coins >= p else { throw .notEnoughCoins }
         state.coins -= p

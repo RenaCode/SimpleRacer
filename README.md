@@ -32,6 +32,9 @@ more tracks, tilt steering.
   six AI cars around every track. Each region has its own ground, buildings and trees.
 - **Stars**: a win gives 3, a podium 2, any finish 1. Stars unlock regions (0, 10, 22, 36 and 52);
   inside a region tracks open one after another.
+- **Full version**: every car in the garage and every track open, without buying cars or
+  collecting stars (upgrades still cost coins). For now it is on in every build, for testing;
+  before the App Store release it will come from a subscription shared with the whole family.
 - **Coins** for every race (more for harder tracks, better places and takedowns); races can be
   replayed.
 - **Car rating** — one number from top speed, acceleration, handling and nitro. Every track

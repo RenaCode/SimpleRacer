@@ -15,7 +15,7 @@ struct GarageView: View {
     /// Auto oglądane w garażu i jego statystyki z ulepszeniami.
     private var shown: CarDef { model.previewCar }
     private var stats: CarDef { Campaign.upgraded(shown, in: model.campaign) }
-    private var owned: Bool { model.campaign.ownedCars.contains(shown.id) }
+    private var owned: Bool { Campaign.owns(shown.id, model.campaign) }
 
     /// Warsztat: ulepszenia własnego auta albo zakup cudzego.
     @ViewBuilder private var workshop: some View {
@@ -26,7 +26,7 @@ struct GarageView: View {
                 let price = Campaign.price(of: shown)
                 Button {
                     try? Campaign.buyCar(shown, &model.campaign)
-                    if model.campaign.ownedCars.contains(shown.id) { model.profile.carId = shown.id }
+                    if Campaign.owns(shown.id, model.campaign) { model.profile.carId = shown.id }
                 } label: { Label("Kup za \(price)", systemImage: "cart.fill") }
                     .buttonStyle(RaceButtonStyle(primary: true))
                     .disabled(model.campaign.coins < price)
@@ -81,7 +81,7 @@ struct GarageView: View {
 
     private func carTile(_ car: CarDef) -> some View {
         let active = car.id == model.previewCar.id
-        let owned = model.campaign.ownedCars.contains(car.id)
+        let owned = Campaign.owns(car.id, model.campaign)
         return Button {
             model.garageCarId = car.id
             if owned { model.profile.carId = car.id }

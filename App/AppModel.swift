@@ -78,6 +78,7 @@ final class AppModel {
     init() {
         debugLog("start: AppModel")
         LocalAssets.shared.registerCars()
+        FullVersion.apply()
         if let data = UserDefaults.standard.data(forKey: Self.key),
            let p = try? JSONDecoder().decode(Profile.self, from: data),
            CarCatalog.all.contains(where: { $0.id == p.carId }),
@@ -94,7 +95,7 @@ final class AppModel {
         }
         // Auto startowe zawsze w garażu; jeździ się tylko własnym autem, które istnieje w katalogu.
         campaign.ownedCars.insert(Campaign.starterCar)
-        if !campaign.ownedCars.contains(profile.carId) || !CarCatalog.all.contains(where: { $0.id == profile.carId }) {
+        if !Campaign.owns(profile.carId, campaign) || !CarCatalog.all.contains(where: { $0.id == profile.carId }) {
             profile.carId = Campaign.starterCar
         }
         AudioManager.shared.musicOn = profile.musicOn
