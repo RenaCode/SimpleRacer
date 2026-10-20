@@ -29,6 +29,9 @@ struct RootView: View {
                 RaceScreen(model: model).id(id)
             }
         }
+        // Pod splashem menu już istnieje, ale dotyk trafia w splash — test UI widział przycisk „Garaż”
+        // i stukał w zasłonę (testMenuGarageCampaignRace: „po tapnięciu Garaż zostaje menu”).
+        .accessibilityHidden(splash)
         .overlay {
             if splash { SplashView().transition(.opacity) }
         }
@@ -76,7 +79,7 @@ extension RootView {
         withAnimation(.easeOut(duration: 0.4)) { splash = false }
         // Wyścig już się ładuje (np. -autostartRace) — on sam przygotuje swoją krainę.
         if case .race = model.screen { return }
-        await ScenePreloader.shared.prepare(Campaign.nextTrack(model.campaign).region)
+        await ScenePreloader.shared.prepare(Campaign.nextTrack(model.campaign, car: model.car).region)
     }
 }
 

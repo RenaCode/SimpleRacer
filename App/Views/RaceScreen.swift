@@ -108,7 +108,9 @@ private struct RaceContent: View {
                 .animation(.easeOut(duration: 0.4), value: speedLineIntensity)
             HudView(game: game)
                 .opacity(game.result == nil ? 1 : 0.25)
-            if game.result == nil {
+            // Po mecie (3 s do ekranu wyników) bez pauzy: „Menu” albo „Od nowa” w tym oknie
+            // przerywały wyścig przed rozliczeniem i ukończona trasa nie dawała gwiazdek ani monet.
+            if game.result == nil && game.phase != .finished {
                 TouchControls(input: game.input)
                 PauseButton(muted: !model.profile.musicOn && !model.profile.soundOn,
                             pause: { game.paused = true },
@@ -137,10 +139,15 @@ private struct RaceContent: View {
         .onChange(of: game.result) { _, r in
             if let r, settled == nil { settled = model.settle(r) }
         }
-        .onAppear { game.input.onEscape = { [weak game] in game?.paused.toggle() } }
+        .onAppear {
+            game.input.onEscape = { [weak game] in
+                guard let game, game.phase != .finished else { return }
+                game.paused.toggle()
+            }
+        }
         // Wyjście z aplikacji, powiadomienie albo centrum sterowania — gra staje i czeka.
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active && game.result == nil { game.paused = true }
+            if phase != .active && game.result == nil && game.phase != .finished { game.paused = true }
         }
         .onDisappear {
             game.subscription?.cancel()

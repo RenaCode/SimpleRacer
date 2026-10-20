@@ -146,7 +146,7 @@ final class AppModel {
                 try? await Task.sleep(for: .seconds(t))
                 guard let self else { return }
                 debugLog("test: Ścigaj się")
-                self.startRace(track: Campaign.nextTrack(self.campaign).id)
+                self.startRace(track: Campaign.nextTrack(self.campaign, car: self.car).id)
             }
         }
         if let i = args.firstIndex(of: "-screen"), i + 1 < args.count {
@@ -180,7 +180,8 @@ final class AppModel {
         out.newBest = reward.newBest
         if r.trackId < TrackCatalog.count {
             let next = TrackCatalog.track(id: r.trackId + 1)
-            if Campaign.isUnlocked(next, campaign) { out.nextTrackId = next.id }
+            // „Dalej” tylko na trasę, na którą auto ma moc — inaczej dziecko trafia na rywali poza zasięgiem.
+            if Campaign.isUnlocked(next, campaign) && Campaign.canRace(car, on: next, campaign) { out.nextTrackId = next.id }
         }
         return out
     }

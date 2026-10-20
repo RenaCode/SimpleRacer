@@ -35,7 +35,7 @@ struct MenuView: View {
 
                 VStack(spacing: 14) {
                     PictoButton(title: "Ścigaj się", icon: "play.fill", primary: true, height: 100) {
-                        model.startRace(track: Campaign.nextTrack(model.campaign).id)
+                        model.startRace(track: Campaign.nextTrack(model.campaign, car: model.car).id)
                     }
                     PictoButton(title: "Kampania", icon: "map.fill") { model.screen = .campaign }
                     PictoButton(title: "Garaż", icon: "car.fill") { model.screen = .garage }

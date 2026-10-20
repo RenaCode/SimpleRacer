@@ -635,6 +635,23 @@ final class CampaignTests: XCTestCase {
         XCTAssertEqual(Campaign.nextTrack(state).id, TrackCatalog.perRegion)
     }
 
+    func testNextTrackForCarSkipsTracksTooHardForIt() {
+        Campaign.fullVersion = true
+        defer { Campaign.fullVersion = false }
+        let state = Campaign.newGame()
+        let weakest = CarCatalog.all.min { Campaign.rating($0) < Campaign.rating($1) }!
+        let strongest = CarCatalog.all.max { Campaign.rating($0) < Campaign.rating($1) }!
+        // Wszystkie trasy otwarte, nic nie zaliczone: najsłabsze auto dostaje pierwszą, na którą ma moc.
+        let pick = Campaign.nextTrack(state, car: weakest)
+        XCTAssertTrue(Campaign.canRace(weakest, on: pick, state), "trasa \(pick.id) za trudna dla \(weakest.id)")
+        var done = state
+        for spec in TrackCatalog.all where Campaign.canRace(weakest, on: spec, state) { done.bestStars[spec.id] = 1 }
+        // Wszystko, na co najsłabsze auto ma moc, zaliczone — zostaje ostatnia z nich, nie trudniejsza.
+        let last = Campaign.nextTrack(done, car: weakest)
+        XCTAssertTrue(Campaign.canRace(weakest, on: last, done))
+        XCTAssertGreaterThanOrEqual(Campaign.nextTrack(done, car: strongest).id, last.id)
+    }
+
     func testUpgradesRaiseRating() {
         let base = Campaign.rating(starter)
         let one = Campaign.rating(Campaign.upgraded(starter, levels: [.engine: 1]))
