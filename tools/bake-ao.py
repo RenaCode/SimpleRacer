@@ -3,9 +3,12 @@
 #
 # Tekstury modeli ze Sketchfaba mają UV nakładające się i powtarzane (jedna felga na cztery koła,
 # kafelki), więc AO nie da się zapisać w ich UV. Dlatego:
-# 1. każda siatka dostaje drugi zestaw UV („AO”, Smart UV Project) — wspólny atlas całego auta,
+# 1. każda siatka dostaje drugi zestaw UV („AO”, Smart UV Project) — wspólny atlas całego auta; ściany,
+#    których UV nachodzą na inne, dostają osobne wyspy,
 # 2. Cycles zapieka AO do atlasu: nadwozie razem z kołami (opona zasłania nadkole), a koła osobno,
-#    bez nadwozia — koła się obracają, cień nadkola kręciłby się razem z nimi,
+#    bez nadwozia — koła się obracają, cień nadkola kręciłby się razem z nimi; siatka nie zasłania się
+#    leżącymi na niej nakładkami (naklejki, znaczki, druga warstwa lakieru); obie strony ścian, jaśniejsza
+#    wygrywa (fragmenty modeli są na lewą stronę),
 # 3. do USDZ dopisujemy `primvars:st1` (faceVarying, kolejność narożników jak w pliku) — RealityKit
 #    wczytuje je jako bufor „UV1”; reszta pliku zostaje bez zmian,
 # 4. atlas zapisujemy obok modelu (<nazwa>-ao.png); gra podpina go w `PhysicallyBasedMaterial.ambientOcclusion`
@@ -29,9 +32,11 @@ import sys
 import tempfile
 import zipfile
 
+import bmesh
 import bpy
 import numpy as np
 from mathutils import Matrix
+from mathutils.bvhtree import BVHTree
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdUtils
 
 parser = argparse.ArgumentParser()
@@ -180,12 +185,21 @@ if not mapped:
     sys.exit("żadna siatka nie pasuje do USD")
 
 
+def reverse_faces(me, faces):
+    """Odwraca kolejność narożników wskazanych ścian (z danymi narożników, np. UV); dwa razy = bez zmian."""
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.faces.ensure_lookup_table()
+    bmesh.ops.reverse_faces(bm, faces=[bm.faces[int(i)] for i in faces])
+    bm.to_mesh(me)
+    bm.free()
+
+
 def weld(o):
     """Skleja wierzchołki o tym samym położeniu, nie ruszając kolejności ścian i narożników.
 
     Siatki z glTF mają osobne wierzchołki dla każdego trójkąta (szwy UV i twarde krawędzie) — Smart UV
-    Project robił wtedy z każdego trójkąta osobną wyspę i atlas był niemal pusty. Oryginalne normalne
-    narożników przechodzą jako normalne własne, żeby AO liczyło się od prawdziwej powierzchni.
+    Project robił wtedy z każdego trójkąta osobną wyspę i atlas był niemal pusty.
 
     Przy okazji wierzchołki dostają skalę świata (obiekt — odwrotną): Smart UV Project liczy wyspy
     we współrzędnych lokalnych, a część siatek ma je w centymetrach — dostawały wyspy 100× większe,
@@ -198,22 +212,37 @@ def weld(o):
     me.vertices.foreach_get("co", co)
     corner_vert = np.empty(len(me.loops), dtype=np.int32)
     me.loops.foreach_get("vertex_index", corner_vert)
-    normals = np.empty(len(me.loops) * 3, dtype=np.float32)
-    me.corner_normals.foreach_get("vector", normals)
     co = co.reshape(-1, 3)
     step = max(1e-9, float(np.abs(co).max()) * 1e-6)
     _, first, inverse = np.unique(np.round(co / step).astype(np.int64), axis=0, return_index=True, return_inverse=True)
     sizes = np.empty(len(me.polygons), dtype=np.int32)
     me.polygons.foreach_get("loop_total", sizes)
+    starts = np.concatenate(([0], np.cumsum(sizes)[:-1])).astype(np.int32)
+    points = co[first]
+    corners = inverse.ravel()[corner_vert]
+    # Ściana, której narożniki skleiły się w jeden wierzchołek (zdegenerowany trójkąt z pliku), zostaje
+    # na własnych wierzchołkach — Blender padał na takiej siatce (concept-car-037).
+    extra = []
+    for f in np.nonzero(sizes > 0)[0]:
+        ring = corners[starts[f]:starts[f] + sizes[f]]
+        if len(set(ring.tolist())) < len(ring):
+            for k in range(starts[f], starts[f] + sizes[f]):
+                extra.append(co[corner_vert[k]])
+                corners[k] = len(points) + len(extra) - 1
+    if extra:
+        points = np.concatenate([points, np.array(extra, dtype=np.float32)])
     welded = bpy.data.meshes.new(me.name)
-    welded.vertices.add(len(first))
-    welded.vertices.foreach_set("co", (co[first] * scale).ravel())
-    welded.loops.add(len(corner_vert))
-    welded.loops.foreach_set("vertex_index", inverse.ravel()[corner_vert])
+    welded.vertices.add(len(points))
+    welded.vertices.foreach_set("co", (points * scale).ravel())
+    welded.loops.add(len(corners))
+    welded.loops.foreach_set("vertex_index", corners)
     welded.polygons.add(len(sizes))
-    welded.polygons.foreach_set("loop_start", np.concatenate(([0], np.cumsum(sizes)[:-1])).astype(np.int32))
+    welded.polygons.foreach_set("loop_start", starts)
     welded.update(calc_edges=True)
-    welded.normals_split_custom_set(normals.reshape(-1, 3))
+    # Gładkie cieniowanie z ostrymi krawędziami wg kąta — bez normalnych własnych z pliku: przy
+    # zapiekaniu obu stron ścian (niżej) kłóciłyby się z odwróconym nawinięciem i koło wychodziło czarne.
+    welded.shade_smooth()
+    welded.set_sharp_from_angle(angle=math.radians(40))
     o.data = welded
     o.matrix_world = mw @ Matrix.Scale(1 / scale, 4)
 
@@ -222,6 +251,16 @@ for o in mapped:
     weld(o)
 view_layer = bpy.context.view_layer
 view_layer.objects.active = mapped[0]
+# Cała geometria auta w układzie świata — do rozpoznania ścian ukrytych pod innymi (`select_overlapping`).
+reach = max(max(v[i] for o in mapped for v in o.bound_box) - min(v[i] for o in mapped for v in o.bound_box)
+            for i in range(3)) * 0.05
+_verts, _faces = [], []
+for o in objects:
+    base = len(_verts)
+    _verts += [o.matrix_world @ v.co for v in o.data.vertices]
+    _faces += [tuple(base + i for i in p.vertices) for p in o.data.polygons]
+world_bvh = BVHTree.FromPolygons(_verts, _faces)
+del _verts, _faces
 for o in mapped:
     o.data.uv_layers.active = o.data.uv_layers.new(name="AO")
 bpy.ops.object.mode_set(mode="EDIT")
@@ -230,8 +269,91 @@ bpy.ops.mesh.select_all(action="SELECT")
 # (~3 px przy 2048): margines Smart UV Project liczy się per wyspa i przy tysiącach drobnych wysp
 # (wnętrze, śrubki) zjadał większość atlasu.
 bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.0, area_weight=0.0, correct_aspect=True)
-bpy.ops.uv.select_all(action="SELECT")
-bpy.ops.uv.pack_islands(rotate=True, margin_method="FRACTION", margin=0.0015, shape_method="CONCAVE")
+
+
+def pack_all():
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.select_all(action="SELECT")
+    # Jedna gęstość tekseli dla wszystkich wysp — wyspy z naprawy nakładek (`uv.unwrap`) mają własną skalę
+    # i wychodziły mniejsze od piksela: czarne listwy szyb i progów.
+    bpy.ops.uv.average_islands_scale()
+    bpy.ops.uv.pack_islands(rotate=True, margin_method="FRACTION", margin=0.0015, shape_method="CONCAVE")
+
+
+def select_overlapping():
+    """Zaznacza (w siatce) ściany, których UV nachodzą na inne; zwraca ich liczbę.
+
+    Smart UV Project nie sprawdza nakładania w obrębie wyspy: krawędź drzwi zawinięta do środka i na
+    lewą stronę (Plymouth) rzutowała się na poszycie błotnika i ciemna warstwa wewnętrzna zapisywała
+    się w jego tekselach — ciemny pas przed drzwiami."""
+    bpy.ops.uv.select_all(action="DESELECT")
+    bpy.ops.uv.select_overlap(extend=False)
+    count = hidden = 0
+    for o in mapped:
+        bm = bmesh.from_edit_mesh(o.data)
+        mw = o.matrix_world
+        nm = mw.to_3x3().inverted().transposed()
+        for f in bm.faces:
+            f.select = all(l.uv_select_vert for l in f.loops)
+            if f.select:
+                count += 1
+                # Z pary zostawiamy w miejscu ścianę widoczną: ukryta ma geometrię blisko po obu stronach.
+                c, n = mw @ f.calc_center_median(), (nm @ f.normal).normalized()
+                f.select = all(world_bvh.ray_cast(c + d * n * reach * 1e-3, d * n, reach)[0] is not None
+                               for d in (1, -1))
+                hidden += f.select
+        bmesh.update_edit_mesh(o.data)
+    return count, hidden
+
+
+pack_all()
+for attempt in range(4):
+    overlapping, hidden = select_overlapping()
+    print(f"UV nachodzące na siebie: {overlapping} ścian, z tego ukrytych: {hidden}")
+    if not overlapping:
+        break
+    if not hidden:
+        # Zostały same widoczne (np. cienka blacha z jedną stroną na lewą stronę) — też osobno.
+        bpy.ops.uv.select_all(action="DESELECT")
+        bpy.ops.uv.select_overlap(extend=False)
+        for o in mapped:
+            bm = bmesh.from_edit_mesh(o.data)
+            for f in bm.faces:
+                f.select = all(l.uv_select_vert for l in f.loops)
+            bmesh.update_edit_mesh(o.data)
+    # Ściany ukryte: każda osobną wyspą (obszar z obiema warstwami fałdy dalej nachodziłby sam na siebie,
+    # a brzegów ukrytych ścian nie widać). Widoczne: spójne obszary — szew tylko na granicy zaznaczenia,
+    # bo pojedyncze trójkąty zostawiały ciemne kreski na brzegach. Potem cały atlas pakowany od nowa.
+    for o in mapped:
+        bm = bmesh.from_edit_mesh(o.data)
+        for e in bm.edges:
+            n = sum(f.select for f in e.link_faces)
+            if n == 1 or (n and hidden):
+                e.seam = True
+        bmesh.update_edit_mesh(o.data)
+    bpy.ops.uv.unwrap(method="CONFORMAL", margin=0.0)
+    pack_all()
+else:
+    # Resztki to w większości trójkąty mniejsze od piksela — liczy się ich pole w atlasie, nie liczba.
+    bpy.ops.uv.select_all(action="DESELECT")
+    bpy.ops.uv.select_overlap(extend=False)
+    bad = good = 0.0
+    for o in mapped:
+        bm = bmesh.from_edit_mesh(o.data)
+        lay = bm.loops.layers.uv["AO"]
+        for f in bm.faces:
+            u = [l[lay].uv for l in f.loops]
+            a = sum(abs((u[k] - u[0]).cross(u[k + 1] - u[0])) for k in range(1, len(u) - 1)) / 2
+            if all(l.uv_select_vert for l in f.loops):
+                bad += a
+            else:
+                good += a
+    share = bad / max(bad + good, 1e-12)
+    # Rozproszone pojedyncze trójkąty (lakier SLS ~1% pola) dają co najwyżej drobne kreseczki, a duże
+    # ściany ukryte w oponie (obręcz felgi Concept 001, 2,1%) nic; obejrzane na modelach. Ponad 3% przerywamy.
+    if share > 0.03:
+        sys.exit(f"UV wciąż nachodzą na siebie ({overlapping} ścian, {share:.2%} pola atlasu) — AO zapisałoby się w cudzych tekselach")
+    print(f"UWAGA: {overlapping} ścian wciąż nachodzi, {share:.2%} pola atlasu (próg przerwania 3%)")
 bpy.ops.object.mode_set(mode="OBJECT")
 covered = 0.0
 for o in mapped:
@@ -290,20 +412,90 @@ def bake(targets, occluders, clear):
     for o in bpy.data.objects:
         o.select_set(o in targets)
     view_layer.objects.active = targets[0]
-    bpy.ops.object.bake(type="AO", uv_layer="AO", margin=6, margin_type="EXTEND", use_clear=clear)
+    # Margines wypiekania mniejszy niż pół odstępu między wyspami (~3 px przy 2048) — większy nadpisywał
+    # sąsiednie wyspy i na krawędziach zostawały ciemne kreski.
+    bpy.ops.object.bake(type="AO", uv_layer="AO", margin=1, margin_type="EXTEND", use_clear=clear)
 
 
+def overlapping_layers():
+    """Pary siatek leżących jedna na drugiej (naklejki, znaczki, nakładki lamp, druga warstwa lakieru).
+
+    Modele z gier mają takie warstwy co krok — przy zapiekaniu nakładka zasłania całkowicie powierzchnię
+    pod sobą i ta wychodzi czarna (cały lakier Citroëna, bagażnik Audi). Siatka pomija więc swoje
+    nakładki jako przesłonę. Para: ≥30% próbek środków ścian jednej leży w odległości ≤0,1% długości auta
+    od drugiej; relacja symetryczna."""
+    eps = length * 0.001
+    trees, samples, boxes = {}, {}, {}
+    rng = np.random.default_rng(1)
+    for o in objects:
+        me, mw = o.data, o.matrix_world
+        if not me.polygons:
+            continue
+        verts = [mw @ v.co for v in me.vertices]
+        trees[o] = BVHTree.FromPolygons(verts, [tuple(p.vertices) for p in me.polygons])
+        pick = rng.choice(len(me.polygons), size=min(300, len(me.polygons)), replace=False)
+        samples[o] = [mw @ me.polygons[int(i)].center for i in pick]
+        boxes[o] = (np.min(verts, axis=0) - eps, np.max(verts, axis=0) + eps)
+    excl = {o: set() for o in objects}
+    for a in samples:
+        for b in trees:
+            if a is b or np.any(boxes[a][1] < boxes[b][0]) or np.any(boxes[b][1] < boxes[a][0]):
+                continue
+            near = sum(1 for p in samples[a] if trees[b].find_nearest(p, eps)[0] is not None)
+            if near >= 0.3 * len(samples[a]):
+                excl[a].add(b)
+                excl[b].add(a)
+    pairs = sum(len(v) for v in excl.values()) // 2
+    print(f"nakładki: {pairs} par nakładających się siatek")
+    return excl
+
+
+def bake_groups(targets, occluders, clear):
+    """Jeden przebieg na każdy zbiór wykluczonych nakładek (większość siatek nie ma żadnej)."""
+    groups = {}
+    for o in targets:
+        groups.setdefault(frozenset(excl[o] & set(occluders)), []).append(o)
+    for skip, group in sorted(groups.items(), key=lambda kv: len(kv[0])):
+        bake(group, [o for o in occluders if o not in skip], clear)
+        clear = False
+    return len(groups)
+
+
+excl = overlapping_layers()
 body = [o for o in mapped if o.name not in wheels]
 wheel_objs = [o for o in mapped if o.name in wheels]
-if body:
-    bake(body, objects, True)
-if wheel_objs:
-    bake(wheel_objs, [o for o in objects if o.name in wheels], not body)
 
 
+def bake_all():
+    passes = 0
+    if body:
+        passes += bake_groups(body, objects, True)
+    if wheel_objs:
+        passes += bake_groups(wheel_objs, [o for o in objects if o.name in wheels], not body)
+    n = img.size[0]
+    px = np.empty(n * n * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    return passes, px
+
+
+# Obie strony ścian, jaśniejsza wygrywa. Cycles liczy AO od strony nawinięcia, a modele mają fragmenty
+# na lewą stronę (lewe koła odbite lustrzanie, pas na błotniku Plymoutha — tam nawet normalne z pliku
+# patrzą do środka, więc nie da się ich wykryć porównaniem). Gra rysuje je dwustronnie. Strona do wnętrza
+# auta jest zawsze ciemniejsza, więc dla poprawnych ścian nic się nie zmienia.
+passes, front = bake_all()
+for o in mapped:
+    reverse_faces(o.data, range(len(o.data.polygons)))
+more, back = bake_all()
+img.pixels.foreach_set(np.maximum(front, back))
+for o in mapped:
+    reverse_faces(o.data, range(len(o.data.polygons)))
+    if not same_topology(o):
+        sys.exit(f"{o.name}: po odwróceniu narożniki nie wróciły do kolejności z pliku")
+print(f"zapiekanie: {passes + more} przebiegów (obie strony ścian)")
 
 def report_dark(img):
-    """Średnie AO każdej siatki — całkiem czarna część zwykle znaczy zdublowaną geometrię w pliku."""
+    """Średnie AO każdej siatki — całkiem czarna część z zewnątrz auta to zwykle nakładka, której
+    `overlapping_layers` nie wykryło."""
     n = img.size[0]
     px = np.empty(n * n * 4, dtype=np.float32)
     img.pixels.foreach_get(px)
@@ -319,6 +511,7 @@ def report_dark(img):
     for mean, name, wheel in sorted(out)[:12]:
         print(f"  AO {mean:.2f} {name}" + (" (koło)" if wheel else ""))
     return out
+
 
 
 report_dark(img)

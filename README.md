@@ -277,7 +277,13 @@ cannot give (wheel arches, sills, panel gaps, between the spokes) in Blender, wi
 `Blender -b --factory-startup --python tools/bake-ao.py -- <original.usdz> <out.usdz> <out-ao.png>`.
 The model's own UVs overlap and repeat, so every mesh gets a second UV set (one atlas per car) written
 into the USDZ as `primvars:st1`; the rest of the file stays as it was. The body is baked with the wheels
-around it, the wheels on their own (they spin, so the arch's shadow must not turn with them). The game
+around it, the wheels on their own (they spin, so the arch's shadow must not turn with them). Models ripped from games stack layers on top of each other
+(badges, decals, lamp overlays, a second paint shell); each mesh ignores the layers lying on it, which
+would otherwise black it out, and every face is baked from both sides with the brighter result kept,
+since some are inside out in the file (mirrored left wheels, patches of a body; the game draws them
+double-sided). Smart UV
+Project does not check overlaps inside an island; faces whose UVs land on others and that are hidden
+under other geometry get islands of their own. The game
 loads `<model>-ao.png` next to the model and plugs it into the opaque materials'
 `ambientOcclusion` from the second UV set (`App/Render/CarAO.swift`); the build copies the atlas with
 the same Debug/Family/Release rules as its model. Bake from the original file and keep it outside the
