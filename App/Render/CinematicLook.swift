@@ -43,11 +43,16 @@ enum CinematicLook {
 
     /// Czy silnik sam liczy poświatę — wtedy własna (z obrazu 8-bitowego) jest zbędna.
     static var nativeBloom: Bool {
+        #if compiler(>=6.4)
         if #available(iOS 27.0, *) { return params.bloomStrength > 0 }
+        #endif
         return false
     }
 
+    /// Komponenty z SDK iOS 27 (Xcode 27, Swift 6.4) — starszy Xcode (np. 26.3 w CI) ich nie zna,
+    /// więc kod jest kompilowany warunkowo; aplikacja z takiego buildu ma krzywą silnika.
     static func apply(root: Entity, camera: Entity) {
+        #if compiler(>=6.4)
         guard #available(iOS 27.0, *) else { return }
         let p = params
         guard p.holder >= 0 else { return }
@@ -63,5 +68,6 @@ enum CinematicLook {
             holder.components.set(options)
             root.components.set(BloomComponent(scope: .unbounded))
         }
+        #endif
     }
 }
