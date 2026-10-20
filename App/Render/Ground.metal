@@ -181,3 +181,73 @@ void hazeSurface(realitykit::surface_parameters params)
     params.surface().set_roughness(half(saturate(rough)));
     params.surface().set_metallic(half(saturate(metal)));
 }
+
+// Mur wzdłuż trasy: zdjęcie muru (kafel 2 m) i to, czym prawdziwa banda różni się od czystej tekstury —
+// brud i błoto rozchlapane przez koła przy podstawie, zacieki od deszczu spływające z korony, plamy
+// w skali kilkunastu metrów, a zależnie od krainy mech (las), pył (pustynia) albo śnieg na koronie i zaspa.
+// Wszystko liczone z wysokości w świecie, więc działa na licu, tyle i koronie bez osobnych tekstur.
+// custom_parameter: x = mgła (hazeAmount), y = styl (0 — zwykły, 1 — mech, 2 — śnieg, 3 — pył),
+// z = wysokość gruntu (m), w = wysokość korony muru (m).
+[[visible]]
+void wallSurface(realitykit::surface_parameters params)
+{
+    constexpr sampler tiled(address::repeat, filter::linear, mip_filter::linear, max_anisotropy(16));
+    float4 p = params.uniforms().custom_parameter();
+    int style = int(p.y + 0.5);
+    float2 uv = float2(params.geometry().uv0());
+    uv.y = 1.0 - uv.y;
+    float3 wp = params.geometry().world_position();
+    float3 gn = float3(params.geometry().normal());
+    float h = wp.y - p.z, top = p.w - p.z;
+    // Współrzędna wzdłuż muru (m) — u w kaflach po 2 m.
+    float along = uv.x * 2.0;
+
+    float3 color = float3(params.textures().base_color().sample(tiled, uv).rgb)
+        * float3(params.material_constants().base_color_tint());
+    float rough = 0.92;
+
+    // Plamy w dużej skali (różne partie betonu, kamienia).
+    color *= 1.0 + valueNoise(wp.xz / 12.0 + 7.0) * 0.08 + valueNoise(wp.xz / 3.0) * 0.04;
+
+    // Brud przy podstawie: najciemniej przy jezdni (y ≈ 0; mur zaczyna się niżej, na gruncie), poszarpana górna
+    // granica rozbryzgów spod kół. `wave` — łagodna fala wzdłuż muru (zaspy, nawiany pył), bez ząbków.
+    float splash = valueNoise(float2(along * 1.7, 3.1)) * 0.5 + 0.5;
+    float wave = valueNoise(float2(along * 0.35, 8.3)) * 0.5 + 0.5;
+    float dirt = 1.0 - smoothstep(-0.05, 0.25 + splash * 0.3, wp.y);
+    color = mix(color, color * float3(0.52, 0.48, 0.43), dirt * 0.85);
+
+    // Zacieki: pionowe pasma od korony w dół (szum gęsty wzdłuż, rozciągnięty w pionie).
+    float streak = smoothstep(0.1, 0.8, valueNoise(float2(along * 2.3, h * 0.35)) * 0.5 + 0.5);
+    streak *= smoothstep(top - 1.1, top - 0.05, h);
+    color *= 1.0 - streak * 0.16;
+
+    if (style == 1) {
+        // Kolory w przestrzeni liniowej (jak cały shader). Mech: zielonkawe plamy przy gruncie i na koronie (wilgoć), rzadziej na licu.
+        float n = valueNoise(wp.xz / 1.3 + h * 1.7) * 0.5 + 0.5;
+        float where = max(1.0 - smoothstep(0.0, 0.5, wp.y), saturate(gn.y) * 0.8) + 0.3;
+        float moss = smoothstep(0.45, 0.8, n) * saturate(where);
+        color = mix(color, float3(0.035, 0.05, 0.014), moss * 0.7);
+        rough = mix(rough, 1.0, moss);
+    } else if (style == 3) {
+        // Pył pustyni: piaskowy nalot przy gruncie i na koronie.
+        float dust = max(1.0 - smoothstep(0.0, 0.3 + wave * 0.3, wp.y), saturate(gn.y));
+        color = mix(color, float3(0.42, 0.29, 0.16), dust * 0.5);
+    }
+    if (style == 2) {
+        // Śnieg: czapa na koronie (powierzchnia skierowana w górę), naddatek na krawędzi lica
+        // i zaspa przy gruncie o falującej wysokości.
+        float cap = smoothstep(0.55, 0.85, gn.y);
+        float rim = 1.0 - smoothstep(0.0, 0.05 + wave * 0.04, top - h);
+        float driftTop = 0.05 + wave * 0.3;
+        float drift = 1.0 - smoothstep(driftTop - 0.06, driftTop + 0.06, wp.y);
+        float snow = max(cap, max(rim, drift));
+        color = mix(color, float3(0.86, 0.89, 0.93), snow);
+        rough = mix(rough, 0.75, snow);
+    }
+
+    float3 n = float3(params.textures().normal().sample(tiled, uv).rgb) * 2.0 - 1.0;
+    params.surface().set_normal(normalize(n));
+    applyHaze(params, color, viewDistance(params), p.x);
+    params.surface().set_roughness(half(saturate(rough)));
+    params.surface().set_metallic(0.0);
+}
