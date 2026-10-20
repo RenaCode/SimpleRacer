@@ -1,3 +1,4 @@
+import ImageIO
 import RaceCore
 import RealityKit
 import UIKit
@@ -107,7 +108,7 @@ enum SkyEnvironment {
     }
 
     /// Dodaje oświetlenie z nieba do `root` i podpina pod nie wszystkie modele w drzewie.
-    static func applyLighting(to root: Entity, image: CGImage = Materials.sky, intensity: Float = 0.4) {
+    static func applyLighting(to root: Entity, image: CGImage = Materials.sky, intensity: Float = 0.4, yaw: Float = 0) {
         // Środowiska liczymy po kolei (jedno naraz) i pamiętamy: dwa równoczesne liczenia oświetlenia
         // wywracały sterownik Metal w RealityKit (garaż i wyścig startujące w tej samej chwili).
         let previous = lightingQueue
@@ -119,19 +120,40 @@ enum SkyEnvironment {
             if let key, let cached = environments[key] {
                 env = cached
             } else {
-                // Do światła wystarczy mała kopia — pełna panorama tylko spowalnia start.
-                let source = scaled(image, width: 1024) ?? image
+                // Światło i odbicia z panoramy HDR (słońce jaśniejsze od nieba, jak w naturze); bez niej —
+                // z małej kopii zdjęcia, w którym słońce i biała chmura są tak samo jasne.
+                let source = key.flatMap(hdrPanorama(named:)) ?? scaled(image, width: 1024) ?? image
                 guard let made = try? await EnvironmentResource(equirectangular: source) else { return }
                 // Zapamiętujemy tylko, jeśli panorama nie została w międzyczasie zwolniona (zmiana krainy).
                 if let key, key == "default" || panoramaCache[key] === image { environments[key] = made }
                 env = made
             }
             let ibl = Entity()
+            // Obrót jak kopuły tła (`panoramaDome(yaw:)` dodaje yaw do długości geograficznej, obrót encji ją
+            // odejmuje — stąd minus): odbicia pokazują to samo, co widać za autem.
+            ibl.orientation = simd_quatf(angle: -yaw, axis: [0, 1, 0])
             ibl.components.set(ImageBasedLightComponent(source: .single(env), intensityExponent: intensity))
             root.addChild(ibl)
             attach(root, to: ibl)
         }
         lightingQueue = task
+    }
+
+    /// Panorama HDR do oświetlenia (`App/Sky/sky-<name>-ibl.exr`, tools/make-ibl.swift) jako obraz
+    /// zmiennoprzecinkowy RGBA16F; `nil`, gdy pliku brak.
+    static func hdrPanorama(named name: String) -> CGImage? {
+        guard let url = Bundle.main.url(forResource: "sky-\(name)-ibl", withExtension: "exr"),
+              let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldAllowFloat: true] as CFDictionary),
+              let space = CGColorSpace(name: CGColorSpace.extendedLinearSRGB) else { return nil }
+        // Przerysowanie do znanego układu: liniowe RGBA16F z alfą premultipliedLast (z innym układem
+        // liczenie oświetlenia zbiegało się z awariami Metal — patrz zdjęcie z JPG w `scaled`).
+        let info = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.floatComponents.rawValue
+            | CGBitmapInfo.byteOrder16Little.rawValue
+        guard let ctx = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 16,
+                                  bytesPerRow: 0, space: space, bitmapInfo: info) else { return nil }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return ctx.makeImage()
     }
 
     private static var lightingQueue: Task<Void, Never>?

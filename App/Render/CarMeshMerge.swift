@@ -35,7 +35,10 @@ enum CarMeshMerge {
             let paint = inPaint || paintNames.contains(e.name)
             if let m = e as? ModelEntity, m.isEnabled, let model = m.model {
                 sourceCount += 1
-                let key = Key(wheel: wheelOf[ObjectIdentifier(m)] ?? -1, paint: paint)
+                let wheel = wheelOf[ObjectIdentifier(m)] ?? -1
+                // Część koła lakierujemy tylko wymienioną z nazwy — opona podpięta w pliku pod lakierowaną
+                // karoserię dziedziczyła lakier (czerwona opona SLS).
+                let key = Key(wheel: wheel, paint: wheel >= 0 ? paintNames.contains(e.name) : paint)
                 buckets[key, default: Bucket()].add(model, transform: m.transformMatrix(relativeTo: template))
             }
             for c in e.children { walk(c, inPaint: paint) }

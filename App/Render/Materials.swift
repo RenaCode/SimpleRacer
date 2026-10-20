@@ -6,15 +6,57 @@ import UIKit
 /// Materiały i tekstury generowane w kodzie (bez plików graficznych).
 @MainActor
 enum Materials {
-    /// Lakier metalik z warstwą bezbarwnego lakieru — odbija niebo.
+    /// Lakier fabryczny: kolorowa baza pod warstwą bezbarwnego lakieru — odbija niebo i otoczenie.
     static func paint(_ color: UIColor) -> PhysicallyBasedMaterial {
         var m = PhysicallyBasedMaterial()
-        m.baseColor = .init(tint: color)
-        m.metallic = 0.5
-        m.roughness = 0.28
-        m.clearcoat = 1.0
-        m.clearcoatRoughness = 0.03
+        applyPaint(&m, color)
         return m
+    }
+
+    /// Lakier metalik: przyciemniona baza (×0,85 — jasny kolor pod silnym światłem przepalał się w płaski róż)
+    /// z metalicznością 0,6 — boki odbijają otoczenie (skały, mury), kolor ma głębię; połysk daje gładka warstwa
+    /// bezbarwna. Porównane na zrzutach z lakierem niemetalicznym (metallic 0): ten był płaski i różowy.
+    /// Szorstkość warstwy nie schodzi poniżej ~0,05: lustro migocze na krawędziach przy ruchu kamery.
+    static func applyPaint(_ m: inout PhysicallyBasedMaterial, _ color: UIColor) {
+        let p = paintParams
+        m.baseColor = .init(tint: scaled(color, p.albedo))
+        m.metallic = .init(floatLiteral: p.metallic)
+        m.roughness = .init(floatLiteral: p.roughness)
+        m.specular = .init(floatLiteral: p.specular)
+        m.clearcoat = 1.0
+        m.clearcoatRoughness = .init(floatLiteral: p.clearcoatRoughness)
+    }
+
+    struct PaintParams { var metallic: Float, roughness: Float, specular: Float, clearcoatRoughness: Float, albedo: Float }
+
+    static let paintParams: PaintParams = {
+        var p = PaintParams(metallic: 0.6, roughness: 0.35, specular: 0.5, clearcoatRoughness: 0.05, albedo: 0.85)
+        #if DEBUG || FAMILY
+        // Strojenie bez przebudowy: `-paint metallic,roughness,specular,clearcoatRoughness,albedo`.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-paint"), i + 1 < args.count {
+            let v = args[i + 1].split(separator: ",").compactMap { Float($0) }
+            if v.count == 5 { p = PaintParams(metallic: v[0], roughness: v[1], specular: v[2], clearcoatRoughness: v[3], albedo: v[4]) }
+        }
+        #endif
+        return p
+    }()
+
+    /// Kolor przyciemniony mnożnikiem składowych sRGB (barwa i nasycenie bez zmian).
+    static func scaled(_ c: UIColor, _ k: Float) -> UIColor {
+        guard k != 1 else { return c }
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let f = CGFloat(k)
+        return UIColor(red: r * f, green: g * f, blue: b * f, alpha: a)
+    }
+
+    /// Szyba: gładka, z pełnym odbiciem nieba. Barwa i krycie zostają z modelu — część modeli nie ma
+    /// wnętrza i przez bardziej przezroczystą szybę widać pustkę.
+    static func applyGlass(_ m: inout PhysicallyBasedMaterial) {
+        m.metallic = 0.0
+        m.roughness = 0.03
+        m.specular = 1.0
     }
 
     static let glass: PhysicallyBasedMaterial = {
