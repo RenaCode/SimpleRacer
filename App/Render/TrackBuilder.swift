@@ -426,11 +426,19 @@ enum TrackBuilder {
         while s < track.length {
             for side in [1.0, -1.0] where rng.next() < theme.trees {
                 plant(trees, s: s, d: side * (row.0 + rng.next() * row.1), clearance: 4)
+                // Poza miastem drzewa rosną kępami: czasem jeszcze jedno–dwa obok, dalej od drogi —
+                // równy szpaler co 16 m zdradzał, że to rozstawiał program.
+                if theme.buildings == 0 && rng.next() < 0.35 {
+                    for _ in 0..<(1 + Int(rng.next() * 2)) {
+                        plant(trees, s: s + (rng.next() - 0.5) * 9, d: side * (row.0 + 3 + rng.next() * 6), clearance: 4)
+                    }
+                }
                 if rng.next() < 0.6 {
-                    plant(bushes, s: s + 6, d: side * (hw + 3.5 + rng.next() * 2), clearance: 3)
+                    plant(bushes, s: s + 3 + rng.next() * 6, d: side * (hw + 3.5 + rng.next() * 2), clearance: 3)
                 }
             }
-            s += 16
+            // Odstępy nierówne (10–24 m), w mieście równiejsze — tam drzewa sadzi się w szpalerze.
+            s += theme.buildings > 0 ? 16 : 10 + rng.next() * 14
         }
         if theme.trees >= 0.8 {
             s = 3
@@ -464,8 +472,8 @@ struct TrackTheme {
     static func of(_ region: Region) -> TrackTheme {
         switch region {
         case .city: TrackTheme(ground: UIColor(red: 0.30, green: 0.45, blue: 0.24, alpha: 1), buildings: 1, trees: 0.7, largeTrees: 0.6)
-        case .coast: TrackTheme(ground: UIColor(red: 0.86, green: 0.78, blue: 0.56, alpha: 1), buildings: 0, trees: 0.45, largeTrees: 0.9)
-        case .desert: TrackTheme(ground: UIColor(red: 0.85, green: 0.62, blue: 0.36, alpha: 1), buildings: 0, trees: 0.08, largeTrees: 0.2)
+        case .coast: TrackTheme(ground: UIColor(red: 0.86, green: 0.78, blue: 0.56, alpha: 1), buildings: 0, trees: 0.6, largeTrees: 0.9)
+        case .desert: TrackTheme(ground: UIColor(red: 0.85, green: 0.62, blue: 0.36, alpha: 1), buildings: 0, trees: 0.35, largeTrees: 0.2)
         case .forest: TrackTheme(ground: UIColor(red: 0.20, green: 0.36, blue: 0.17, alpha: 1), buildings: 0, trees: 1, largeTrees: 0.8)
         case .snow: TrackTheme(ground: UIColor(red: 0.93, green: 0.95, blue: 0.98, alpha: 1), buildings: 0, trees: 0.8, largeTrees: 0.15)
         }

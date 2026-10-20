@@ -3,6 +3,7 @@
 #
 # Użycie:
 #   Blender -b --factory-startup --python tools/render-impostors.py -- <folder ze scenery.json> [<folder wyjściowy>]
+# Modele: .usd/.usdc albo .gltf/.glb (dla nowszych modeli Poly Haven lepszy glTF — patrz import niżej).
 # Wynik: <wyjście>/impostors/*.png i <wyjście>/impostors.json (format jak tools/make-impostors.swift).
 import json
 import math
@@ -118,7 +119,11 @@ result = []
 for e in entries:
     scene = reset_scene()
     path = os.path.join(folder, e["file"])
-    bpy.ops.wm.usd_import(filepath=path)
+    if path.endswith((".gltf", ".glb")):
+        # glTF z Poly Haven: w Blenderze 5.2 import USD tych samych modeli daje materiały bez węzłów (czarne liście).
+        bpy.ops.import_scene.gltf(filepath=path)
+    else:
+        bpy.ops.wm.usd_import(filepath=path)
     imported = [o for o in scene.objects if o.type not in ("LIGHT", "CAMERA")]
     # Warianty Poly Haven: …_a_LOD0, …_b_LOD0; niższe poziomy szczegółów chowamy.
     variants = [o for o in imported if o.name.endswith("_LOD0")]
@@ -129,6 +134,15 @@ for e in entries:
     else:
         groups = [descendants(v) for v in variants]
     base = os.path.splitext(os.path.basename(e["file"]))[0].replace("_1k", "").replace("_", "-")
+    if e.get("name"):
+        base = e["name"]
+    # Luźne drobne części (pojedyncze gałązki, liście obok modelu) nie są osobnymi roślinami — pomijamy grupy
+    # niższe niż 30% najwyższej w pliku.
+    tallest = max((bounds(set(o for o in g if not low_lod(o)))[1] - bounds(set(o for o in g if not low_lod(o)))[0]).z
+                  for g in groups)
+    groups = [g for g in groups
+              if (bounds(set(o for o in g if not low_lod(o)))[1] - bounds(set(o for o in g if not low_lod(o)))[0]).z
+              >= 0.3 * tallest]
     for i, group in enumerate(groups):
         members = set(o for o in group if not low_lod(o))
         for o in imported:

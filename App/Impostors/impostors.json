@@ -92,7 +92,6 @@
   "max": null,
   "name": "fir-tree-01-0",
   "regions": [
-   "forest",
    "snow"
   ],
   "side": "impostors/fir-tree-01-0-side.png",
@@ -112,7 +111,6 @@
   "max": null,
   "name": "fir-tree-01-1",
   "regions": [
-   "forest",
    "snow"
   ],
   "side": "impostors/fir-tree-01-1-side.png",
@@ -132,7 +130,6 @@
   "max": null,
   "name": "fir-tree-01-2",
   "regions": [
-   "forest",
    "snow"
   ],
   "side": "impostors/fir-tree-01-2-side.png",
@@ -216,6 +213,140 @@
    4.987889289855957,
    8.826326370239258,
    5.275873184204102
+  ]
+ },
+ {
+  "front": "impostors/quiver-tree-01-front.png",
+  "height": [
+   4,
+   7
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "quiver-tree-01",
+  "regions": [
+   "desert"
+  ],
+  "side": "impostors/quiver-tree-01-side.png",
+  "size": [
+   1.181235671043396,
+   2.715420722961426,
+   0.9685054421424866
+  ]
+ },
+ {
+  "front": "impostors/quiver-tree-02-front.png",
+  "height": [
+   3.5,
+   6
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "quiver-tree-02",
+  "regions": [
+   "desert"
+  ],
+  "side": "impostors/quiver-tree-02-side.png",
+  "size": [
+   0.8716385960578918,
+   1.4688606262207031,
+   0.8808197975158691
+  ]
+ },
+ {
+  "front": "impostors/searsia-lucida-0-front.png",
+  "height": [
+   3,
+   5
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "searsia-lucida-0",
+  "regions": [
+   "desert"
+  ],
+  "side": "impostors/searsia-lucida-0-side.png",
+  "size": [
+   1.806007981300354,
+   2.3389196395874023,
+   1.9656544923782349
+  ]
+ },
+ {
+  "front": "impostors/searsia-lucida-1-front.png",
+  "height": [
+   3,
+   5
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "searsia-lucida-1",
+  "regions": [
+   "desert"
+  ],
+  "side": "impostors/searsia-lucida-1-side.png",
+  "size": [
+   1.4638817310333252,
+   1.9941118955612183,
+   1.5237464904785156
+  ]
+ },
+ {
+  "front": "impostors/namaqualand-boulder-03-front.png",
+  "height": [
+   1.2,
+   2.6
+  ],
+  "kind": "bush",
+  "max": null,
+  "name": "namaqualand-boulder-03",
+  "regions": [
+   "desert"
+  ],
+  "side": "impostors/namaqualand-boulder-03-side.png",
+  "size": [
+   2.407097101211548,
+   1.4731931686401367,
+   3.065406084060669
+  ]
+ },
+ {
+  "front": "impostors/namaqualand-boulder-05-front.png",
+  "height": [
+   1.0,
+   2.2
+  ],
+  "kind": "bush",
+  "max": null,
+  "name": "namaqualand-boulder-05",
+  "regions": [
+   "desert"
+  ],
+  "side": "impostors/namaqualand-boulder-05-side.png",
+  "size": [
+   1.3640307188034058,
+   0.5383217334747314,
+   0.7479793429374695
+  ]
+ },
+ {
+  "front": "impostors/tree-small-02-front.png",
+  "height": [
+   5,
+   8
+  ],
+  "kind": "tree",
+  "max": null,
+  "name": "tree-small-02",
+  "regions": [
+   "coast",
+   "forest"
+  ],
+  "side": "impostors/tree-small-02-side.png",
+  "size": [
+   2.9166998863220215,
+   4.556740760803223,
+   4.292477130889893
   ]
  }
 ]

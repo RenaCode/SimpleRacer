@@ -251,3 +251,73 @@ void wallSurface(realitykit::surface_parameters params)
     params.surface().set_roughness(half(saturate(rough)));
     params.surface().set_metallic(0.0);
 }
+
+// Parter budynku: zamiast pełnej ściany z kamiennych płyt — witryny sklepów w przęsłach po 4,2 m:
+// kamienne filary i cokół (zdjęcie płyt), szyby w ciemnych ramach odbijające niebo (IBL), co któreś
+// przęsło drzwi do samego chodnika, nad witrynami pas szyldu w stonowanym kolorze.
+// UV: u — metry wzdłuż ściany / 2,4 (kafel płyt). custom_parameter: x = mgła, y = wysokość podstawy (m),
+// z = wysokość parteru (m).
+[[visible]]
+void plinthSurface(realitykit::surface_parameters params)
+{
+    constexpr sampler tiled(address::repeat, filter::linear, mip_filter::linear, max_anisotropy(16));
+    float4 p = params.uniforms().custom_parameter();
+    float2 uv = float2(params.geometry().uv0());
+    uv.y = 1.0 - uv.y;
+    float3 wp = params.geometry().world_position();
+    float3 gn = float3(params.geometry().normal());
+    float h = wp.y - p.y;
+    float along = uv.x * 2.4;
+
+    const float bay = 4.2;
+    float bayIdx = floor(along / bay);
+    float x = along - bayIdx * bay;
+    // Ściana jest płaska, więc odległość od początku układu wzdłuż normalnej jest na niej stała —
+    // to numer ściany, z którym przęsło dostaje własny szyld i własne drzwi.
+    float face = floor(dot(wp.xz, normalize(gn.xz + 1e-4)) * 0.37);
+    float id = hash21(float2(bayIdx + 0.5, face + 0.25));
+    bool door = id < 0.22;
+
+    float3 stone = float3(params.textures().base_color().sample(tiled, uv).rgb)
+        * float3(params.material_constants().base_color_tint());
+    float3 color = stone;
+    float rough = 0.85, metal = 0.0;
+    bool flat = false;
+
+    float x0 = 0.45, x1 = bay - 0.45;
+    float y0 = door ? 0.02 : 0.55, y1 = 3.45;
+    bool inOpening = x > x0 && x < x1 && h > y0 && h < y1;
+    if (inOpening) {
+        float edge = min(min(x - x0, x1 - x), min(h - y0, y1 - h));
+        // Słupek dzielący witrynę na dwie tafle (w drzwiach — rama skrzydła).
+        float mid = abs(x - bay * 0.5);
+        if (edge < 0.07 || mid < 0.035) {
+            color = float3(0.025, 0.025, 0.028);
+            rough = 0.45; metal = 0.6;
+        } else {
+            // Szkło: ciemne, gładkie — oświetlenie nieba daje odbicia; we wnętrzu słabe, ciepłe światło
+            // u góry i ciemniejszy dół (lady, regały).
+            float inside = mix(0.016, 0.050, smoothstep(0.6, 3.2, h)) * (0.7 + 0.6 * id);
+            color = float3(inside * 1.15, inside, inside * 0.85);
+            rough = 0.04;
+        }
+        flat = true;
+    } else if (h > 3.62 && h < 4.22 && x > 0.25 && x < bay - 0.25) {
+        // Szyld: jedna z kilku stonowanych barw (liniowe RGB), lekko połyskliwy.
+        const float3 palette[6] = { float3(0.020, 0.060, 0.035), float3(0.110, 0.018, 0.020), float3(0.015, 0.030, 0.075),
+                                    float3(0.030, 0.030, 0.032), float3(0.42, 0.38, 0.30), float3(0.20, 0.09, 0.02) };
+        color = palette[int(fract(id * 7.13) * 5.999)];
+        rough = 0.35;
+        flat = true;
+    }
+    if (!flat) {
+        float3 n = float3(params.textures().normal().sample(tiled, uv).rgb) * 2.0 - 1.0;
+        params.surface().set_normal(normalize(n));
+        // Brud z chodnika na cokole.
+        color *= mix(0.6, 1.0, smoothstep(0.0, 0.5, h));
+    }
+    applyHaze(params, color, viewDistance(params), p.x);
+    if (flat && rough < 0.1) { params.surface().set_specular(half(0.9 * (1.0 - hazeAmount(viewDistance(params), p.x)))); }
+    params.surface().set_roughness(half(rough));
+    params.surface().set_metallic(half(metal));
+}

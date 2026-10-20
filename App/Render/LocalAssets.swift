@@ -326,7 +326,7 @@ final class LocalAssets {
                    author: "ambientCG (ambientcg.com)", license: "CC0", source: "https://ambientcg.com/view?id=Metal049B"),
             Credit(title: "Parter i gzymsy budynków (Stone Tile Wall, Beige Wall 001)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/textures"),
-            Credit(title: "Drzewa (Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium)",
+            Credit(title: "Drzewa, krzewy i głazy (Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium, Tree Small 02, Quiver Tree 01–02, Searsia Lucida, Namaqualand Boulder 03 i 05)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/models"),
             Credit(title: "Tekstury gruntu, asfaltu, posadzki i murów (Concrete Floor Worn 001, Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Asphalt Track, Stacked Stone Wall, Red Sandstone Wall)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/textures"),
