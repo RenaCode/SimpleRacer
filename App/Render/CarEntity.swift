@@ -260,11 +260,7 @@ final class CarEntity {
         guard var model = e.model else { return }
         model.materials = model.materials.map { m in
             guard var p = m as? PhysicallyBasedMaterial else { return Materials.paint(color) }
-            p.baseColor = .init(tint: color)
-            p.metallic = 0.45
-            p.roughness = 0.28
-            p.clearcoat = 1.0
-            p.clearcoatRoughness = 0.04
+            Materials.applyPaint(&p, color)
             return p
         }
         e.model = model
@@ -816,7 +812,7 @@ final class CarEntity {
     /// i dla osadzania kół na osiach — po scaleniu scalone koła muszą zostać rozpoznane tak samo.
     static func realisticWheelGroups(_ car: Entity, space: Entity) -> [[ModelEntity]]? {
         let wheelRx = try! NSRegularExpression(pattern: "wheel|tire|tyre|(?<![a-z])rims?(?![a-z])|disc|disk|reifen|felge", options: .caseInsensitive)
-        let skipRx = try! NSRegularExpression(pattern: "steering|caliper|brake|interior|INT_", options: .caseInsensitive)
+        let skipRx = try! NSRegularExpression(pattern: "steering|calip|brake|interior|INT_", options: .caseInsensitive)
         func has(_ rx: NSRegularExpression, _ s: String) -> Bool { rx.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil }
         let carBounds = car.visualBounds(relativeTo: space)
         var parts: [(entity: ModelEntity, bounds: BoundingBox)] = []
@@ -835,11 +831,39 @@ final class CarEntity {
         walk(car, matched: false, skipped: false)
         let cz = carBounds.center.z, cx = carBounds.center.x
         var groups: [Int: [ModelEntity]] = [:]
+        var boxes: [Int: BoundingBox] = [:]
         for p in parts {
             let key = (p.bounds.center.x > cx ? 1 : 0) + (p.bounds.center.z > cz ? 2 : 0)
             groups[key, default: []].append(p.entity)
+            boxes[key] = boxes[key].map { $0.union(p.bounds) } ?? p.bounds
         }
         guard groups.count == 4 else { return nil }
+        // Części koła o nazwach spoza reguły (np. opona „Object_44” obok felgi „wheel”): bez tego zostawały
+        // w nadwoziu — felga kręciła się i skręcała, a opona stała w miejscu, odklejona od felgi.
+        // Należy do koła siatka okrągła w przekroju (wysokość ≈ długość), ze środkiem na osi koła
+        // i nie większa niż półtora koła; zaciski hamulców są poza osią, więc zostają w nadwoziu.
+        let taken = Set(parts.map { ObjectIdentifier($0.entity) })
+        var extra: [String] = []
+        func adopt(_ e: Entity, skipped: Bool) {
+            let sk = skipped || has(skipRx, e.name)
+            if let model = e as? ModelEntity, !sk, !taken.contains(ObjectIdentifier(model)) {
+                let b = model.visualBounds(relativeTo: space)
+                for (key, box) in boxes {
+                    let r = max(box.extents.y, box.extents.z) / 2
+                    let d = b.center - box.center
+                    if r > 0.01, abs(d.y) < r * 0.12, abs(d.z) < r * 0.12, abs(d.x) < r,
+                       abs(b.extents.y - b.extents.z) < max(b.extents.y, b.extents.z) * 0.12,
+                       b.extents.y > r * 0.6, b.extents.y < r * 3, b.extents.x < r * 1.5 {
+                        groups[key]!.append(model)
+                        extra.append(e.name)
+                        break
+                    }
+                }
+            }
+            for c in e.children { adopt(c, skipped: sk) }
+        }
+        adopt(car, skipped: false)
+        if !extra.isEmpty { debugLog("koła: dołączone części spoza nazw: " + extra.prefix(12).joined(separator: ", ")) }
         return (0..<4).map { groups[$0]! }
     }
 }

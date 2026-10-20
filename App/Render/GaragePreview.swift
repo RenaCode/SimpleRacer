@@ -86,8 +86,25 @@ final class GaragePreview {
             }
         }
         if let photo = SkyEnvironment.panorama(named: "garage") {
-            SkyEnvironment.applyLighting(to: root, image: photo, intensity: 0.8)
+            SkyEnvironment.applyLighting(to: root, image: photo, intensity: 0.8, yaw: -.pi / 2)
         }
+        #if DEBUG || FAMILY
+        // `-probe`: lustrzana i biała kula obok podestu — do porównań oświetlenia (odbicia, kierunek światła).
+        if ProcessInfo.processInfo.arguments.contains("-probe") {
+            var white = PhysicallyBasedMaterial()
+            white.baseColor = .init(tint: UIColor(white: 0.8, alpha: 1))
+            white.roughness = 0.9
+            var mirror = PhysicallyBasedMaterial()
+            mirror.baseColor = .init(tint: .white)
+            mirror.metallic = 1.0
+            mirror.roughness = 0.0
+            for (x, material) in [(Float(-1.3), mirror), (1.3, white)] {
+                let ball = ModelEntity(mesh: .generateSphere(radius: 0.45), materials: [material])
+                ball.position = [x, 2.3, 0]
+                root.addChild(ball)
+            }
+        }
+        #endif
     }
 
     func show(def: CarDef, colorHex: String) {

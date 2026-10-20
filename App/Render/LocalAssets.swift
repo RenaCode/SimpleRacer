@@ -228,6 +228,7 @@ final class LocalAssets {
                 let entity = try await Entity(contentsOf: folder.appendingPathComponent(e.file))
                 let normalized = Self.normalized(entity, yawDegrees: e.yaw)
                 Self.markWheels(normalized, names: Set(e.wheels ?? []))
+                Self.tuneGlass(normalized, file: e.file)
                 // Setki prim USD sklejone w kilka siatek (nadwozie, lakier, cztery koła) — raz na model,
                 // klony aut współdzielą wynik. Gdy scalanie się nie uda, zostaje wzorzec bez zmian.
                 #if DEBUG || FAMILY
@@ -249,6 +250,30 @@ final class LocalAssets {
                 if attempt == 1 { try? await Task.sleep(for: .milliseconds(400)) }
             }
         }
+    }
+
+    /// Szyby modelu: materiały przezroczyste bez tekstur (w plikach ze Sketchfaba to jednolita „folia”
+    /// o krycie 0,5–0,6 — RealityKit trzyma je w alfie barwy, `opacity` ma 1) dostają parametry szkła z `Materials.applyGlass`. Przed scaleniem siatek, żeby
+    /// części z tym samym szkłem dalej łączyły się w jedną.
+    private static func tuneGlass(_ root: Entity, file: String) {
+        var count = 0
+        func walk(_ e: Entity) {
+            if let m = e as? ModelEntity, var model = m.model {
+                var changed = false
+                model.materials = model.materials.map { material in
+                    guard var p = material as? PhysicallyBasedMaterial,
+                          case let .transparent(opacity) = p.blending,
+                          opacity.texture == nil, p.baseColor.texture == nil else { return material }
+                    Materials.applyGlass(&p)
+                    changed = true
+                    return p
+                }
+                if changed { m.model = model; count += 1 }
+            }
+            for c in e.children { walk(c) }
+        }
+        walk(root)
+        debugLog("model: \(file) — szyby: \(count) części")
     }
 
     /// Długość, do której skalujemy każdy realistyczny model (m).

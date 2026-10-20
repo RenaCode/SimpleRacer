@@ -261,7 +261,11 @@ in the Debug configuration**, so a Release/App Store build never contains those 
 in `cars.json` gives the car's name, stats, the USD mesh names of its body paint (recoloured in the
 garage), optionally the mesh names of its wheel parts (`wheels`, for models whose wheels have
 generic names such as `Object_26`), an optional yaw and the author, licence and source shown on the
-in-app credits screen. Models downloaded from Sketchfab are often bound to a skeleton; RealityKit
+in-app credits screen. Wheel parts with other generic names are also found by shape: a round mesh
+centred on a wheel's axle (tyre, brake disc) turns with that wheel, while brake calipers stay put.
+A wheel part takes the body paint only when it is listed by its own name, since a file may reuse a
+paint mesh's name for a wheel node. Untextured transparent materials (windows, light lenses) get
+smooth, fully reflective glass that keeps the model's own tint and opacity. Models downloaded from Sketchfab are often bound to a skeleton; RealityKit
 then joins all those meshes into one entity, so paint and wheels cannot be picked by name.
 `tools/unskin-usdz.py in.usdz out.usdz` removes the skeleton and keeps the meshes in their rest pose.
 Cars whose file is present appear in the garage and among rivals; until a model has loaded, or when
@@ -296,7 +300,12 @@ Like most mobile racers, the scenery is built from photos rather than heavy 3D m
   horizon stays put. The sky and ground come from a small copy (`App/Sky/sky-<region>.jpg`,
   2048 × 1024); the horizon band, where the buildings, trees and hills are, comes from the full
   8K photo (`sky-<region>-band.jpg`). The horizon stays sharp without the memory cost of a whole 8K
-  texture. The small copy also lights the scene and gives the cars their reflections. The garage and
+  texture. Lighting and reflections come from the HDR version of the same panorama
+  (`sky-<region>-ibl.exr`, 1024 × 512, made by `tools/make-ibl.swift` from the Poly Haven `.hdr`):
+  the sun is brighter than the sky, as in nature, so paint and glass get hot highlights. The tool
+  matches the HDR exposure to the background photo, checks that the two are not rotated against each
+  other, clips the sun (its energy comes from the scene's directional light) and keeps the total light
+  within 10% of the photo, so the lighting strength tuned for the photo still holds. The garage and
   menu use a photo of an indoor karting hall (`sky-garage*.jpg`) the same way, turned so the camera
   faces the tyre barriers. A concrete floor under the turntable covers the tyres standing right next
   to the camera in the photo and fades into the photo's floor.
@@ -444,7 +453,7 @@ App/
                       sky lighting, race (RaceGame), garage preview
   Views/              SwiftUI: menu, garage, HUD, touch controls, results
 project.yml           XcodeGen project definition
-tools/                app icon, impostor renderers (Blender, SceneKit)
+tools/                app icon, impostor renderers (Blender, SceneKit), HDR lighting (make-ibl)
 ```
 
 ## License
