@@ -241,6 +241,9 @@ final class RaceGame {
         camHeading = track.sample(at: player.s).heading
         updateEntities()
         updateCamera(dt: 1)
+        // HUD od razu z prawdziwymi wartościami (miejsce w stawce, okrążenia) — przy pauzie jeszcze pod ekranem
+        // ładowania licznik pokazywał wartości domyślne „1/1”, bo odświeża się dopiero w biegnącej grze.
+        updateHud()
     }
 
     private var player: Car { sim.player! }
