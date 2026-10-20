@@ -8,7 +8,18 @@ final class GameInput: PlayerInputSource {
     // Dotyk — ustawiane przez TouchControls.
     var touchLeft = false
     var touchRight = false
-    var touchDrift = false
+    var touchDrift = false {
+        didSet {
+            if touchDrift != oldValue { debugLog("wejście: DRIFT dotyk \(touchDrift)") }
+            if touchDrift && !oldValue { driftPressedAt = ProcessInfo.processInfo.systemUptime }
+        }
+    }
+
+    /// Chwila ostatniego wciśnięcia DRIFT. Krótkie dotknięcie (kliknięcie) bywa wciśnięte i puszczone
+    /// między krokami gry — wtedy gra go nie widziała i auto nie wchodziło w poślizg. Wciśnięcie trzymamy
+    /// jeszcze przez `driftLatch`; dalej poślizg podtrzymuje już samo auto (`Physics.driftMinTime`).
+    private var driftPressedAt = -Double.infinity
+    static let driftLatch = 0.15
 
     private var nitroQueued = false
     private var deviceSteer = 0.0
@@ -49,6 +60,8 @@ final class GameInput: PlayerInputSource {
         }
 
         deviceSteer = max(-1, min(1, steer))
+        if drift != deviceDrift { debugLog("wejście: drift klawiatura/pad \(drift)") }
+        if drift && !deviceDrift { driftPressedAt = ProcessInfo.processInfo.systemUptime }
         deviceDrift = drift
         if nitro && !prevDeviceNitro { nitroQueued = true }
         #if DEBUG || FAMILY
@@ -70,7 +83,10 @@ final class GameInput: PlayerInputSource {
         return max(-1, min(1, s))
     }
 
-    var drift: Bool { deviceDrift || touchDrift || debugHoldDrift }
+    var drift: Bool {
+        deviceDrift || touchDrift || debugHoldDrift
+            || ProcessInfo.processInfo.systemUptime - driftPressedAt < Self.driftLatch
+    }
 
     #if DEBUG || FAMILY
     /// Do zrzutów w symulatorze: `-holdDrift` trzyma DRIFT wciśnięty od 8. sekundy po starcie aplikacji (po rozpędzeniu).

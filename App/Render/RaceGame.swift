@@ -55,6 +55,19 @@ final class RaceGame {
     @ObservationIgnored let input = GameInput()
     @ObservationIgnored let root = Entity()
     @ObservationIgnored var subscription: EventSubscription?
+    #if DEBUG || FAMILY
+    @ObservationIgnored private var loggedDrift = false
+    /// Liczniki dla testów UI (SimpleRacerUITests): wejścia gracza w drift, odpalenia nitro,
+    /// klatki ze skrętem w lewo/prawo. Test czyta je z HUD (`testInfo`), bo nie widzi stanu gry.
+    @ObservationIgnored private(set) var testDrifts = 0
+    @ObservationIgnored private(set) var testNitros = 0
+    @ObservationIgnored private(set) var testLeft = 0
+    @ObservationIgnored private(set) var testRight = 0
+    var testInfo: String {
+        "drifts=\(testDrifts) nitros=\(testNitros) left=\(testLeft) right=\(testRight) speed=\(Int(hud.speedKmh)) paused=\(paused ? 1 : 0)"
+            + " lap=\(hud.lap) failed=\(buildFailed ? 1 : 0) cars=\(CarCatalog.all.count) car=\(player.def.id)"
+    }
+    #endif
     @ObservationIgnored private let camera = PerspectiveCamera()
     @ObservationIgnored private let sim: RaceSim
     @ObservationIgnored private var cars: [(Car, CarEntity)] = []
@@ -299,6 +312,15 @@ final class RaceGame {
             return
         }
         let p = player
+        #if DEBUG || FAMILY
+        if input.steer > 0.5 { testLeft += 1 }
+        if input.steer < -0.5 { testRight += 1 }
+        if p.drifting != loggedDrift {
+            loggedDrift = p.drifting
+            if p.drifting { testDrifts += 1 }
+            debugLog(String(format: "gracz: drift %@ przy %.0f km/h", p.drifting ? "start" : "koniec", p.speed * 3.6))
+        }
+        #endif
         AudioManager.shared.setEngine(speed: p.speed / p.def.topSpeed, nitro: p.nitro.mode != .off, running: !p.wrecked,
                                       slip: abs(p.slide) / Physics.driftSlideAngle, drifting: p.drifting)
         clock += dt
@@ -378,6 +400,9 @@ final class RaceGame {
                 let byRival = events.contains { if case let .takedown(_, v) = $0 { return v === p }; return false }
                 if !byRival { toast("ROZBITY!", .bad) }
             case let .nitro(car, mode) where car === p:
+                #if DEBUG || FAMILY
+                testNitros += 1
+                #endif
                 AudioManager.shared.play(.nitro)
                 camKick = mode == .shockwave ? 1.4 : 0.9
                 Haptics.shared.pulse(intensity: mode == .shockwave ? 1 : 0.6, sharpness: 0.4, duration: 0.35)

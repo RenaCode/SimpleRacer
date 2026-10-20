@@ -113,12 +113,23 @@ final class AppModel {
             AudioManager.shared.soundOn = false
             save()
         }
+        // `-manualSteer` wyłącza auto-prowadzenie (testy sterowania ręcznego).
+        if ProcessInfo.processInfo.arguments.contains("-manualSteer") {
+            profile.autoSteer = false
+            save()
+        }
         if ProcessInfo.processInfo.arguments.contains("-autostartRace") { startRace() }
         // `-car <id>` wybiera auto (podgląd modeli w symulatorze).
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-car"), i + 1 < args.count, CarCatalog.all.contains(where: { $0.id == args[i + 1] }) {
             campaign.ownedCars.insert(args[i + 1])
             profile.carId = args[i + 1]
+        }
+        // `-carIndex <n>` wybiera n-te auto z katalogu (testy UI przechodzą po wszystkich autach bez znajomości ich id).
+        if let i = args.firstIndex(of: "-carIndex"), i + 1 < args.count, let n = Int(args[i + 1]), !CarCatalog.all.isEmpty {
+            let id = CarCatalog.all[n % CarCatalog.all.count].id
+            campaign.ownedCars.insert(id)
+            profile.carId = id
         }
         // `-rich` daje monety i gwiazdki (podgląd sklepu i odblokowań).
         if args.contains("-rich") {

@@ -205,6 +205,20 @@ nitro canisters (layout on the track, pickup and respawn), the track geometry (c
 loop, minimum corner radius, side orientation) and a full headless race of six AI cars, which
 must all finish without a single wall crash.
 
+UI tests (`UITests/`, Family configuration) run the app in the simulator and press the on-screen
+buttons with real touches; they read the player's state (drift and nitro counters, speed, lap)
+from an invisible HUD label that exists only in Debug/Family builds:
+
+```sh
+xcodebuild test -project SimpleRacer.xcodeproj -scheme SimpleRacer \
+  -destination 'platform=iOS Simulator,name=iPad Pro 11-inch (M5)' \
+  -only-testing:SimpleRacerUITests/GameplayUITests
+```
+
+`GameplayUITests` (about 3 minutes) holds and taps DRIFT, fires NITRO, steers, pauses and goes
+menu → garage → campaign → race. `AllTracksUITests` (about 40 minutes) races on all 40 tracks,
+cycling through the cars, and drives every car to the finish.
+
 GitHub Actions (`.github/workflows/ci.yml`) runs those tests and builds the app for a generic
 iOS Simulator destination on every push to `main` and on pull requests. The workflow uses the
 latest stable Xcode and needs no specific simulator or code signing.
@@ -245,7 +259,11 @@ LocalModels/
 A build phase copies them into the app bundle (`Models/Realistic`). **`PrivateOnly/` is copied only
 in the Debug configuration**, so a Release/App Store build never contains those files. Each entry
 in `cars.json` gives the car's name, stats, the USD mesh names of its body paint (recoloured in the
-garage), an optional yaw and the author, licence and source shown on the in-app credits screen.
+garage), optionally the mesh names of its wheel parts (`wheels`, for models whose wheels have
+generic names such as `Object_26`), an optional yaw and the author, licence and source shown on the
+in-app credits screen. Models downloaded from Sketchfab are often bound to a skeleton; RealityKit
+then joins all those meshes into one entity, so paint and wheels cannot be picked by name.
+`tools/unskin-usdz.py in.usdz out.usdz` removes the skeleton and keeps the meshes in their rest pose.
 Cars whose file is present appear in the garage and among rivals; until a model has loaded, or when
 there is none, the car falls back to its Kenney model.
 
