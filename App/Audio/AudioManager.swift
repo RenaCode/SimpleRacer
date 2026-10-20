@@ -321,6 +321,8 @@ final class AudioManager {
 func debugLog(_ message: @autoclosure () -> String) {
     #if DEBUG || FAMILY
     print(String(format: "[%.2f s] ", ProcessInfo.processInfo.systemUptime - appStartUptime) + message())
+    // Log do pliku (`simctl launch --stdout`) jest buforowany — bez tego koniec logu ginie przy zamknięciu apki.
+    fflush(stdout)
     #endif
 }
 

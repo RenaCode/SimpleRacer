@@ -220,6 +220,19 @@ final class RaceGame {
             player.distance = sim.raceDistance - 150
             player.s = wrap(player.distance, track.length)
         }
+        // `-shotAt <s>`: stały kadr do porównań wyglądu — gracz stoi w punkcie s, rywale 300 m dalej
+        // (poza zasięgiem rysowania), fizyka i odliczanie stoją. Ten sam obraz przy każdym uruchomieniu.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-shotAt"), i + 1 < args.count, let s = Double(args[i + 1]) {
+            shotMode = true
+            countdownText = nil
+            clock = 1 // poza oknem rozgrzewki płomienia i dymu na starcie
+            for car in sim.cars {
+                car.distance = car.isPlayer ? s : s + 300
+                car.s = wrap(car.distance, track.length)
+                car.d = car.isPlayer ? 0 : car.d
+            }
+        }
         #endif
         camHeading = track.sample(at: player.s).heading
         updateEntities()
@@ -296,7 +309,9 @@ final class RaceGame {
         defer {
             workTimes.append(ProcessInfo.processInfo.systemUptime - t0)
             if workTimes.count % 600 == 0 {
-                func p95(_ a: [Double]) -> Double { a.sorted()[Int(Double(a.count) * 0.95)] * 1000 }
+                // Fizyka i encje nie liczą się pod ekranem ładowania, w pauzie ani w kadrze `-shotAt` — ich tablice
+                // bywają puste, gdy praca w klatce ma już 600 pomiarów.
+                func p95(_ a: [Double]) -> Double { a.isEmpty ? 0 : a.sorted()[Int(Double(a.count) * 0.95)] * 1000 }
                 debugLog(String(format: "praca CPU w klatce: p95 %.2f ms (fizyka %.2f, encje %.2f), max %.1f ms",
                                 p95(workTimes), p95(physTimes), p95(entTimes), workTimes.max()! * 1000))
             }
@@ -310,6 +325,14 @@ final class RaceGame {
             AudioManager.shared.setEngine(speed: 0, nitro: false, running: false)
             return
         }
+        #if DEBUG || FAMILY
+        if shotMode {
+            warmFrames += 1 // ekran ładowania czeka na rozgrzane klatki
+            updateEntities()
+            updateCamera(dt: dt)
+            return
+        }
+        #endif
         if holdStart {
             // Pod ekranem ładowania: auta na starcie, płomień i dym włączone (rozgrzewka efektów), zegar stoi.
             warmFrames += 1
@@ -458,6 +481,8 @@ final class RaceGame {
     /// Wierzch asfaltu (TrackBuilder kładzie jezdnię na y 0,02) — na nim stoją opony.
     static let roadSurface: Float = 0.02
     #if DEBUG || FAMILY
+    /// `-shotAt`: zamrożony kadr do zrzutów porównawczych.
+    @ObservationIgnored private var shotMode = false
     private static let sideCam = ProcessInfo.processInfo.arguments.contains("-sideCam")
     #endif
 
