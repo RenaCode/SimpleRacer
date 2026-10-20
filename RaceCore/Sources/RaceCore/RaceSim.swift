@@ -73,7 +73,11 @@ public final class RaceSim {
     public func standings() -> [Car] {
         cars.sorted { a, b in
             if a.finished != b.finished { return a.finished }
-            if a.finished { return a.finishTime < b.finishTime }
+            if a.finished {
+                // Ten sam krok (równy czas): kolejność przekroczenia mety, jak w `finishOrder`.
+                if a.finishTime != b.finishTime { return a.finishTime < b.finishTime }
+                return (finishOrder.firstIndex { $0 === a } ?? 0) < (finishOrder.firstIndex { $0 === b } ?? 0)
+            }
             return a.distance > b.distance
         }
     }
@@ -94,25 +98,26 @@ public final class RaceSim {
             let input = controllers[ObjectIdentifier(car)]!.read(car: car, dt: dt, ctx: ctx)
             if !car.isPlayer { car.nitro.add(Physics.aiPassiveNitro * dt) }
             car.step(dt: dt, input: input, track: track)
-            for e in car.events {
-                switch e {
-                case .wreck: events.append(.wreck(car))
-                case .nitro(let mode): events.append(.nitro(car, mode))
-                case .driftBoost: events.append(.driftBoost(car))
-                case .wallHit(let v): events.append(.wallHit(car, intensity: v))
-                }
-            }
-            car.events.removeAll()
+            drainEvents(car)
         }
 
         for t in Collisions.resolve(cars, trackLength: track.length) {
             events.append(.takedown(attacker: t.attacker, victim: t.victim))
         }
+        // Rozbicie ofiary takedownu trafia do zdarzeń tego samego kroku (wcześniej dopiero następnego).
+        cars.forEach(drainEvents)
+        // Odepchnięcia w zderzeniach nie pilnują bandy — auto zostawało w niej do następnego kroku
+        // (widać to na ekranie, bo obraz interpoluje pozycje).
+        let limit = track.halfWidth - Physics.carWidth / 2
+        for car in cars where abs(car.d) > limit { car.d = car.d > 0 ? limit : -limit }
 
         if let player { checkNearMiss(player) }
         collectPickups(dt: dt)
 
-        for car in cars where !car.finished && car.distance >= raceDistance {
+        // Kilka aut za metą w jednym kroku: wyżej to, które przejechało dalej (kolejność na liście
+        // zawsze krzywdziła gracza — jest na niej ostatni).
+        let crossed = cars.filter { !$0.finished && $0.distance >= raceDistance }.sorted { $0.distance > $1.distance }
+        for car in crossed {
             car.finished = true
             car.finishTime = time
             finishOrder.append(car)
@@ -151,13 +156,27 @@ public final class RaceSim {
         }
     }
 
+    private func drainEvents(_ car: Car) {
+        for e in car.events {
+            switch e {
+            case .wreck: events.append(.wreck(car))
+            case .nitro(let mode): events.append(.nitro(car, mode))
+            case .driftBoost: events.append(.driftBoost(car))
+            case .wallHit(let v): events.append(.wallHit(car, intensity: v))
+            }
+        }
+        car.events.removeAll()
+    }
+
     private func checkNearMiss(_ player: Car) {
         for other in cars where other !== player {
             let ds = wrapDelta(player.s, other.s, track.length)
             let side: Double = ds > 0 ? 1 : (ds < 0 ? -1 : 0)
             let prev = prevSide[ObjectIdentifier(other)]
             prevSide[ObjectIdentifier(other)] = side
-            guard prev == -1, side == 1, !player.wrecked, !other.wrecked else { continue }
+            // Zmiana znaku liczy się tylko obok gracza: pół okrążenia dalej `wrapDelta` przeskakuje z −len/2
+            // na +len/2 i bez tego warunku rywal oddalony o setki metrów dawał „NA WŁOS!”.
+            guard prev == -1, side == 1, abs(ds) < Physics.nearMissWindow, !player.wrecked, !other.wrecked else { continue }
             let gap = abs(player.d - other.d)
             if gap > Physics.carWidth && gap < Physics.carWidth + Physics.nearMissGap {
                 player.nitro.add(Physics.nearMissNitro)

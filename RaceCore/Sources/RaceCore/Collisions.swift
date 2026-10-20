@@ -82,7 +82,7 @@ public enum Collisions {
                         takedown(back, front)
                     } else if delta > 0 {
                         let v = (back.speed + front.speed) / 2
-                        back.speed = v - 1
+                        back.speed = max(0, v - 1) // przy styku poniżej 1 m/s auto toczyło się wstecz
                         front.speed = v + 1
                     }
                 }
