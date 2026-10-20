@@ -45,6 +45,7 @@ final class GaragePreview {
 
         camera.camera.fieldOfViewInDegrees = 40
         root.addChild(camera)
+        CinematicLook.apply(root: root, camera: camera)
         setLayout(.menu, narrow: false)
     }
 

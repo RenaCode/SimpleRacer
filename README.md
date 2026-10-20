@@ -409,7 +409,14 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
 - **Post-processing (iOS 26+):** a `PostProcessEffect` adds bloom on bright spots, aerial fog read
   from the depth buffer (tinted with the panorama's horizon colour), a gentle tone curve,
   saturation, vignette and dither; plus MSAA 4×. Shaders compile in the background at launch.
-  `-noPostFX` / `-noMSAA` turn them off in test builds.
+  `-noPostFX` / `-noMSAA` turn them off in test builds. RealityKit hands this effect an 8-bit sRGB
+  image that is already tone mapped, so it cannot tell a sun highlight from a white cloud.
+- **Tone curve (iOS 27+):** `ToneMappingComponent` on the camera works on the HDR image before that
+  conversion: a stronger, longer toe (deeper contrast and paint colour), a softer shoulder and +0.25 EV
+  (`CinematicLook.swift`). `-tm exposure,toeStrength,toeLength,shoulderStrength,shoulderLength,shoulderAngle`
+  tunes it in test builds and `-holder -1` shows the engine's own curve. RealityKit's HDR bloom
+  (`-bloomHDR strength,threshold,radius`) is off by default: in the iOS 27.0 simulator it fails to
+  compose and has no effect, so it still needs checking on an iPad.
 - **Sun from the panorama:** the sun's direction and tint come from the brightest spot of the
   region's sky photo, so shadows fall where the photo says.
 - **Camera:** spring distance and height, a kick on nitro, mini-turbo and wall hits; shake from
