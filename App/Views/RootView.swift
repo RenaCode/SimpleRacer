@@ -56,6 +56,12 @@ extension RootView {
             await LocalAssets.shared.preload(first: model.profile.carId)
             return
         }
+        // Start prosto w kampanii (argument testowy `-screen campaign`): sceny garażu nie ma, więc nie ma na co czekać.
+        if model.screen == .campaign {
+            splash = false
+            await LocalAssets.shared.preload(first: model.profile.carId)
+            return
+        }
         // Modele aut dopiero po podpięciu pierwszego widoku 3D: wczytywanie USDZ przed inicjalizacją
         // RealityKit co kilkanaście startów psuło proces (żaden model się nie wczytywał, potem awaria).
         while !preview.attached { try? await Task.sleep(for: .milliseconds(20)) }
