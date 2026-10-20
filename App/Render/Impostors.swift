@@ -224,16 +224,26 @@ struct GroundMaterial {
     /// Zanik kończy się na `fadeStart * fadeEnd` (musi się zgadzać z Ground.metal).
     static let fadeEnd: Float = 2.5
 
-    static func make(_ tex: TextureResource, tile: Float = tile, fadeStart: Float = fadeStart) -> GroundMaterial? {
+    /// `colorScale` — mnożnik koloru tekstury (liniowy RGB, może przekraczać 1): grunt w barwie gruntu ze zdjęcia
+    /// panoramy, w który przechodzi w oddali.
+    @MainActor static func make(_ tex: TextureResource, tile: Float = tile, fadeStart: Float = fadeStart,
+                     colorScale: SIMD3<Float> = [1, 1, 1]) -> GroundMaterial? {
         guard let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary(),
               var m = try? CustomMaterial(surfaceShader: .init(named: "groundSurface", in: library), lightingModel: .lit)
         else { return nil }
-        m.baseColor = .init(tint: .white, texture: .init(tex))
-        // x = kafel, y = początek zanikania; z = 1 włącza zanikanie (materiał nieprzezroczysty go nie potrzebuje).
-        m.custom.value = [tile, fadeStart, 0, 0]
+        // Odcień w tincie (składowe ≤ 1), wzmocnienie w custom.w.
+        let gain = max(colorScale.max(), 0.01)
+        let tint = colorScale / gain
+        m.baseColor = .init(tint: UIColor(red: CGFloat(tint.x), green: CGFloat(tint.y), blue: CGFloat(tint.z), alpha: 1),
+                            texture: .init(tex))
+        // x = kafel, y = początek zanikania (ujemny — bez zanikania: materiał nieprzezroczysty go nie potrzebuje),
+        // z = mgła (SceneHaze.packed), w = wzmocnienie koloru.
+        let haze = SceneHaze.current.packed
+        SceneHaze.tag(&m)
+        m.custom.value = [tile, -fadeStart, haze, gain]
         let o = m
         m.blending = .transparent(opacity: 1.0)
-        m.custom.value = [tile, fadeStart, 1, 0]
+        m.custom.value = [tile, fadeStart, haze, gain]
         return GroundMaterial(material: m, opaque: o, tile: tile, fadeStart: fadeStart)
     }
 

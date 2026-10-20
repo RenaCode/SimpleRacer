@@ -171,6 +171,30 @@ enum SkyEnvironment {
         return ctx.makeImage()
     }
 
+    /// Średni kolor (liniowy RGB) pasa wierszy v0…v1 obrazu (ułamki wysokości od góry) — do dopasowania
+    /// kolorów otoczenia 3D do zdjęcia panoramy.
+    static func meanColor(_ url: URL, rows: ClosedRange<Float> = 0...1) -> SIMD3<Float>? {
+        guard let image = UIImage(contentsOfFile: url.path)?.cgImage else { return nil }
+        let w = 64, h = 64
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = { ctx.interpolationQuality = .medium
+                           ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+                           return ctx.data?.assumingMemoryBound(to: UInt8.self) }() else { return nil }
+        func lin(_ v: UInt8) -> Float { let c = Float(v) / 255; return c <= 0.04045 ? c / 12.92 : powf((c + 0.055) / 1.055, 2.4) }
+        var sum = SIMD3<Float>(repeating: 0), n: Float = 0
+        // W pamięci kontekstu wiersze idą od góry obrazu.
+        for y in Int(rows.lowerBound * Float(h))..<max(Int(rows.lowerBound * Float(h)) + 1, Int(rows.upperBound * Float(h))) {
+            for x in 0..<w {
+                let p = data + (y * w + x) * 4
+                sum += SIMD3(lin(p[0]), lin(p[1]), lin(p[2]))
+                n += 1
+            }
+        }
+        return n > 0 ? sum / n : nil
+    }
+
     private static func attach(_ e: Entity, to ibl: Entity) {
         if e is ModelEntity { e.components.set(ImageBasedLightReceiverComponent(imageBasedLight: ibl)) }
         for c in e.children { attach(c, to: ibl) }

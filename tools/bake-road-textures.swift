@@ -87,6 +87,12 @@ func load(_ name: String, size: Int) -> Img {
 }
 
 let asphalt = load("road-asphalt.jpg", size: 1024)
+// Progi wytarć dobrano do ciemnego asfaltu (średnia jasność 0,122); jaśniejszy asfalt ma te same wytarcia.
+let lumScale: Double = {
+    var s = 0.0
+    for y in 0..<1024 { for x in 0..<1024 { let a = asphalt[x, y]; s += (a.0 + a.1 + a.2) / 3 } }
+    return 0.122 / (s / 1024 / 1024)
+}()
 
 // MARK: 1. Farba linii: zdjęcie asfaltu przykryte białą farbą, wytartą plamami i na wierzchołkach kamyków.
 // Kafel 4 m jak asfalt — UV linii są te same co jezdni, więc prześwity pokazują ten sam asfalt.
@@ -96,7 +102,7 @@ do {
         for x in 0..<1024 {
             let u = Double(x) / 1024, v = Double(y) / 1024
             let a = asphalt[x, y]
-            let lum = (a.0 + a.1 + a.2) / 3
+            let lum = (a.0 + a.1 + a.2) / 3 * lumScale
             // Duże plamy wytarcia (koleiny) + drobne prześwity tam, gdzie kamyki asfaltu wystają (jasne).
             let big = fbm(u, v, px: 16, py: 16, octaves: 4, seed: 3)
             let fine = fbm(u, v, px: 64, py: 64, octaves: 2, seed: 9)
@@ -185,7 +191,7 @@ do {
             // Asfalt w tej samej skali co jezdnia (kafel 4 m = 1024 px; tu 6 m = 1024 px).
             let ax = Int(u * 6 / 4 * 1024) % 1024, ay = Int(v * 1.5 / 4 * 1024) % 1024
             let a = asphalt[ax, ay]
-            let lum = (a.0 + a.1 + a.2) / 3
+            let lum = (a.0 + a.1 + a.2) / 3 * lumScale
             let wear = min(1, smoothstep(0.68, 0.78, fbm(u, v, px: 16, py: 4, octaves: 4, seed: 23))
                 + smoothstep(0.75, 0.92, fbm(u, v, px: 96, py: 24, octaves: 2, seed: 29) * 0.6 + lum * 0.7) * 0.6)
             let dirt = 0.85 + 0.15 * fbm(u, v, px: 4, py: 1, octaves: 3, seed: 31)

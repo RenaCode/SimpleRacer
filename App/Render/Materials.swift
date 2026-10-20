@@ -194,6 +194,24 @@ enum Materials {
     static let roadSurfaceMaterial = tiled(roadSurface, roughness: 0.82)
 
     /// Asfalt PBR: kolor, normalne (drobne kamyki łapią światło) i chropowatość — tekstury z ScenePreloader.
+    /// Jezdnia z shaderem `roadSurface` (Ground.metal): zdjęcie asfaltu + plamy, ślady kół, kurz przy krawędziach.
+    /// `nil`, gdy brak plików albo shadera — wtedy zwykły `photoAsphalt`.
+    @MainActor static func roadAsphalt(halfWidth: Double, tile: Float = 4) -> CustomMaterial? {
+        func tex(_ name: String) -> TextureResource? {
+            Bundle.main.url(forResource: name, withExtension: "jpg").flatMap(SkyEnvironment.texture)
+        }
+        guard let color = tex("road-asphalt"), let normal = tex("road-asphalt-normal"), let rough = tex("road-asphalt-rough"),
+              let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary(),
+              var m = try? CustomMaterial(surfaceShader: .init(named: "roadSurface", in: library), lightingModel: .lit)
+        else { return nil }
+        m.baseColor = .init(tint: UIColor(white: 0.92, alpha: 1), texture: .init(color))
+        m.normal = .init(texture: .init(normal))
+        m.roughness = .init(scale: 1, texture: .init(rough))
+        SceneHaze.tag(&m)
+        m.custom.value = [tile, Float(halfWidth), SceneHaze.current.packed, 0]
+        return m
+    }
+
     static func photoAsphalt() -> PhysicallyBasedMaterial? {
         func tex(_ name: String) -> TextureResource? {
             Bundle.main.url(forResource: name, withExtension: "jpg").flatMap(SkyEnvironment.texture)
@@ -209,8 +227,7 @@ enum Materials {
         s.maxAnisotropy = 16
         if let n = tex("road-asphalt-normal") { m.normal = .init(texture: .init(n, sampler: .init(s))) }
         if let r = tex("road-asphalt-rough") { m.roughness = .init(scale: 0.9, texture: .init(r, sampler: .init(s))) }
-        // Odrobinę ciemniej niż na zdjęciu: jasny asfalt zlewał się z betonowymi barierami.
-        m.baseColor.tint = UIColor(white: 0.82, alpha: 1)
+        m.baseColor.tint = UIColor(white: 0.92, alpha: 1)
         return m
     }
 }
