@@ -68,6 +68,8 @@ public enum Physics {
     public static let nearMissNitro = 0.08
     /// Na tyle blisko bokiem przy wyprzedzaniu liczy się „na włos”.
     public static let nearMissGap = 1.5
+    /// Wyprzedzenie liczy się tylko, gdy rywal jest tyle metrów od gracza wzdłuż trasy.
+    public static let nearMissWindow = 10.0
     /// Prędkość zbliżania bokiem (m/s), która spycha rywala w rozbicie.
     public static let sideSlamSpeed = 6.0
     /// Różnica prędkości przy uderzeniu w tył, która rozbija auto z przodu.
