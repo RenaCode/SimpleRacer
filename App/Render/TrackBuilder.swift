@@ -1,3 +1,4 @@
+import Metal
 import RaceCore
 import RealityKit
 import UIKit
@@ -148,7 +149,10 @@ enum TrackBuilder {
             Bundle.main.url(forResource: "wall-\(regionKey)\(suffix)", withExtension: "jpg").flatMap(SkyEnvironment.texture)
         }
         var wallMaterial: any Material = matte(UIColor(red: 0.72, green: 0.74, blue: 0.78, alpha: 1))
-        if let color = wallTexture("") {
+        if let color = wallTexture(""), let normal = wallTexture("-normal"),
+           let m = wallSurface(color: color, normal: normal, region: region, top: Float(wallH)) {
+            wallMaterial = m
+        } else if let color = wallTexture("") {
             var m = Materials.tiled(color, roughness: 0.92)
             if let normal = wallTexture("-normal") { m.normal = .init(texture: .init(normal)) }
             wallMaterial = m
@@ -198,6 +202,24 @@ enum TrackBuilder {
         debugLog(String(format: "mgła: gęstość %.2f, zasięg %.0f m, materiały z mgłą w %d modelach",
                         SceneHaze.current.density, SceneHaze.current.scale, hazy))
         return root
+    }
+
+    /// Mur z shaderem `wallSurface` (Ground.metal): brud u podstawy, zacieki, a wg krainy mech, pył albo śnieg.
+    private static func wallSurface(color: TextureResource, normal: TextureResource, region: Region, top: Float) -> CustomMaterial? {
+        guard let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary(),
+              var m = try? CustomMaterial(surfaceShader: .init(named: "wallSurface", in: library), lightingModel: .lit)
+        else { return nil }
+        m.baseColor = .init(tint: .white, texture: .init(color))
+        m.normal = .init(texture: .init(normal))
+        let style: Float = switch region {
+        case .forest: 1
+        case .snow: 2
+        case .desert: 3
+        case .city, .coast: 0
+        }
+        SceneHaze.tag(&m)
+        m.custom.value = [SceneHaze.current.packed, style, groundY, top]
+        return m
     }
 
     /// Kafel tekstury gruntu (m): płyty chodnika w mieście mają ok. 35 × 70 cm, zdjęcie mieści ich 7 rzędów.

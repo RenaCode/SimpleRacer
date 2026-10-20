@@ -318,6 +318,8 @@ final class LocalAssets {
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/hdris"),
             Credit(title: "Fasady budynków (Facade 018A, 019A, 020A, 006, 001)",
                    author: "ambientCG (ambientcg.com)", license: "CC0", source: "https://ambientcg.com/list?category=Facade"),
+            Credit(title: "Betonowe mury trasy (Concrete 042 A, Concrete 036)",
+                   author: "ambientCG (ambientcg.com)", license: "CC0", source: "https://ambientcg.com/list?q=concrete"),
             Credit(title: "Chodnik w mieście (Paving Stones 128)",
                    author: "ambientCG (ambientcg.com)", license: "CC0", source: "https://ambientcg.com/view?id=PavingStones128"),
             Credit(title: "Stal barier, latarni i słupków (Metal 049 B)",
@@ -326,7 +328,7 @@ final class LocalAssets {
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/textures"),
             Credit(title: "Drzewa (Island Tree 01–03, Jacaranda Tree, Fir Tree 01, Pine Tree 01, Fir Sapling Medium)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/models"),
-            Credit(title: "Tekstury gruntu, asfaltu, posadzki i murów (Concrete Floor Worn 001, Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Asphalt Track, Large Red Bricks, White Sandstone Bricks, Stacked Stone Wall, Wood Plank Wall, Red Sandstone Wall)",
+            Credit(title: "Tekstury gruntu, asfaltu, posadzki i murów (Concrete Floor Worn 001, Leafy Grass, Aerial Beach 01, Aerial Sand, Snow 01, Asphalt Track, Stacked Stone Wall, Red Sandstone Wall)",
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/textures"),
         ]
         out += cars.map { Credit(title: $0.name, author: $0.author, license: $0.license, source: $0.source) }
