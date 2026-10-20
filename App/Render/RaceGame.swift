@@ -111,7 +111,10 @@ final class RaceGame {
 
     init(profile: Profile, spec: TrackSpec, playerCar: CarDef) {
         self.spec = spec
-        postFX = .forRegion(LocalAssets.regionKey(spec.region))
+        var fx = PostFXSettings.forRegion(LocalAssets.regionKey(spec.region))
+        // Poświata silnika (w HDR) zastępuje własną, liczoną z obrazu 8-bitowego.
+        if CinematicLook.nativeBloom { fx.bloom = 0 }
+        postFX = fx
         debugLog("wyścig: start budowania (trasa \(spec.id))")
         defer {
             #if DEBUG || FAMILY
@@ -207,6 +210,7 @@ final class RaceGame {
         camera.camera.far = 2500
         camera.camera.fieldOfViewInDegrees = Float(fov)
         root.addChild(camera)
+        CinematicLook.apply(root: root, camera: camera)
 
         debugLog("wyścig: panorama gotowa")
         SkyEnvironment.applyLighting(to: root, image: panorama ?? Materials.sky)
