@@ -59,24 +59,14 @@ struct GarageView: View {
         }
     }
 
-    /// Ile aut widać od razu (3 × 3); reszta po rozwinięciu.
-    private static let visibleCars = 9
-    @State private var showAllCars = false
-
+    /// Wszystkie auta naraz, po trzy w rzędzie; gdy przybędzie aut ponad wysokość panelu — przewijanie.
     private var carGrid: some View {
-        let cars = showAllCars ? CarCatalog.all : Array(CarCatalog.all.prefix(Self.visibleCars))
-        return VStack(spacing: 8) {
+        ScrollView(showsIndicators: false) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ForEach(cars) { car in carTile(car) }
-            }
-            if CarCatalog.all.count > Self.visibleCars {
-                Button { withAnimation { showAllCars.toggle() } } label: {
-                    Label(showAllCars ? "Mniej aut" : "Więcej aut (\(CarCatalog.all.count - Self.visibleCars))",
-                          systemImage: showAllCars ? "chevron.up" : "chevron.down")
-                        .font(.footnote.weight(.bold))
-                }
+                ForEach(CarCatalog.all) { car in carTile(car) }
             }
         }
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private func carTile(_ car: CarDef) -> some View {
