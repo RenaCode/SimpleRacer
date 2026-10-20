@@ -1,3 +1,4 @@
+import Metal
 import RealityKit
 import UIKit
 
@@ -83,7 +84,8 @@ enum Buildings {
             let root = Entity()
             for (name, b) in parts where !b.isEmpty {
                 guard let mesh = try? b.mesh(name: name) else { continue }
-                root.addChild(ModelEntity(mesh: mesh, materials: [Buildings.material(name)]))
+                let material: any Material = (name == "plinth" ? Buildings.shopfronts() : nil) ?? Buildings.material(name)
+                root.addChild(ModelEntity(mesh: mesh, materials: [material]))
             }
             if !roofs.isEmpty, let mesh = try? roofs.mesh(name: "roofs") {
                 root.addChild(ModelEntity(mesh: mesh, materials: [Materials.matte(UIColor(white: 0.24, alpha: 1))]))
@@ -114,6 +116,23 @@ enum Buildings {
             m.metallic = .init(scale: 1, texture: .init(mt, sampler: sampler))
         }
         cache[name] = m
+        return m
+    }
+
+    /// Parter z witrynami sklepów (shader `plinthSurface`, Ground.metal) na zdjęciu kamiennych płyt;
+    /// `nil` bez plików albo shadera — wtedy pełna ściana z płyt.
+    static func shopfronts() -> CustomMaterial? {
+        func tex(_ name: String) -> TextureResource? {
+            Bundle.main.url(forResource: name, withExtension: "jpg").flatMap(SkyEnvironment.texture)
+        }
+        guard let color = tex("plinth"), let normal = tex("plinth-normal"),
+              let library = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary(),
+              var m = try? CustomMaterial(surfaceShader: .init(named: "plinthSurface", in: library), lightingModel: .lit)
+        else { return nil }
+        m.baseColor = .init(tint: .white, texture: .init(color))
+        m.normal = .init(texture: .init(normal))
+        SceneHaze.tag(&m)
+        m.custom.value = [SceneHaze.current.packed, TrackBuilder.groundY, groundFloor, 0]
         return m
     }
 
