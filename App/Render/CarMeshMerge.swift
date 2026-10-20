@@ -13,7 +13,9 @@ import UIKit
 ///   więc po scaleniu dalej obracają się wokół własnych osi.
 /// W każdej siatce części o tym samym materiale łączymy w jedną część (jedno rysowanie na materiał).
 /// Wierzchołki przenosimy do układu wzorca: pozycje macierzą, normalne macierzą odwrotną transponowaną,
-/// styczne i binormalne macierzą 3×3; UV kopiujemy bez zmian.
+/// styczne i binormalne macierzą 3×3; UV kopiujemy bez zmian. Kolejność wierzchołków w trójkątach zostaje
+/// taka jak w pliku także dla części odbitych lustrzanie (ujemny wyznacznik): RealityKit rysuje je bez
+/// odwracania, więc odwrócenie przy scalaniu chowało felgi i opony lewych kół (zostawała sama tarcza hamulca).
 @MainActor
 enum CarMeshMerge {
     static let paintPrefix = "merged_paint"
@@ -83,7 +85,6 @@ enum CarMeshMerge {
                                        SIMD3(M.columns.1.x, M.columns.1.y, M.columns.1.z),
                                        SIMD3(M.columns.2.x, M.columns.2.y, M.columns.2.z))
                 let N3 = M3.inverse.transpose
-                let flip = M3.determinant < 0
                 for part in m.parts {
                     guard let pos = part[MeshBuffers.positions]?.elements, let tri = part.triangleIndices?.elements,
                           !pos.isEmpty, !tri.isEmpty else { continue }
@@ -119,12 +120,7 @@ enum CarMeshMerge {
                         groups[gi].uvs += [SIMD2<Float>](repeating: .zero, count: pos.count)
                         groups[gi].hasUV = false
                     }
-                    var k = 0
-                    while k + 2 < tri.count {
-                        let a = base + tri[k], b1 = base + tri[k + 1], c = base + tri[k + 2]
-                        groups[gi].indices += flip ? [a, c, b1] : [a, b1, c]
-                        k += 3
-                    }
+                    groups[gi].indices += tri.map { base + $0 }
                 }
             }
         }
