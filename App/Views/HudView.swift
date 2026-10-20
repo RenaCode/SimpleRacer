@@ -50,6 +50,11 @@ struct HudView: View {
             .padding(.top, 140)
             .animation(.spring(duration: 0.25), value: game.toasts)
 
+            #if DEBUG || FAMILY
+            // Stan gracza dla testów UI (niewidoczny).
+            Text(game.testInfo).font(.system(size: 2)).opacity(0.02).accessibilityIdentifier("test.player")
+            #endif
+
             if game.input.hasKeyboard {
                 Text("←/→ skręt · ↓ drift/hamulec · spacja nitro (2× fala) · Esc pauza")
                     .font(.footnote.weight(.medium)).opacity(0.7)

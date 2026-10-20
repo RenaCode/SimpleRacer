@@ -78,6 +78,7 @@ final class AppModel {
     init() {
         debugLog("start: AppModel")
         LocalAssets.shared.registerCars()
+        FullVersion.apply()
         if let data = UserDefaults.standard.data(forKey: Self.key),
            let p = try? JSONDecoder().decode(Profile.self, from: data),
            CarCatalog.all.contains(where: { $0.id == p.carId }),
@@ -94,7 +95,7 @@ final class AppModel {
         }
         // Auto startowe zawsze w garażu; jeździ się tylko własnym autem, które istnieje w katalogu.
         campaign.ownedCars.insert(Campaign.starterCar)
-        if !campaign.ownedCars.contains(profile.carId) || !CarCatalog.all.contains(where: { $0.id == profile.carId }) {
+        if !Campaign.owns(profile.carId, campaign) || !CarCatalog.all.contains(where: { $0.id == profile.carId }) {
             profile.carId = Campaign.starterCar
         }
         AudioManager.shared.musicOn = profile.musicOn
@@ -118,6 +119,12 @@ final class AppModel {
         if let i = args.firstIndex(of: "-car"), i + 1 < args.count, CarCatalog.all.contains(where: { $0.id == args[i + 1] }) {
             campaign.ownedCars.insert(args[i + 1])
             profile.carId = args[i + 1]
+        }
+        // `-carIndex <n>` wybiera n-te auto z katalogu (testy UI przechodzą po wszystkich autach bez znajomości ich id).
+        if let i = args.firstIndex(of: "-carIndex"), i + 1 < args.count, let n = Int(args[i + 1]), !CarCatalog.all.isEmpty {
+            let id = CarCatalog.all[n % CarCatalog.all.count].id
+            campaign.ownedCars.insert(id)
+            profile.carId = id
         }
         // `-rich` daje monety i gwiazdki (podgląd sklepu i odblokowań).
         if args.contains("-rich") {

@@ -80,11 +80,34 @@ targets:
         # Family: optymalizacje jak w Release, ale z argumentami testowymi i logami jak w Debug.
         Family:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: FAMILY
+  # Testy UI w symulatorze: prawdziwe dotknięcia przycisków (DRIFT, NITRO, ◀ ▶, pauza) i przejścia między ekranami.
+  # Uruchamiane po każdej zmianie: `xcodebuild test -scheme SimpleRacer -destination 'platform=iOS Simulator,name=…'`.
+  SimpleRacerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: SimpleRacer
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.renacode.simpleracer.uitests
+        TARGETED_DEVICE_FAMILY: "2"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        TEST_TARGET_NAME: SimpleRacer
 schemes:
   SimpleRacer:
     build:
       targets:
         SimpleRacer: all
+        SimpleRacerUITests: [test]
+    # Testy UI na konfiguracji Family: argumenty testowe i licznik stanu gracza są tylko w Debug/Family.
+    test:
+      config: Family
+      targets:
+        - SimpleRacerUITests
     # „Run” w Xcode buduje Family — zoptymalizowaną wersję z prywatnymi modelami (na iPady dzieci).
     run:
       config: Family

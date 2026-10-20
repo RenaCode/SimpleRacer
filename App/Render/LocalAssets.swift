@@ -15,6 +15,8 @@ struct LocalCarEntry: Decodable {
     var handling: Double
     var nitroPower: Double
     var paint: [String]
+    /// Części kół (nazwy prim), gdy model nazywa je anonimowo (`Object_12`) i reguła nazw ich nie rozpozna.
+    var wheels: [String]?
     var yaw: Double
     var author: String
     var license: String
@@ -225,6 +227,7 @@ final class LocalAssets {
             do {
                 let entity = try await Entity(contentsOf: folder.appendingPathComponent(e.file))
                 let normalized = Self.normalized(entity, yawDegrees: e.yaw)
+                Self.markWheels(normalized, names: Set(e.wheels ?? []))
                 // Setki prim USD sklejone w kilka siatek (nadwozie, lakier, cztery koła) — raz na model,
                 // klony aut współdzielą wynik. Gdy scalanie się nie uda, zostaje wzorzec bez zmian.
                 #if DEBUG || FAMILY
@@ -252,6 +255,18 @@ final class LocalAssets {
     static let carLength: Float = 4.5
 
     /// Przód w +Z, środek w X/Z w zerze, koła na y = 0, długość `carLength`.
+    /// Siatki kół z `wheels` dostają w nazwie „_wheel” — rozpoznaje je wtedy ta sama reguła co koła
+    /// nazwane w pliku (`CarEntity.realisticWheelGroups`), przy scalaniu i bez niego.
+    private static func markWheels(_ root: Entity, names: Set<String>) {
+        guard !names.isEmpty else { return }
+        func walk(_ e: Entity) {
+            // Tylko siatki: węzły pośrednie bywają nazwane tak samo (`Object_40` zawiera siatkę `Object_18`).
+            if e is ModelEntity, names.contains(e.name) { e.name += "_wheel" }
+            for c in e.children { walk(c) }
+        }
+        walk(root)
+    }
+
     private static func normalized(_ model: Entity, yawDegrees: Double) -> Entity {
         let root = Entity()
         let turn = Entity()

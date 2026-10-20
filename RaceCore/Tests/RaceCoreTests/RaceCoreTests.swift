@@ -710,6 +710,32 @@ final class CampaignTests: XCTestCase {
         XCTAssertEqual(st.coins, 0)
     }
 
+    /// Pełna wersja otwiera wszystkie auta i trasy, ale niczego nie zapisuje w postępie —
+    /// po jej wyłączeniu (np. wygaśnięcie subskrypcji) wraca stan z kampanii.
+    func testFullVersionUnlocksCarsAndTracksWithoutTouchingProgress() throws {
+        defer { Campaign.fullVersion = false }
+        var st = Campaign.newGame()
+        let last = TrackCatalog.all[TrackCatalog.count - 1]
+        let grom = CarCatalog.car(id: "grom")
+        XCTAssertFalse(Campaign.owns("grom", st))
+        XCTAssertFalse(Campaign.isUnlocked(last, st))
+
+        Campaign.fullVersion = true
+        XCTAssertTrue(CarCatalog.all.allSatisfy { Campaign.owns($0.id, st) })
+        XCTAssertTrue(TrackCatalog.all.allSatisfy { Campaign.isUnlocked($0, st) })
+        XCTAssertTrue(Region.allCases.allSatisfy { Campaign.isRegionUnlocked($0, st) })
+        XCTAssertThrowsError(try Campaign.buyCar(grom, &st), "auta z pełnej wersji się nie kupuje")
+        st.coins = 1000
+        try Campaign.buyUpgrade(.engine, car: "grom", &st)
+        XCTAssertEqual(st.coins, 1000 - Campaign.upgradeCost(toLevel: 1), "ulepszenia nadal za monety")
+        XCTAssertEqual(Campaign.nextTrack(st).id, 1, "„Ścigaj się” zaczyna od pierwszej niezaliczonej")
+
+        Campaign.fullVersion = false
+        XCTAssertEqual(st.ownedCars, [Campaign.starterCar])
+        XCTAssertFalse(Campaign.owns("grom", st))
+        XCTAssertFalse(Campaign.isUnlocked(last, st))
+    }
+
     func testStateSurvivesSaving() throws {
         var st = Campaign.newGame()
         st.coins = 321
