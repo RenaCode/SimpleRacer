@@ -55,6 +55,7 @@ final class AllTracksUITests: XCTestCase {
                 app.terminate()
                 continue
             }
+            XCTAssertEqual(int(s, "auto"), 1, "trasa \(track): auto-prowadzenie wyłączone (przeciek ustawień z innego testu?)")
             Thread.sleep(forTimeInterval: 4)
             let later = state(app)
             XCTAssertEqual(int(later, "failed"), 0, "trasa \(track): błąd budowy trasy")
@@ -75,7 +76,9 @@ final class AllTracksUITests: XCTestCase {
             // Trasy z różnych krain, po kolei.
             let track = (i * 4) % Self.trackCount + 1
             let app = launch(["-autostartRace", "-autoNitro", "-track", "\(track)", "-carIndex", "\(i)"])
-            let car = wait(app, 60, { self.int($0, "speed") > 60 })?["car"] ?? "auto \(i)"
+            let started = wait(app, 60, { self.int($0, "speed") > 60 })
+            let car = started?["car"] ?? "auto \(i)"
+            XCTAssertEqual(started.map { int($0, "auto") }, 1, "\(car): auto-prowadzenie wyłączone")
             let finished = app.buttons["Jeszcze raz"].waitForExistence(timeout: 300)
             XCTAssertTrue(finished, "\(car) na trasie \(track): brak mety po 5 min — \(state(app))")
             shot(app, "meta-\(car)-trasa-\(track)")

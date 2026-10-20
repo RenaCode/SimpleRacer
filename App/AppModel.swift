@@ -113,11 +113,6 @@ final class AppModel {
             AudioManager.shared.soundOn = false
             save()
         }
-        // `-manualSteer` wyłącza auto-prowadzenie (testy sterowania ręcznego).
-        if ProcessInfo.processInfo.arguments.contains("-manualSteer") {
-            profile.autoSteer = false
-            save()
-        }
         if ProcessInfo.processInfo.arguments.contains("-autostartRace") { startRace() }
         // `-car <id>` wybiera auto (podgląd modeli w symulatorze).
         let args = ProcessInfo.processInfo.arguments

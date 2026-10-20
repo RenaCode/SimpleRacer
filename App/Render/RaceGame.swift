@@ -63,9 +63,10 @@ final class RaceGame {
     @ObservationIgnored private(set) var testNitros = 0
     @ObservationIgnored private(set) var testLeft = 0
     @ObservationIgnored private(set) var testRight = 0
+    @ObservationIgnored private(set) var testAutoSteer = true
     var testInfo: String {
         "drifts=\(testDrifts) nitros=\(testNitros) left=\(testLeft) right=\(testRight) speed=\(Int(hud.speedKmh)) paused=\(paused ? 1 : 0)"
-            + " lap=\(hud.lap) failed=\(buildFailed ? 1 : 0) cars=\(CarCatalog.all.count) car=\(player.def.id)"
+            + " lap=\(hud.lap) failed=\(buildFailed ? 1 : 0) cars=\(CarCatalog.all.count) car=\(player.def.id) auto=\(testAutoSteer ? 1 : 0)"
     }
     #endif
     @ObservationIgnored private let camera = PerspectiveCamera()
@@ -131,6 +132,9 @@ final class RaceGame {
                                            rng: SeededRandom(seed: UInt64(rng.next() * 1e15))))
         }
         // Gracz startuje z końca stawki i musi przebić się do przodu.
+        #if DEBUG || FAMILY
+        testAutoSteer = profile.autoSteer
+        #endif
         let playerControl: Controller = profile.autoSteer ? AutoSteerController(input: input) : PlayerController(input: input)
         entries.append(Entry(name: "Ty", def: playerCar, color: profile.colorHex,
                              isPlayer: true, controller: playerControl))
@@ -394,6 +398,7 @@ final class RaceGame {
                     toast("ROZBITY!", .bad)
                 }
             case let .wreck(car) where car === p:
+                debugLog(String(format: "gracz: rozbity przy %.0f km/h, d=%.2f m, czas %.1f s", car.speed * 3.6, car.d, sim.time))
                 shake = 1
                 Haptics.shared.pulse(intensity: 1, sharpness: 0.3, duration: 0.5)
                 AudioManager.shared.play(.crash)

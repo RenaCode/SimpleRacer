@@ -37,8 +37,11 @@ final class GameplayUITests: XCTestCase {
         XCTFail("\(what) — stan: \(app.staticTexts["test.player"].exists ? app.staticTexts["test.player"].label : "brak HUD")")
     }
 
-    private func raceStarted(_ app: XCUIApplication) {
+    /// Wyścig ruszył; `auto` — oczekiwane auto-prowadzenie (1 = domyślnie włączone). Sprawdzane, bo ustawienie
+    /// zapisane przez inny test zmieniłoby sens wszystkich kolejnych testów.
+    private func raceStarted(_ app: XCUIApplication, auto: Int = 1) {
         wait(app, timeout: 60, "auto się nie rozpędziło") { ($0["speed"] ?? 0) > 120 }
+        XCTAssertEqual(state(app)["auto"], auto, "auto-prowadzenie: oczekiwane \(auto)")
     }
 
     /// Przytrzymany DRIFT wprowadza auto w poślizg — z auto-prowadzeniem i bez skrętu.
@@ -53,7 +56,7 @@ final class GameplayUITests: XCTestCase {
     /// Bez auto-prowadzenia DRIFT też wprowadza auto w poślizg.
     func testDriftWithManualSteering() {
         let app = launch(["-manualSteer", "-autostartRace", "-track", "1"])
-        raceStarted(app)
+        raceStarted(app, auto: 0)
         let before = state(app)["drifts"] ?? 0
         app.buttons["Drift"].press(forDuration: 2)
         wait(app, timeout: 3, "DRIFT bez auto-prowadzenia nie wprowadził auta w poślizg") { ($0["drifts"] ?? 0) > before }

@@ -42,7 +42,13 @@ struct RaceScreen: View {
         progress = 0.9
         // 3. Budowa sceny (szybka — tekstury gotowe), 4. rozgrzewka pod zasłoną.
         try? await Task.sleep(for: .milliseconds(30)) // pasek zdąży się narysować
-        let g = RaceGame(profile: model.profile, spec: spec, playerCar: model.playerCar)
+        var profile = model.profile
+        #if DEBUG || FAMILY
+        // `-manualSteer`: wyścig bez auto-prowadzenia (testy UI). Tylko ten wyścig — nic nie trafia do profilu,
+        // inaczej następne uruchomienia (testy i gra na symulatorze) jeździłyby bez sterowania.
+        if ProcessInfo.processInfo.arguments.contains("-manualSteer") { profile.autoSteer = false }
+        #endif
+        let g = RaceGame(profile: profile, spec: spec, playerCar: model.playerCar)
         game = g
         while g.warmFrames < 20 { try? await Task.sleep(for: .milliseconds(30)) }
         progress = 1
