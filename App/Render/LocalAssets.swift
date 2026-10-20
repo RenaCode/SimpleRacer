@@ -229,6 +229,7 @@ final class LocalAssets {
                 let normalized = Self.normalized(entity, yawDegrees: e.yaw)
                 Self.markWheels(normalized, names: Set(e.wheels ?? []))
                 Self.tuneGlass(normalized, file: e.file)
+                if let ao = await CarAO.atlas(for: e.file, in: folder) { CarAO.apply(ao, to: normalized, file: e.file) }
                 // Setki prim USD sklejone w kilka siatek (nadwozie, lakier, cztery koła) — raz na model,
                 // klony aut współdzielą wynik. Gdy scalanie się nie uda, zostaje wzorzec bez zmian.
                 #if DEBUG || FAMILY
