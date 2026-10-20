@@ -50,9 +50,12 @@ targets:
           # impostorów (tools/make-impostors.swift) — do gry trafiają tylko ich zdjęcia (Commercial/impostors/).
           find "$SRC/Commercial" -maxdepth 1 -name '*.json' -exec cp {} "$DST/" \; 2>/dev/null || true
           find "$SRC/Commercial" -maxdepth 1 -name '*.usdz' -exec cp {} "$DST/" \; 2>/dev/null || true
+          # Atlasy AO aut (<model>-ao.png, tools/bake-ao.py) — razem z modelem, z tymi samymi ograniczeniami.
+          find "$SRC/Commercial" -maxdepth 1 -name '*-ao.png' -exec cp {} "$DST/" \; 2>/dev/null || true
           if [ -d "$SRC/Commercial/impostors" ]; then cp -R "$SRC/Commercial/impostors" "$DST/"; fi
           if [ "$CONFIGURATION" = "Debug" ] || [ "$CONFIGURATION" = "Family" ]; then
             find "$SRC/PrivateOnly" -name '*.usdz' -exec cp {} "$DST/" \; 2>/dev/null || true
+            find "$SRC/PrivateOnly" -name '*-ao.png' -exec cp {} "$DST/" \; 2>/dev/null || true
             [ -f "$SRC/PrivateOnly/cars.json" ] && cp "$SRC/PrivateOnly/cars.json" "$DST/cars-private.json"
           fi
           echo "Modele lokalne ($CONFIGURATION): $(ls "$DST" | tr '\n' ' ')"

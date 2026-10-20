@@ -11,6 +11,7 @@ import UIKit
 /// - każde z czterech kół osobno (`merged_wheel_N`, a jego lakierowane części `merged_paint_wheel_N`) —
 ///   koła rozpoznajemy tą samą regułą co `CarEntity.rigRealisticWheels` (nazwy i ćwiartka auta),
 ///   więc po scaleniu dalej obracają się wokół własnych osi.
+/// Drugi zestaw UV (bufor „UV1” z atlasem AO, `CarAO`) przechodzi do siatki scalonej bez zmian.
 /// W każdej siatce części o tym samym materiale łączymy w jedną część (jedno rysowanie na materiał).
 /// Wierzchołki przenosimy do układu wzorca: pozycje macierzą, normalne macierzą odwrotną transponowaną,
 /// styczne i binormalne macierzą 3×3; UV kopiujemy bez zmian. Kolejność wierzchołków w trójkątach zostaje
@@ -72,8 +73,10 @@ enum CarMeshMerge {
             var tangents: [SIMD3<Float>] = []
             var bitangents: [SIMD3<Float>] = []
             var uvs: [SIMD2<Float>] = []
+            var uv1s: [SIMD2<Float>] = []
             var indices: [UInt32] = []
             var hasUV = true
+            var hasUV1 = false
         }
         var groups: [Group] = []
         var index: [String: Int] = [:]
@@ -123,6 +126,12 @@ enum CarMeshMerge {
                         groups[gi].uvs += [SIMD2<Float>](repeating: .zero, count: pos.count)
                         groups[gi].hasUV = false
                     }
+                    if let uv1 = part[CarAO.uv1]?.elements, uv1.count == pos.count {
+                        groups[gi].uv1s += uv1
+                        groups[gi].hasUV1 = true
+                    } else {
+                        groups[gi].uv1s += [SIMD2<Float>](repeating: CarAO.unlitUV1, count: pos.count)
+                    }
                     groups[gi].indices += tri.map { base + $0 }
                 }
             }
@@ -137,6 +146,7 @@ enum CarMeshMerge {
                 p[MeshBuffers.tangents] = MeshBuffer(g.tangents)
                 p[MeshBuffers.bitangents] = MeshBuffer(g.bitangents)
                 p[MeshBuffers.textureCoordinates] = MeshBuffer(g.uvs)
+                if g.hasUV1 { p[CarAO.uv1] = MeshBuffer(g.uv1s) }
                 p.triangleIndices = MeshBuffer(g.indices)
                 parts.append(p)
             }

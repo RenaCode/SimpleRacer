@@ -175,7 +175,8 @@ Debug builds accept launch arguments for testing in the simulator:
 - `-logWheels` logs the parts found as wheels in each car model, `-showCredits` opens Settings on the credits list, `-raceAfter N` presses "Ścigaj się" after N seconds in the menu,
 - `-mute` turns music and sound effects off (simulator tests play through the Mac speakers),
 - `-rich` gives coins and stars (to look at the shop and unlocks), `-car <id>` picks and owns a car,
-- `-autoNitro` presses nitro every 4 s, `-toggleMuteAt N` toggles sound after N seconds.
+- `-autoNitro` presses nitro every 4 s, `-toggleMuteAt N` toggles sound after N seconds,
+- `-sideCam` puts the race camera low beside the player's car, `-noAO` turns off baked ambient occlusion.
 
 These and the timing logs work in Debug and Family builds, not in Release.
 
@@ -270,6 +271,18 @@ then joins all those meshes into one entity, so paint and wheels cannot be picke
 `tools/unskin-usdz.py in.usdz out.usdz` removes the skeleton and keeps the meshes in their rest pose.
 Cars whose file is present appear in the garage and among rivals; until a model has loaded, or when
 there is none, the car falls back to its Kenney model.
+
+**Baked ambient occlusion:** `tools/bake-ao.py` bakes the shadows a panorama and the sun's shadow map
+cannot give (wheel arches, sills, panel gaps, between the spokes) in Blender, without a window:
+`Blender -b --factory-startup --python tools/bake-ao.py -- <original.usdz> <out.usdz> <out-ao.png>`.
+The model's own UVs overlap and repeat, so every mesh gets a second UV set (one atlas per car) written
+into the USDZ as `primvars:st1`; the rest of the file stays as it was. The body is baked with the wheels
+around it, the wheels on their own (they spin, so the arch's shadow must not turn with them). The game
+loads `<model>-ao.png` next to the model and plugs it into the opaque materials'
+`ambientOcclusion` from the second UV set (`App/Render/CarAO.swift`); the build copies the atlas with
+the same Debug/Family/Release rules as its model. Bake from the original file and keep it outside the
+copied folders (e.g. `LocalModels/originals/`). `-noAO` turns the atlases off for a before/after
+comparison.
 
 **Licence gate:** the Release build runs `tools/check-licenses.py` on `LocalModels/Commercial` and
 fails when any car lacks `"commercial": true`, any licence is non-commercial (NC), no-derivatives (ND)
@@ -460,7 +473,7 @@ App/
                       sky lighting, race (RaceGame), garage preview
   Views/              SwiftUI: menu, garage, HUD, touch controls, results
 project.yml           XcodeGen project definition
-tools/                app icon, impostor renderers (Blender, SceneKit), HDR lighting (make-ibl)
+tools/                app icon, impostor renderers (Blender, SceneKit), HDR lighting (make-ibl), car AO baking (Blender)
 ```
 
 ## License
