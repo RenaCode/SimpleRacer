@@ -126,8 +126,7 @@ enum Buildings {
             Bundle.main.url(forResource: name, withExtension: "jpg").flatMap(SkyEnvironment.texture)
         }
         guard let color = tex("plinth"), let normal = tex("plinth-normal"),
-              let library = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary(),
-              var m = try? CustomMaterial(surfaceShader: .init(named: "plinthSurface", in: library), lightingModel: .lit)
+              var m = SceneShaders.material("plinthSurface")
         else { return nil }
         m.baseColor = .init(tint: .white, texture: .init(color))
         m.normal = .init(texture: .init(normal))

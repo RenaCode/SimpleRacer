@@ -206,9 +206,7 @@ enum TrackBuilder {
 
     /// Mur z shaderem `wallSurface` (Ground.metal): brud u podstawy, zacieki, a wg krainy mech, pył albo śnieg.
     private static func wallSurface(color: TextureResource, normal: TextureResource, region: Region, top: Float) -> CustomMaterial? {
-        guard let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary(),
-              var m = try? CustomMaterial(surfaceShader: .init(named: "wallSurface", in: library), lightingModel: .lit)
-        else { return nil }
+        guard var m = SceneShaders.material("wallSurface") else { return nil }
         m.baseColor = .init(tint: .white, texture: .init(color))
         m.normal = .init(texture: .init(normal))
         let style: Float = switch region {
