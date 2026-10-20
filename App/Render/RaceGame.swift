@@ -154,6 +154,7 @@ final class RaceGame {
             debugLog("wyścig: trasa zbudowana")
         } catch {
             debugLog("wyścig: BŁĄD budowy trasy: \(error)")
+            TrackBuilder.release() // częściowa scena nie zostaje w statycznych polach do następnej budowy
             buildFailed = true
         }
         #if DEBUG || FAMILY
@@ -305,7 +306,10 @@ final class RaceGame {
         let dt = min(rawDt, 0.05)
         frameDt = max(dt, 1.0 / 240)
         input.poll()
-        if paused {
+        // Pod ekranem ładowania pauza (wyjście z aplikacji, Esc) nie zatrzymuje rozgrzewki: ekran ładowania
+        // czeka na `warmFrames` i bez nich wisiał w nieskończoność, a przycisk „Graj dalej” był pod nim.
+        // Pauza zostaje ustawiona — po odsłonięciu sceny dziecko widzi menu pauzy.
+        if paused && !holdStart {
             _ = input.consumeNitro() // wciśnięcia z czasu pauzy nie odpalają nitro po wznowieniu
             AudioManager.shared.setEngine(speed: 0, nitro: false, running: false)
             return

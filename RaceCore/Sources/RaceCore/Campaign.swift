@@ -148,6 +148,14 @@ public enum Campaign {
         return open.first { (state.bestStars[$0.id] ?? 0) == 0 } ?? open.last ?? TrackCatalog.all[0]
     }
 
+    /// „Ścigaj się” dla danego auta: pierwsza niezaliczona trasa, na którą auto ma dość mocy (bez tego
+    /// przycisk i „Dalej” na wynikach wysyłały słabe auto na trasę, którą Kampania blokuje — rywale dostrojeni
+    /// do wymaganej mocy odjeżdżali). Gdy auto nie ma mocy na żadną otwartą — `nextTrack(state)`.
+    public static func nextTrack(_ state: CampaignState, car: CarDef) -> TrackSpec {
+        let open = TrackCatalog.all.filter { isUnlocked($0, state) && canRace(car, on: $0, state) }
+        return open.first { (state.bestStars[$0.id] ?? 0) == 0 } ?? open.last ?? nextTrack(state)
+    }
+
     /// Czy auto ma dość mocy na trasę.
     public static func canRace(_ def: CarDef, on spec: TrackSpec, _ state: CampaignState) -> Bool {
         rating(upgraded(def, in: state)) >= requiredRating(spec)
