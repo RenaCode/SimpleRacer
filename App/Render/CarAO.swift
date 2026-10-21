@@ -31,28 +31,34 @@ enum CarAO {
     /// Podpina atlas w materiałach nieprzezroczystych siatek, które mają UV1 (szyby zostają bez AO —
     /// przyciemniałyby się od wnętrza auta). Przed scaleniem siatek, żeby części z tym samym materiałem
     /// dalej się łączyły.
-    static func apply(_ atlas: TextureResource, to root: Entity, file: String) {
+    /// Kawałkami (`MainThreadSlices`): odczyt zawartości siatek kosztował w jednym ciągu do 250 ms na auto.
+    static func apply(_ atlas: TextureResource, to root: Entity, file: String) async {
         var texture = MaterialParameters.Texture(atlas)
         texture.uvIndex = 1
         var count = 0, skipped = 0
+        var models: [ModelEntity] = []
         func walk(_ e: Entity) {
-            if let m = e as? ModelEntity, var model = m.model {
-                let parts = model.mesh.contents.models.flatMap { Array($0.parts) }
-                if !parts.isEmpty, parts.allSatisfy({ $0[uv1] != nil }) {
-                    model.materials = model.materials.map { material in
-                        guard var p = material as? PhysicallyBasedMaterial, case .opaque = p.blending else { return material }
-                        p.ambientOcclusion = .init(texture: texture)
-                        return p
-                    }
-                    m.model = model
-                    count += 1
-                } else {
-                    skipped += 1
-                }
-            }
+            if let m = e as? ModelEntity, m.model != nil { models.append(m) }
             for c in e.children { walk(c) }
         }
         walk(root)
+        let slices = MainThreadSlices()
+        for m in models {
+            guard var model = m.model else { continue }
+            let parts = model.mesh.contents.models.flatMap { Array($0.parts) }
+            if !parts.isEmpty, parts.allSatisfy({ $0[uv1] != nil }) {
+                model.materials = model.materials.map { material in
+                    guard var p = material as? PhysicallyBasedMaterial, case .opaque = p.blending else { return material }
+                    p.ambientOcclusion = .init(texture: texture)
+                    return p
+                }
+                m.model = model
+                count += 1
+            } else {
+                skipped += 1
+            }
+            await slices.pause()
+        }
         debugLog("model: \(file) — AO: \(count) części" + (skipped > 0 ? ", bez UV1: \(skipped)" : ""))
     }
 }

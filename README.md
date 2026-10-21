@@ -472,6 +472,11 @@ Loading works the way game engines do it:
   pictogram and a real progress bar. The scene is built from the ready textures and renders its first
   frames under the cover (shader and effect warm-up). Only then does the countdown start, so there
   are no black screens and no hitches at the start.
+- Car models load two at a time, the player's car first and then the smallest files. A race waits
+  only for the player's car and as many cars as there are rivals (6 of the 9 on a cold start); the rest
+  wait until the race screen closes, because merging a model's meshes runs on the main thread.
+- Merging meshes and applying baked AO are split into slices of about 6 ms with a pause for a frame,
+  so the turntable in the menu and garage keeps turning while cars load.
 - Memory: the garage and one region at a time; preparing another region frees the previous one.
 
 ## Project layout

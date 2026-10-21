@@ -292,7 +292,7 @@ final class RaceGame {
         let ft = now - lastFrameAt
         raceClock += ft
         frameTimes.append(ft)
-        if ft > 0.025 && raceClock > 0.5 {
+        if ft > 0.025 && (raceClock > 0.5 || !holdStart) {
             debugLog(String(format: "klatka: przycięcie %.0f ms (%.1f s wyścigu, faza %@, s=%.0f m)", ft * 1000, raceClock, "\(phase)", player.s))
         }
         if frameTimes.count % 600 == 0 {
