@@ -128,4 +128,27 @@ final class PhysicsEdgeTests: XCTestCase {
         XCTAssertTrue(r.wrecked)
         XCTAssertEqual(out.map(\.attacker.name), ["P"])
     }
+
+    /// NITRO wciśnięte w trakcie rozbicia odpala się, gdy auto rusza (wcześniej wciśnięcie przepadało:
+    /// rozbite auto nie czytało wejścia, a wciśnięcie to jednorazowe zbocze).
+    func testNitroPressedWhileWreckedFiresOnRecovery() {
+        let track = TrackData.makeCityLoop()
+        let car = Car(name: "P", def: CarCatalog.builtIn[0], color: "#FFFFFF", isPlayer: true,
+                      startDistance: 100, startLane: 0, trackLength: track.length)
+        car.speed = 40
+        car.nitro.gauge = 1
+        car.wreck()
+        let dt = 1.0 / 120
+        car.step(dt: dt, input: CarInput(nitro: true), track: track)
+        XCTAssertEqual(car.nitro.mode, .off)
+        while car.wrecked { car.step(dt: dt, input: CarInput(), track: track) }
+        car.events.removeAll()
+        car.step(dt: dt, input: CarInput(), track: track)
+        XCTAssertEqual(car.nitro.mode, .normal)
+        XCTAssertTrue(car.events.contains { if case .nitro(.normal) = $0 { return true }; return false })
+        // Jedno wciśnięcie — jedno nitro: po wygaśnięciu nic nie odpala się drugi raz.
+        car.nitro.cancel()
+        car.step(dt: dt, input: CarInput(), track: track)
+        XCTAssertEqual(car.nitro.mode, .off)
+    }
 }

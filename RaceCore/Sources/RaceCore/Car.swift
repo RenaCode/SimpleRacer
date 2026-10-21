@@ -63,6 +63,8 @@ public final class Car {
     /// Ustawiane przez RaceSim: auto jedzie w cieniu aerodynamicznym rywala.
     public var slipstream = false
     public let nitro = Nitro()
+    /// NITRO wciśnięte w trakcie rozbicia — odpala się, gdy auto rusza (wciśnięcie to jednorazowe zbocze).
+    private var nitroQueued = false
     public var events: [CarEvent] = []
     /// Skręt z ostatniego kroku (−1…1, dodatnie = w lewo) — do skrętu przednich kół w chwili wciśnięcia,
     /// zanim auto zdąży zmienić tor jazdy.
@@ -100,11 +102,14 @@ public final class Car {
 
     public func step(dt: Double, input: CarInput, track: Track) {
         if wrecked {
+            if input.nitro { nitroQueued = true }
             stepWrecked(dt: dt, track: track)
             return
         }
 
-        if let started = nitro.update(dt: dt, pressed: input.nitro) {
+        let nitroPressed = input.nitro || nitroQueued
+        nitroQueued = false
+        if let started = nitro.update(dt: dt, pressed: nitroPressed) {
             events.append(.nitro(started))
             speed += Physics.nitroKick * (started == .shockwave ? 2 : started == .perfect ? 1.4 : 1)
         }
