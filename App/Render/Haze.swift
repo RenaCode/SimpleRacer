@@ -3,7 +3,7 @@ import RaceCore
 import RealityKit
 import UIKit
 
-/// Mgła powietrzna liczona w shaderach otoczenia (grunt, jezdnia, mury, budynki, rekwizyty): dalekie obiekty 3D
+/// Mgła powietrzna liczona w shaderach otoczenia (grunt, jezdnia, mury, budynki, rekwizyty, drzewa i fasady ze zdjęć): dalekie obiekty 3D
 /// bledną w stronę koloru horyzontu panoramy jak prawdziwe budynki i drzewa na zdjęciu za nimi.
 ///
 /// Dawniej mgła była w obróbce obrazu (RacePostEffect) i liczyła odległość z tekstury głębi — ale RealityKit
@@ -107,7 +107,9 @@ enum SceneShaders {
     private static let library: (any MTLLibrary)? = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary()
     private static var templates: [String: CustomMaterial] = [:]
 
-    static let names = ["groundSurface", "roadSurface", "wallSurface", "plinthSurface", "hazeSurface"]
+    static let names = ["groundSurface", "roadSurface", "wallSurface", "plinthSurface", "hazeSurface", "impostorSurface"]
+    /// Shadery bez oświetlenia (światło jest już w zdjęciu).
+    private static let unlit: Set = ["impostorSurface"]
 
     /// Kompiluje wszystkie shadery otoczenia po jednym na turę pętli — wołane na początku ekranu ładowania,
     /// kiedy wątek główny i tak czeka na tekstury wczytywane w tle (bez tego ~0,5 s doliczało się do budowy trasy).
@@ -118,10 +120,11 @@ enum SceneShaders {
         }
     }
 
-    /// Czysta kopia wzorca dla shadera powierzchni `name` (oświetlany); `nil`, gdy shadera brak.
+    /// Czysta kopia wzorca dla shadera powierzchni `name` (oświetlany, chyba że w `unlit`); `nil`, gdy shadera brak.
     static func material(_ name: String) -> CustomMaterial? {
         if let m = templates[name] { return m }
-        guard let library, let m = try? CustomMaterial(surfaceShader: .init(named: name, in: library), lightingModel: .lit)
+        guard let library,
+              let m = try? CustomMaterial(surfaceShader: .init(named: name, in: library), lightingModel: unlit.contains(name) ? .unlit : .lit)
         else { return nil }
         templates[name] = m
         return m

@@ -57,7 +57,8 @@ final class ImpostorLibrary {
     /// Czy są jakiekolwiek impostory danego rodzaju (wtedy krainy bez nich zostają puste zamiast kanciastych modeli).
     func has(_ kind: String) -> Bool { all.contains { $0.def.kind == kind } }
 
-    private var materials: [URL: UnlitMaterial] = [:]
+    /// Klucz: tekstura i mgła (ta sama tekstura w krainie z mgłą i bez niej to różne materiały).
+    private var materials: [String: any Material] = [:]
 
     /// Wzorzec materiału impostorów (wycinanie po progu 0,5), tworzony raz — zanim powstanie jakikolwiek
     /// widok 3D (`warmUp` z GaragePreview.init). Ustawienie progu kompiluje shader na wątku głównym;
@@ -85,8 +86,11 @@ final class ImpostorLibrary {
     }()
 
     /// Materiał bez cieniowania (światło jest już w zdjęciu) z wycinaniem po kanale alfa — bez sortowania przezroczystości.
-    func material(_ url: URL) -> UnlitMaterial? {
-        if let m = materials[url] { return m }
+    /// Na trasie z mgłą (`SceneHaze.current`) — shader z mgłą, jak reszta otoczenia.
+    func material(_ url: URL) -> (any Material)? {
+        let haze = SceneHaze.current
+        let key = "\(url.path)|\(haze.density > 0 ? haze.packed : 0)"
+        if let m = materials[key] { return m }
         // Zwykle tekstury są już gotowe (ScenePreloader wczytał je w tle); inaczej tworzymy je tu.
         let preloaded = ScenePreloader.shared
         let tex: TextureResource, opacity: TextureResource
@@ -100,12 +104,24 @@ final class ImpostorLibrary {
             else { return nil }
             (tex, opacity) = (t, o)
         }
-        // Kopia wzorca: próg ustawiamy raz, nie przy każdym materiale.
-        var m = Self.template
-        m.color = .init(tint: .white, texture: .init(tex, sampler: Self.sampler))
-        // Tekstura nieprzezroczystości czyta pierwszy kanał (czerwony), nie alfę — maskę robimy osobno.
-        m.blending = .transparent(opacity: .init(scale: 1, texture: .init(opacity, sampler: Self.sampler)))
-        materials[url] = m
+        let m: any Material
+        if haze.density > 0, var hazy = SceneShaders.material("impostorSurface") {
+            // Maska w teksturze `custom`: shader odrzuca piksele pod progiem, a materiał zostaje nieprzezroczysty.
+            // Wycinanie przez próg i przezroczystość w CustomMaterial rysowało impostory bez głębi —
+            // dalsze drzewa przykrywały bliższe krzaki.
+            hazy.baseColor = .init(tint: .white, texture: .init(tex))
+            hazy.emissiveColor = .init(color: haze.uiColor)
+            hazy.custom = .init(value: [haze.packed, 0, 0, 0], texture: .init(opacity))
+            m = hazy
+        } else {
+            // Kopia wzorca: próg ustawiamy raz, nie przy każdym materiale.
+            // Tekstura nieprzezroczystości czyta pierwszy kanał (czerwony), nie alfę — maskę robimy osobno.
+            var plain = Self.template
+            plain.color = .init(tint: .white, texture: .init(tex, sampler: Self.sampler))
+            plain.blending = .transparent(opacity: .init(scale: 1, texture: .init(opacity, sampler: Self.sampler)))
+            m = plain
+        }
+        materials[key] = m
         return m
     }
 

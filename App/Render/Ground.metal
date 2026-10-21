@@ -182,6 +182,26 @@ void hazeSurface(realitykit::surface_parameters params)
     params.surface().set_metallic(half(saturate(metal)));
 }
 
+// Impostor (drzewo, krzak, fasada ze zdjęcia; Impostors.swift) z mgłą: bez oświetlenia — światło jest już
+// w zdjęciu — więc kolor idzie w emisję, a mgła miesza go z barwą mgły wprost (bez kalibracji `hazeEmission`).
+// Maska w teksturze `custom` (kanał R): piksele pod progiem 0,5 odrzucane, materiał nieprzezroczysty — z głębią,
+// więc bliższy krzak zawsze zasłania dalsze drzewo. Kolor mgły w stałej emissive_color.
+// custom_parameter: x = mgła (hazeAmount).
+[[visible]]
+void impostorSurface(realitykit::surface_parameters params)
+{
+    constexpr sampler photo(address::clamp_to_edge, filter::linear, mip_filter::linear, max_anisotropy(8));
+    float4 p = params.uniforms().custom_parameter();
+    float2 uv = float2(params.geometry().uv0());
+    uv.y = 1.0 - uv.y;
+    float3 color = float3(params.textures().base_color().sample(photo, uv).rgb)
+        * float3(params.material_constants().base_color_tint());
+    float3 fog = float3(params.material_constants().emissive_color());
+    float f = hazeAmount(viewDistance(params), p.x);
+    params.surface().set_emissive_color(half3(mix(color, fog, f)));
+    if (params.textures().custom().sample(photo, uv).r < 0.5) { discard_fragment(); }
+}
+
 // Mur wzdłuż trasy: zdjęcie muru (kafel 2 m) i to, czym prawdziwa banda różni się od czystej tekstury —
 // brud i błoto rozchlapane przez koła przy podstawie, zacieki od deszczu spływające z korony, plamy
 // w skali kilkunastu metrów, a zależnie od krainy mech (las), pył (pustynia) albo śnieg na koronie i zaspa.
