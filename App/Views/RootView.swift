@@ -7,6 +7,9 @@ struct RootView: View {
     @State private var preview = GaragePreview()
     /// Splash przy starcie: zasłania menu, dopóki tło garażu i auto gracza nie są gotowe.
     @State private var splash = true
+    /// Menu przyjmuje dotyk (i jest widoczne dla dostępności) dopiero po wygaszeniu splasha — w czasie
+    /// 0,4 s animacji znikająca nakładka dalej przechwytuje dotyk.
+    @State private var menuReady = false
 
     var body: some View {
         ZStack {
@@ -29,9 +32,10 @@ struct RootView: View {
                 RaceScreen(model: model).id(id)
             }
         }
-        // Pod splashem menu już istnieje, ale dotyk trafia w splash — test UI widział przycisk „Garaż”
-        // i stukał w zasłonę (testMenuGarageCampaignRace: „po tapnięciu Garaż zostaje menu”).
-        .accessibilityHidden(splash)
+        // Pod splashem menu już istnieje, ale dotyk trafia w splash, także w trakcie jego wygaszania — test UI
+        // widział przycisk „Garaż” i stukał w zasłonę (testMenuGarageCampaignRace: „po tapnięciu Garaż zostaje menu”;
+        // nagranie testu: stuknięcie w 7,72 s, splash w połowie wygaszania).
+        .accessibilityHidden(!menuReady)
         .overlay {
             if splash { SplashView().transition(.opacity) }
         }
@@ -56,12 +60,14 @@ extension RootView {
         // Start prosto w wyścigu (argument testowy): splash znika, wyścig ma własny ekran ładowania.
         if case .race = model.screen {
             splash = false
+            menuReady = true
             await LocalAssets.shared.preload(first: model.profile.carId)
             return
         }
         // Start prosto w kampanii (argument testowy `-screen campaign`): sceny garażu nie ma, więc nie ma na co czekać.
         if model.screen == .campaign {
             splash = false
+            menuReady = true
             await LocalAssets.shared.preload(first: model.profile.carId)
             return
         }
@@ -76,7 +82,7 @@ extension RootView {
         }
         try? await Task.sleep(for: .milliseconds(150)) // klatka z autem zdąży się narysować
         debugLog(String(format: "start: menu gotowe po %.2f s", ProcessInfo.processInfo.systemUptime - start))
-        withAnimation(.easeOut(duration: 0.4)) { splash = false }
+        withAnimation(.easeOut(duration: 0.4)) { splash = false } completion: { menuReady = true }
         // Wyścig już się ładuje (np. -autostartRace) — on sam przygotuje swoją krainę.
         if case .race = model.screen { return }
         await ScenePreloader.shared.prepare(Campaign.nextTrack(model.campaign, car: model.car).region)
