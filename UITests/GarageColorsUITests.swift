@@ -21,6 +21,9 @@ final class GarageColorsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Gotowe"].waitForExistence(timeout: 60), "garaż się nie pokazał")
         // Kafelki aut: nazwa i „moc N” (w pełnej wersji wszystkie auta są kupione).
         let tiles = app.buttons.matching(NSPredicate(format: "label CONTAINS 'moc '"))
+        // Menu odsłania się dla dostępności po wygaszeniu splasha; kafelki siatki (LazyVGrid) dochodzą do drzewa
+        // chwilę po przycisku „Gotowe” — liczenie od razu dawało 0.
+        XCTAssertTrue(tiles.firstMatch.waitForExistence(timeout: 10), "brak kafelków aut")
         let count = tiles.count
         XCTAssertGreaterThanOrEqual(count, 2, "za mało aut w garażu")
         // Modele wczytują się w tle — chwila na wczytanie wszystkich przed serią.
