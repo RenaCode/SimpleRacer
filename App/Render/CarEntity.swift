@@ -420,7 +420,6 @@ final class CarEntity {
             let e = Entity()
             // Nad jezdnią: duże cząsteczki rodzące się nisko były ucinane przez asfalt prostą krawędzią.
             e.position = [sx * backWheelX, 0.45, backWheelZ - 0.5]
-            e.components.set(Self.smokeEmitter())
             root.addChild(e)
             smoke.append(e)
         }
@@ -439,42 +438,6 @@ final class CarEntity {
             let k = 1 - topTaper * max(0, (y - bottom) / (top - bottom))
             return [halfWidth * k * copysign(pow(abs(c), e), c), y, z]
         }
-    }
-
-    private static func smokeEmitter() -> ParticleEmitterComponent {
-        var p = ParticleEmitterComponent()
-        // Pudełko wydłużone do tyłu: cząsteczki rodzą się na całej drodze, którą koło przebyło w klatce,
-        // więc przy dużej prędkości smuga jest ciągła, a nie z osobnych kłębów.
-        p.emitterShape = .box
-        p.emitterShapeSize = [0.25, 0.05, 1.4]
-        p.birthLocation = .volume
-        p.speed = 0.8
-        p.speedVariation = 0.4
-        p.emissionDirection = [0, 1, 0]
-        p.particlesInheritTransform = false
-        // Mało, ale dużych i krótko żyjących cząsteczek: półprzezroczysty dym nakłada się na siebie
-        // przed kamerą i to on (nie płomień) przycinał obraz, gdy kilka aut driftowało naraz.
-        // Gęsta, rzadka smuga zamiast pojedynczych kłębów: dużo słabo kryjących cząsteczek, które rosną
-        // i rozmywają się w powietrzu (przy 200 km/h auto przejeżdża metr na klatkę).
-        p.mainEmitter.birthRate = 110
-        p.mainEmitter.lifeSpan = 0.8
-        p.mainEmitter.lifeSpanVariation = 0.25
-        p.mainEmitter.size = 0.6
-        p.mainEmitter.sizeVariation = 0.2
-        p.mainEmitter.sizeMultiplierAtEndOfLifespan = 2.8
-        p.mainEmitter.spreadingAngle = 0.8
-        // Dym unosi się, rosnąc — dolny brzeg kłębu nie schodzi pod asfalt.
-        p.mainEmitter.acceleration = [0, 0.9, 0]
-        p.mainEmitter.angleVariation = .pi
-        p.mainEmitter.angularSpeedVariation = 1.2
-        // Miękki, nieregularny kłąb zamiast domyślnego kwadratu (dym składał się z prostokątów).
-        p.mainEmitter.image = ParticleTextures.smoke
-        // Addytywnie: biały dym spod opon rozjaśnia tło miękko (patrz ParticleTextures).
-        p.mainEmitter.blendMode = .additive
-        p.mainEmitter.color = .constant(.single(UIColor(white: 0.5, alpha: 0.5)))
-        p.mainEmitter.opacityCurve = .linearFadeOut
-        p.isEmitting = false
-        return p
     }
 
     /// Kolor płomienia: niebieski (nitro), fioletowy (perfect), pomarańczowy (fala).
@@ -677,21 +640,26 @@ final class CarEntity {
     /// zauważalny koszt, a z daleka smugi i tak prawie nie widać.
     static let smokeRange: Float = 60
 
+    #if DEBUG || FAMILY
+    /// `-noSmoke`: drift bez dymu (pomiar kosztu A/B).
+    private static let smokeOff = ProcessInfo.processInfo.arguments.contains("-noSmoke")
+    #else
+    private static let smokeOff = false
+    #endif
+
     /// Dym spod tylnych kół. `viewer` — pozycja kamery (świat): auto dalej niż `smokeRange` nie dymi.
     func setSmoke(_ on: Bool, viewer: SIMD3<Float>? = nil) {
-        var on = on
+        var on = on && !Self.smokeOff
         if on, let viewer, simd_distance_squared(root.position(relativeTo: nil), viewer) > Self.smokeRange * Self.smokeRange {
             on = false
         }
         guard on != smoking else { return }
         debugLog("efekt: dym \(on)")
         smoking = on
-        for e in smoke {
-            guard var p = e.components[ParticleEmitterComponent.self] else { continue }
-            p.isEmitting = on
-            e.components.set(p)
-        }
     }
+
+    /// Punkty, z których teraz dymi (przy tylnych kołach; oś Z do tyłu auta) — kłęby rysuje `DriftSmoke`.
+    var smokeEmitters: [Entity] { smoking ? smoke : [] }
 
     func spinWheels(distance: Double) {
         let spin = simd_quatf(angle: Float(distance) / wheelRadius, axis: [1, 0, 0])

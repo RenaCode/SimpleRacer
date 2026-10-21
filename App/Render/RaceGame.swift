@@ -83,6 +83,7 @@ final class RaceGame {
     @ObservationIgnored private var lastYaw: [ObjectIdentifier: Double] = [:]
     @ObservationIgnored private var frameDt = 1.0 / 60
     @ObservationIgnored private let skidMarks = SkidMarks()
+    @ObservationIgnored private let driftSmoke = DriftSmoke()
     @ObservationIgnored private var cullTimer = 0.0
     @ObservationIgnored private var clock = 0.0
     @ObservationIgnored private var countdown = RaceConfig.countdown
@@ -201,6 +202,7 @@ final class RaceGame {
             ?? SkyEnvironment.skyDome(radius: 2000)
         root.addChild(skyDome)
         root.addChild(skidMarks.entity)
+        root.addChild(driftSmoke.entity)
         let pickupModel = Self.pickupModel()
         for p in sim.pickups {
             let e = pickupModel.clone(recursive: true)
@@ -291,7 +293,7 @@ final class RaceGame {
         raceClock += ft
         frameTimes.append(ft)
         if ft > 0.025 && raceClock > 0.5 {
-            debugLog(String(format: "klatka: przycięcie %.0f ms (%.1f s wyścigu, faza %@)", ft * 1000, raceClock, "\(phase)"))
+            debugLog(String(format: "klatka: przycięcie %.0f ms (%.1f s wyścigu, faza %@, s=%.0f m)", ft * 1000, raceClock, "\(phase)", player.s))
         }
         if frameTimes.count % 600 == 0 {
             let sorted = frameTimes.sorted()
@@ -494,6 +496,10 @@ final class RaceGame {
     /// `-shotAt`: zamrożony kadr do zrzutów porównawczych.
     @ObservationIgnored private var shotMode = false
     private static let sideCam = ProcessInfo.processInfo.arguments.contains("-sideCam")
+    /// `-noSkids`: drift bez śladów opon (pomiar kosztu A/B).
+    private static let skidsOff = ProcessInfo.processInfo.arguments.contains("-noSkids")
+    #else
+    private static let skidsOff = false
     #endif
 
     private func setVisible(_ e: Entity, _ visible: Bool) {
@@ -526,9 +532,10 @@ final class RaceGame {
             let rev = phase == .countdown && clock < 0.15
             e.setFlame(rev ? .normal : car.nitro.mode)
             e.setSmoke((rev && clock < 0.05) || car.drifting, viewer: camera.position)
+            driftSmoke.emit(from: e.smokeEmitters, dt: Float(frameDt))
             e.spinWheels(distance: pose.distance)
             // Ślady opon: w drifcie, gdy auto jest blisko gracza (dalej i tak ich nie widać).
-            if abs(wrapDelta(car.s, playerS, sim.track.length)) < 80 {
+            if abs(wrapDelta(car.s, playerS, sim.track.length)) < 80 && !Self.skidsOff {
                 let base = cars.firstIndex { $0.0 === car }.map { $0 * 4 } ?? 0
                 for (i, p) in e.rearContacts().enumerated() {
                     skidMarks.track(key: base + i, at: p, active: car.drifting && !car.wrecked && car.speed > 8)
@@ -536,6 +543,7 @@ final class RaceGame {
             }
         }
         skidMarks.flush(dt: frameDt)
+        driftSmoke.update(dt: Float(frameDt), camera: camera)
         // Otoczenie: co 0,2 s ukrywamy obiekty dalej niż 320 m po trasie (bliżej przed autem widać dalej).
         cullTimer -= frameDt
         if cullTimer <= 0 {
