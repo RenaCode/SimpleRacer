@@ -425,8 +425,12 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
 - **Speed lines:** thin streaks at the screen edges during nitro and above 260 km/h.
 - **Smooth motion:** physics runs at a fixed 120 Hz; the render interpolates cars between the last
   two physics steps, so motion is even at any refresh rate (no stop-then-jump frames).
-- **Post-processing (iOS 26+):** a `PostProcessEffect` adds bloom on bright spots, aerial fog read
-  from the depth buffer (tinted with the panorama's horizon colour), a gentle tone curve,
+- **Aerial haze:** distant scenery fades towards the panorama's horizon colour. It is computed in the
+  scenery's own material shaders (`Haze.swift`, `Ground.metal`) — ground, road, walls, buildings,
+  props and the photo impostors of trees and facades — because RealityKit hands post-processing an
+  empty depth buffer. `-haze density,range` tunes it in test builds (`-haze 0.99,20` must fog the
+  whole frame) and `-noHaze` turns it off.
+- **Post-processing (iOS 26+):** a `PostProcessEffect` adds bloom on bright spots, a gentle tone curve,
   saturation, vignette and dither; plus MSAA 4×. Shaders compile in the background at launch.
   `-noPostFX` / `-noMSAA` turn them off in test builds. RealityKit hands this effect an 8-bit sRGB
   image that is already tone mapped, so it cannot tell a sun highlight from a white cloud.
