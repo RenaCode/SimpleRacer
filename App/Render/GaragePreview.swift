@@ -149,7 +149,31 @@ final class GaragePreview {
         placeFloor()
     }
 
+    #if DEBUG || FAMILY
+    /// Płynność menu i garażu: przycięcia > 25 ms i podsumowanie co 600 klatek (jak w wyścigu).
+    private var frameTimes: [Double] = []
+    private var lastFrameAt = 0.0
+
+    private func recordFrame() {
+        let now = ProcessInfo.processInfo.systemUptime
+        defer { lastFrameAt = now }
+        guard lastFrameAt > 0 else { return }
+        let ft = now - lastFrameAt
+        frameTimes.append(ft)
+        if ft > 0.025 { debugLog(String(format: "menu: przycięcie %.0f ms", ft * 1000)) }
+        if frameTimes.count % 600 == 0 {
+            let sorted = frameTimes.sorted()
+            debugLog(String(format: "menu: klatki %d, p95 %.1f ms, max %.0f ms, przycięć %d", sorted.count,
+                            sorted[Int(Double(sorted.count) * 0.95)] * 1000, sorted.last! * 1000,
+                            frameTimes.filter { $0 > 0.025 }.count))
+        }
+    }
+    #endif
+
     func update(dt: Double) {
+        #if DEBUG || FAMILY
+        recordFrame()
+        #endif
         angle += Float(dt) * 0.5
         turntable.orientation = simd_quatf(angle: angle, axis: [0, 1, 0])
     }

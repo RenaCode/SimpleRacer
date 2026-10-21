@@ -65,6 +65,15 @@ final class LocalAssets {
     /// Ile realistycznych modeli już się wczytało; widoki odświeżają się, gdy rośnie.
     private(set) var loadedCount = 0
     private(set) var loadingDone = false
+    /// Trwa wyścig: dalsze auta czekają z wczytaniem. Scalanie siatek modelu idzie na wątku głównym
+    /// (do 0,6 s) i w czasie jazdy dawało przycięcia; dokończą się po powrocie do menu.
+    /// Licznik, nie flaga: przy „Od nowa” nowy ekran wyścigu startuje, zanim stary zniknie.
+    @ObservationIgnored var racesShowing = 0
+    /// Ekran wyścigu jest otwarty i ma już auta, których potrzebuje — kolejne nie startują. Liczone od wejścia
+    /// na ekran ładowania: auto zaczęte wtedy kończyło `Entity(contentsOf:)` (też wątek główny) już po
+    /// odsłonięciu sceny i dawało przycięcie ~90 ms na starcie wyścigu.
+    var raceInProgress: Bool { racesShowing > 0 && loadedCount >= raceCarCount }
+    private var raceCarCount: Int { max(1, min(cars.count, RaceConfig.opponents + 1)) }
     @ObservationIgnored private(set) var cars: [LocalCarEntry] = []
     @ObservationIgnored private(set) var templates: [String: Entity] = [:]
     @ObservationIgnored private(set) var sceneryEntries: [SceneryEntry] = []
@@ -140,6 +149,12 @@ final class LocalAssets {
         return "Pewnie trzyma się zakrętów i świetnie driftuje."
     }
 
+    /// Wyścig może ruszyć bez czekania na całą listę: wystarczy auto gracza i tyle aut, ile jest rywali
+    /// (ich wygląd losujemy z wczytanych). Na zimnym starcie to ok. 6 z 9 modeli.
+    func readyForRace(player: CarDef) -> Bool {
+        loadingDone || (isLoaded(player) && loadedCount >= raceCarCount)
+    }
+
     func isLoaded(_ def: CarDef) -> Bool {
         def.realistic.map { templates[$0.file] != nil } ?? true
     }
@@ -159,11 +174,25 @@ final class LocalAssets {
             // Od razu, bo lista autorów może się otworzyć, zanim wczytają się auta.
             sceneryEntries = Self.sceneryEntries(in: folder)
         }
-        let ordered = cars.sorted { a, _ in a.id == first }
+        // Auto gracza pierwsze, reszta od najmniejszego pliku — wyścig rusza po 6 wczytanych autach.
+        func size(_ e: LocalCarEntry) -> Int {
+            (try? folder.appendingPathComponent(e.file).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        }
+        let rest = cars.filter { $0.id != first }.map { ($0, size($0)) }.sorted { $0.1 < $1.1 }.map(\.0)
+        let ordered = cars.filter { $0.id == first } + rest
         if let head = ordered.first { await load(head, from: folder) }
+        // Po dwa naraz: jedno auto czyta się z dysku w tle, gdy drugie scala siatki na wątku głównym.
+        // Wszystkie naraz kończyły wczytywanie w przypadkowych chwilach — także już w trakcie wyścigu,
+        // a koniec `Entity(contentsOf:)` też zajmuje wątek główny (przycięcia ~90 ms po odsłonięciu sceny).
         await withTaskGroup(of: Void.self) { group in
+            var running = 0
             for e in ordered.dropFirst() {
+                if running == 2 {
+                    await group.next()
+                    running -= 1
+                }
                 group.addTask { await self.load(e, from: folder) }
+                running += 1
             }
         }
         if Self.sceneryEnabled { await preloadScenery(from: folder) }
@@ -222,14 +251,18 @@ final class LocalAssets {
 
     private func load(_ e: LocalCarEntry, from folder: URL) async {
         guard templates[e.file] == nil else { return }
+        while raceInProgress { try? await Task.sleep(for: .milliseconds(250)) }
         // Druga próba po chwili: przy dużym obciążeniu wczytywanie USDZ potrafi się nie udać za pierwszym razem.
         for attempt in 1...2 {
             do {
                 let entity = try await Entity(contentsOf: folder.appendingPathComponent(e.file))
+                // Wczytanie trwa — w tym czasie mógł ruszyć wyścig.
+                if raceInProgress { debugLog("model: \(e.file) czeka na koniec wyścigu") }
+                while raceInProgress { try? await Task.sleep(for: .milliseconds(250)) }
                 let normalized = Self.normalized(entity, yawDegrees: e.yaw)
                 Self.markWheels(normalized, names: Set(e.wheels ?? []))
                 Self.tuneGlass(normalized, file: e.file)
-                if let ao = await CarAO.atlas(for: e.file, in: folder) { CarAO.apply(ao, to: normalized, file: e.file) }
+                if let ao = await CarAO.atlas(for: e.file, in: folder) { await CarAO.apply(ao, to: normalized, file: e.file) }
                 // Setki prim USD sklejone w kilka siatek (nadwozie, lakier, cztery koła) — raz na model,
                 // klony aut współdzielą wynik. Gdy scalanie się nie uda, zostaje wzorzec bez zmian.
                 #if DEBUG || FAMILY
@@ -238,7 +271,7 @@ final class LocalAssets {
                 let noMerge = false
                 #endif
                 let t0 = ProcessInfo.processInfo.systemUptime
-                let merged = noMerge ? nil : CarMeshMerge.merge(normalized, paintNames: Set(e.paint), file: e.file)
+                let merged = noMerge ? nil : await CarMeshMerge.merge(normalized, paintNames: Set(e.paint), file: e.file)
                 if merged != nil {
                     debugLog(String(format: "model: %@ scalanie %.0f ms", e.file, (ProcessInfo.processInfo.systemUptime - t0) * 1000))
                 }

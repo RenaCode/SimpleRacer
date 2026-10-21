@@ -22,7 +22,9 @@ enum CarMeshMerge {
     static let paintPrefix = "merged_paint"
 
     /// Zwraca nowy wzorzec (te same współrzędne co `template`) albo nil, gdy scalanie się nie udało.
-    static func merge(_ template: Entity, paintNames: Set<String>, file: String) -> Entity? {
+    /// Części zbiera kawałkami (`MainThreadSlices`): w jednym ciągu blokowało to wątek główny na 40–510 ms
+    /// i obrotnica w menu stawała przy każdym wczytanym aucie.
+    static func merge(_ template: Entity, paintNames: Set<String>, file: String) async -> Entity? {
         let wheelGroups = CarEntity.realisticWheelGroups(template, space: template)
         var wheelOf: [ObjectIdentifier: Int] = [:]
         for (i, g) in (wheelGroups ?? []).enumerated() {
@@ -32,19 +34,25 @@ enum CarMeshMerge {
         struct Key: Hashable { var wheel: Int; var paint: Bool }
         var buckets: [Key: Bucket] = [:]
         var sourceCount = 0
+        // Najpierw sama lista siatek (tanie przejście po drzewie), potem praca nad każdą z przerwami na klatkę.
+        var sources: [(ModelEntity, Bool)] = []
         func walk(_ e: Entity, inPaint: Bool) {
             let paint = inPaint || paintNames.contains(e.name)
-            if let m = e as? ModelEntity, m.isEnabled, let model = m.model {
-                sourceCount += 1
-                let wheel = wheelOf[ObjectIdentifier(m)] ?? -1
-                // Część koła lakierujemy tylko wymienioną z nazwy — opona podpięta w pliku pod lakierowaną
-                // karoserię dziedziczyła lakier (czerwona opona SLS).
-                let key = Key(wheel: wheel, paint: wheel >= 0 ? paintNames.contains(e.name) : paint)
-                buckets[key, default: Bucket()].add(model, transform: m.transformMatrix(relativeTo: template))
-            }
+            if let m = e as? ModelEntity, m.isEnabled, m.model != nil { sources.append((m, paint)) }
             for c in e.children { walk(c, inPaint: paint) }
         }
         walk(template, inPaint: false)
+        let slices = MainThreadSlices()
+        for (m, paint) in sources {
+            guard let model = m.model else { continue }
+            sourceCount += 1
+            let wheel = wheelOf[ObjectIdentifier(m)] ?? -1
+            // Część koła lakierujemy tylko wymienioną z nazwy — opona podpięta w pliku pod lakierowaną
+            // karoserię dziedziczyła lakier (czerwona opona SLS).
+            let key = Key(wheel: wheel, paint: wheel >= 0 ? paintNames.contains(m.name) : paint)
+            buckets[key, default: Bucket()].add(model, transform: m.transformMatrix(relativeTo: template))
+            await slices.pause()
+        }
 
         let root = Entity()
         root.name = template.name
@@ -250,4 +258,18 @@ enum CarMeshMerge {
 private func safeNormalize(_ v: SIMD3<Float>) -> SIMD3<Float> {
     let l = simd_length(v)
     return l > 1e-12 ? v / l : [0, 1, 0]
+}
+
+/// Długa praca na wątku głównym w kawałkach: po `budget` sekund oddaje wątek na chwilę, żeby RealityKit
+/// narysował klatkę (sam `Task.yield()` nie gwarantuje obrotu pętli zdarzeń).
+@MainActor
+final class MainThreadSlices {
+    private static let budget = 0.006
+    private var sliceStart = ProcessInfo.processInfo.systemUptime
+
+    func pause() async {
+        guard ProcessInfo.processInfo.systemUptime - sliceStart > Self.budget else { return }
+        try? await Task.sleep(for: .milliseconds(1))
+        sliceStart = ProcessInfo.processInfo.systemUptime
+    }
 }

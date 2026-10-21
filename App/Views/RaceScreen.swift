@@ -9,6 +9,8 @@ struct RaceScreen: View {
     @State private var game: RaceGame?
     @State private var revealed = false
     @State private var progress = 0.0
+    /// Ten ekran wstrzymał wczytywanie dalszych aut (`LocalAssets.racesShowing`).
+    @State private var holdsAssets = false
 
     var body: some View {
         ZStack {
@@ -22,6 +24,14 @@ struct RaceScreen: View {
         }
         .background(Color.black)
         .task { await load() }
+        // Dopiero po wyjściu: na ekranie wyników scalanie modelu (wątek główny) zamrażało go na 0,5–0,7 s.
+        .onDisappear { releaseAssets() }
+    }
+
+    private func releaseAssets() {
+        guard holdsAssets else { return }
+        holdsAssets = false
+        LocalAssets.shared.racesShowing -= 1
     }
 
     /// Ładowanie jak w silnikach gier: ekran ładowania od razu, ciężka praca w tle z prawdziwym postępem,
@@ -34,8 +44,14 @@ struct RaceScreen: View {
         // 1. Auta (0–45%) i 2. tekstury krainy (45–90%) — równolegle.
         async let sceneryDone: Void = scenery.prepare(spec.region)
         await SceneShaders.warmUp()
-        while !assets.loadingDone || !scenery.isReady(spec.region) {
-            let cars = assets.cars.isEmpty ? 1 : Double(assets.loadedCount) / Double(assets.cars.count)
+        if !holdsAssets {
+            holdsAssets = true
+            assets.racesShowing += 1
+        }
+        let player = model.playerCar
+        let needed = Double(max(1, min(assets.cars.count, RaceConfig.opponents + 1)))
+        while !assets.readyForRace(player: player) || !scenery.isReady(spec.region) {
+            let cars = assets.loadingDone ? 1 : Double(assets.loadedCount) / needed
             progress = 0.45 * min(1, cars) + 0.45 * (scenery.isReady(spec.region) ? 1 : scenery.progress)
             try? await Task.sleep(for: .milliseconds(50))
         }
