@@ -51,6 +51,7 @@ public enum Collisions {
 
                 let shockA = a.nitro.mode == .shockwave
                 let shockB = b.nitro.mode == .shockwave
+                let playerShock = (shockA && a.isPlayer) || (shockB && b.isPlayer)
 
                 if overD < overS {
                     // Kontakt bokiem. sign > 0: a jest po lewej od b.
@@ -59,7 +60,10 @@ public enum Collisions {
                     b.d -= sign * overD / 2
                     let aPush = -sign * a.lateralSpeed
                     let bPush = sign * b.lateralSpeed
-                    let attackerIsA = aPush >= bPush
+                    // Fala gracza rozbija przy każdym styku — napastnikiem jest gracz, nawet gdy to rywal pcha
+                    // mocniej (inaczej gracz w fali zostawał „ofiarą”, której nic się nie dzieje). Fala rywala
+                    // nie zmienia wyboru: rywal i tak gracza nie rozbija, a mocniej pchający gracz dalej rozbija rywala.
+                    let attackerIsA = playerShock ? a.isPlayer : aPush >= bPush
                     let attacker = attackerIsA ? a : b
                     let victim = attackerIsA ? b : a
                     if aPush + bPush > Physics.sideSlamSpeed || (attackerIsA ? shockA : shockB) {
@@ -78,7 +82,10 @@ public enum Collisions {
                     shift(back, -overS / 2)
                     let delta = back.speed - front.speed
                     let backShock = frontIsA ? shockB : shockA
-                    if delta > Physics.rearTakedownDelta || (backShock && delta > 0) {
+                    if playerShock && front.isPlayer && delta > 0 {
+                        // Rywal, który wjeżdża w tył gracza w fali, rozbija się.
+                        takedown(front, back)
+                    } else if delta > Physics.rearTakedownDelta || (backShock && delta > 0) {
                         takedown(back, front)
                     } else if delta > 0 {
                         let v = (back.speed + front.speed) / 2
