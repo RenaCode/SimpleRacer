@@ -167,31 +167,54 @@ final class DriftSmoke {
             return
         }
         let q = camera.orientation(relativeTo: nil)
-        let right = q.act([1, 0, 0]), up = q.act([0, 1, 0]), toCamera = q.act([0, 0, 1])
-        var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
-        let steps = Float(Self.fadeSteps)
-        mesh.withUnsafeMutableBytes(bufferIndex: 0) { raw in
+        let basis = Basis(right: q.act(SIMD3<Float>(1, 0, 0)), up: q.act(SIMD3<Float>(0, 1, 0)),
+                          toCamera: q.act(SIMD3<Float>(0, 0, 1)))
+        var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
+        var hi = -lo
+        let puffs = self.puffs
+        mesh.withUnsafeMutableBytes(bufferIndex: 0) { (raw: UnsafeMutableRawBufferPointer) in
             let v = raw.bindMemory(to: Vertex.self)
-            for (k, p) in puffs.enumerated() {
-                let t = p.age / p.life
-                // Rozmiar rośnie liniowo do `sizeAtEnd`; promień = połowa boku.
-                let r = p.size * (1 + (Self.sizeAtEnd - 1) * t) * 0.5
-                let c = cos(p.angle), s = sin(p.angle)
-                let a = (right * c + up * s) * r, b = (up * c - right * s) * r
-                // Wygasanie liniowe: kopia paska o gęstości 1 − t.
-                let cell = min(steps - 1, (t * steps).rounded(.down))
-                let u0 = cell / steps, u1 = (cell + 1) / steps
-                let corners = [(p.position - a - b, u0, Float(1)), (p.position + a - b, u1, Float(1)),
-                               (p.position + a + b, u1, Float(0)), (p.position - a + b, u0, Float(0))]
-                for (j, corner) in corners.enumerated() {
-                    v[k * 4 + j] = Vertex(px: corner.0.x, py: corner.0.y, pz: corner.0.z,
-                                          nx: toCamera.x, ny: toCamera.y, nz: toCamera.z, u: corner.1, v: corner.2)
-                }
-                lo = simd_min(lo, p.position - r * 1.5)
-                hi = simd_max(hi, p.position + r * 1.5)
+            for k in puffs.indices {
+                let r = Self.write(puffs[k], basis: basis, into: v, slot: k)
+                let margin = SIMD3<Float>(repeating: r * 1.5)
+                lo = simd_min(lo, puffs[k].position - margin)
+                hi = simd_max(hi, puffs[k].position + margin)
             }
         }
         mesh.parts.replaceAll([LowLevelMesh.Part(indexCount: puffs.count * 6, bounds: BoundingBox(min: lo, max: hi))])
         if !entity.isEnabled { entity.isEnabled = true }
+    }
+
+    /// Osie kamery w świecie (billboardy leżą w płaszczyźnie `right`/`up`).
+    private struct Basis {
+        var right: SIMD3<Float>
+        var up: SIMD3<Float>
+        var toCamera: SIMD3<Float>
+    }
+
+    /// Czworokąt kłębu w miejscu `slot`; zwraca promień kłębu (do granic siatki).
+    /// Rozbite na proste wyrażenia: jedno długie przekraczało limit czasu kontroli typów kompilatora na CI.
+    private static func write(_ p: Puff, basis: Basis, into v: UnsafeMutableBufferPointer<Vertex>, slot: Int) -> Float {
+        let t: Float = p.age / p.life
+        // Rozmiar rośnie liniowo do `sizeAtEnd`; promień = połowa boku.
+        let r: Float = p.size * (1 + (sizeAtEnd - 1) * t) * 0.5
+        let c: Float = cos(p.angle)
+        let s: Float = sin(p.angle)
+        let a: SIMD3<Float> = (basis.right * c + basis.up * s) * r
+        let b: SIMD3<Float> = (basis.up * c - basis.right * s) * r
+        // Wygasanie liniowe: kopia paska o gęstości 1 − t.
+        let steps = Float(fadeSteps)
+        let cell: Float = min(steps - 1, (t * steps).rounded(.down))
+        let u0: Float = cell / steps
+        let u1: Float = (cell + 1) / steps
+        let n = basis.toCamera
+        func put(_ j: Int, _ pos: SIMD3<Float>, _ u: Float, _ w: Float) {
+            v[slot * 4 + j] = Vertex(px: pos.x, py: pos.y, pz: pos.z, nx: n.x, ny: n.y, nz: n.z, u: u, v: w)
+        }
+        put(0, p.position - a - b, u0, 1)
+        put(1, p.position + a - b, u1, 1)
+        put(2, p.position + a + b, u1, 0)
+        put(3, p.position - a + b, u0, 0)
+        return r
     }
 }
