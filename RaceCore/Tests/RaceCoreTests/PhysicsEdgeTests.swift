@@ -76,4 +76,56 @@ final class PhysicsEdgeTests: XCTestCase {
         sim.advance()
         for car in sim.cars { XCTAssertLessThanOrEqual(abs(car.d), limit + 1e-9, car.name) }
     }
+
+    /// Włącza falę uderzeniową (dwa szybkie wciśnięcia NITRO przy pełnym pasku).
+    private func shockwave(_ car: Car) {
+        car.nitro.gauge = 1
+        car.nitro.update(dt: 0.01, pressed: true)
+        car.nitro.update(dt: 0.01, pressed: true)
+        XCTAssertEqual(car.nitro.mode, .shockwave)
+    }
+
+    /// Fala uderzeniowa rozbija rywala przy każdym styku — także gdy to rywal ociera się bokiem mocniej
+    /// (wcześniej „napastnikiem” zostawał ten, kto mocniej pcha, i gracz kończył jako ofiara, której nic się nie dzieje).
+    func testPlayerShockwaveWrecksRivalRubbingHarder() {
+        let len = 2000.0
+        let def = CarCatalog.builtIn[0]
+        let p = Car(name: "P", def: def, color: "#FFFFFF", isPlayer: true, startDistance: 100, startLane: 0, trackLength: len)
+        let r = Car(name: "R", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 0, trackLength: len)
+        p.speed = 40; r.speed = 40
+        p.d = 0; r.d = def.shape.width - 0.2 // r po lewej, styk bokiem
+        p.alphaVel = 0; r.alphaVel = -0.1 // rywal zjeżdża na gracza, gracz jedzie prosto
+        shockwave(p)
+        let out = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertTrue(r.wrecked)
+        XCTAssertFalse(p.wrecked)
+        XCTAssertEqual(out.map(\.victim.name), ["R"])
+    }
+
+    /// To samo przy najechaniu od tyłu: rywal, który wjeżdża w gracza w fali, rozbija się.
+    func testPlayerShockwaveWrecksRivalRammingFromBehind() {
+        let len = 2000.0
+        let def = CarCatalog.builtIn[0]
+        let p = Car(name: "P", def: def, color: "#FFFFFF", isPlayer: true, startDistance: 104, startLane: 0, trackLength: len)
+        let r = Car(name: "R", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 0, trackLength: len)
+        p.speed = 40; r.speed = 45
+        shockwave(p)
+        let out = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertTrue(r.wrecked)
+        XCTAssertFalse(p.wrecked)
+        XCTAssertEqual(out.map(\.attacker.name), ["P"])
+    }
+
+    /// Fala rywala nie odbiera graczowi takedownu: gracz wjeżdżający mocno w rywala w fali dalej go rozbija.
+    func testRivalShockwaveDoesNotStopPlayerTakedown() {
+        let len = 2000.0
+        let def = CarCatalog.builtIn[0]
+        let r = Car(name: "R", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 104, startLane: 0, trackLength: len)
+        let p = Car(name: "P", def: def, color: "#FFFFFF", isPlayer: true, startDistance: 100, startLane: 0, trackLength: len)
+        r.speed = 20; p.speed = 50
+        shockwave(r)
+        let out = Collisions.resolve([r, p], trackLength: len)
+        XCTAssertTrue(r.wrecked)
+        XCTAssertEqual(out.map(\.attacker.name), ["P"])
+    }
 }
