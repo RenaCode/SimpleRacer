@@ -33,6 +33,7 @@ struct RaceScreen: View {
         let spec = model.track
         // 1. Auta (0–45%) i 2. tekstury krainy (45–90%) — równolegle.
         async let sceneryDone: Void = scenery.prepare(spec.region)
+        await SceneShaders.warmUp()
         while !assets.loadingDone || !scenery.isReady(spec.region) {
             let cars = assets.cars.isEmpty ? 1 : Double(assets.loadedCount) / Double(assets.cars.count)
             progress = 0.45 * min(1, cars) + 0.45 * (scenery.isReady(spec.region) ? 1 : scenery.progress)

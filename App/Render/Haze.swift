@@ -53,8 +53,8 @@ struct SceneHaze {
     @MainActor static func apply(_ pbr: PhysicallyBasedMaterial) -> (any Material)? {
         let haze = current
         // Przezroczyste i wycinane (banery, szyby) zostają przy swoim materiale.
-        guard haze.density > 0, pbr.opacityThreshold == nil, case .opaque = pbr.blending, let library = Self.library,
-              var m = try? CustomMaterial(surfaceShader: .init(named: "hazeSurface", in: library), lightingModel: .lit)
+        guard haze.density > 0, pbr.opacityThreshold == nil, case .opaque = pbr.blending,
+              var m = SceneShaders.material("hazeSurface")
         else { return nil }
         m.baseColor = .init(tint: pbr.baseColor.tint, texture: pbr.baseColor.texture.map { .init($0.resource) })
         var flags: Float = 0
@@ -96,5 +96,34 @@ struct SceneHaze {
         m.emissiveColor = .init(color: current.uiColor)
     }
 
-    @MainActor private static let library: (any MTLLibrary)? = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary()
+}
+
+/// Materiały z własnymi shaderami otoczenia (Ground.metal). Biblioteka Metal wczytuje się raz, a każdy shader
+/// kompiluje się w jednym wzorcu `CustomMaterial` — kolejne materiały są jego kopiami (struktura; kopia
+/// dzieli skompilowany shader). Wcześniej każdy materiał wczytywał bibliotekę i budował shader od nowa:
+/// budowa trasy z mgłą trwała 1,3 s zamiast 0,7 s (45 materiałów z mgłą + jezdnia i mury).
+@MainActor
+enum SceneShaders {
+    private static let library: (any MTLLibrary)? = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary()
+    private static var templates: [String: CustomMaterial] = [:]
+
+    static let names = ["groundSurface", "roadSurface", "wallSurface", "plinthSurface", "hazeSurface"]
+
+    /// Kompiluje wszystkie shadery otoczenia po jednym na turę pętli — wołane na początku ekranu ładowania,
+    /// kiedy wątek główny i tak czeka na tekstury wczytywane w tle (bez tego ~0,5 s doliczało się do budowy trasy).
+    static func warmUp() async {
+        for name in names where templates[name] == nil {
+            _ = material(name)
+            await Task.yield()
+        }
+    }
+
+    /// Czysta kopia wzorca dla shadera powierzchni `name` (oświetlany); `nil`, gdy shadera brak.
+    static func material(_ name: String) -> CustomMaterial? {
+        if let m = templates[name] { return m }
+        guard let library, let m = try? CustomMaterial(surfaceShader: .init(named: name, in: library), lightingModel: .lit)
+        else { return nil }
+        templates[name] = m
+        return m
+    }
 }

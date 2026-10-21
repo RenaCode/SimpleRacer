@@ -228,9 +228,7 @@ struct GroundMaterial {
     /// panoramy, w który przechodzi w oddali.
     @MainActor static func make(_ tex: TextureResource, tile: Float = tile, fadeStart: Float = fadeStart,
                      colorScale: SIMD3<Float> = [1, 1, 1]) -> GroundMaterial? {
-        guard let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary(),
-              var m = try? CustomMaterial(surfaceShader: .init(named: "groundSurface", in: library), lightingModel: .lit)
-        else { return nil }
+        guard var m = SceneShaders.material("groundSurface") else { return nil }
         // Odcień w tincie (składowe ≤ 1), wzmocnienie w custom.w.
         let gain = max(colorScale.max(), 0.01)
         let tint = colorScale / gain

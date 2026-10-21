@@ -201,8 +201,7 @@ enum Materials {
             Bundle.main.url(forResource: name, withExtension: "jpg").flatMap(SkyEnvironment.texture)
         }
         guard let color = tex("road-asphalt"), let normal = tex("road-asphalt-normal"), let rough = tex("road-asphalt-rough"),
-              let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary(),
-              var m = try? CustomMaterial(surfaceShader: .init(named: "roadSurface", in: library), lightingModel: .lit)
+              var m = SceneShaders.material("roadSurface")
         else { return nil }
         m.baseColor = .init(tint: UIColor(white: 0.92, alpha: 1), texture: .init(color))
         m.normal = .init(texture: .init(normal))
