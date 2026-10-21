@@ -1,13 +1,14 @@
 import RealityKit
 import UIKit
 
-/// Tekstury cząsteczek. Emiter bez obrazka rysuje każdą cząsteczkę jako jednolity kwadrat, więc dym
-/// składał się z widocznych prostokątów. Kłąb dymu to miękka plama (gęstość opada jak krzywa Gaussa),
-/// iskry — rozmyta kropka. Jasność w kolorze (bez kanału alfa): emiter rysuje je addytywnie, bo przy
-/// mieszaniu przez alfę RealityKit ucinał przezroczystość progiem i kłęby miały ostre brzegi krążków.
+/// Tekstury cząsteczek. Emiter bez obrazka rysuje każdą cząsteczkę jako jednolity kwadrat. Iskry to
+/// rozmyta kropka; jasność w kolorze (bez kanału alfa), bo emiter rysuje je addytywnie — przy mieszaniu
+/// przez alfę RealityKit ucinał przezroczystość progiem i miały ostre brzegi krążków. Kłąb dymu to miękka
+/// plama (gęstość opada jak krzywa Gaussa) w pasku wygasania dla `DriftSmoke` (maska przezroczystości).
 @MainActor
 enum ParticleTextures {
-    static let smoke: TextureResource? = make(size: 128) { x, y in
+    /// Kłąb dymu, `x`, `y` w −1…1.
+    private static func puff(_ x: Double, _ y: Double) -> Double {
         // Gęstość opada łagodnie (krzywa Gaussa) do zera na brzegu — bez konturu, który przy wielu
         // nałożonych cząsteczkach dawał „komiksowe” chmurki.
         let r2 = x * x + y * y
@@ -15,6 +16,25 @@ enum ParticleTextures {
         // Nierównomierność wewnątrz kłębu (kilka łagodnych fal), żeby dym nie był jednolitą mgłą.
         let swirl = 0.7 + 0.3 * (0.5 + 0.5 * sin(x * 5.3 + y * 2.9 + 0.7) * sin(y * 4.1 - x * 2.2 + 1.9))
         return density * swirl
+    }
+
+    /// Pasek `steps` kłębów o gęstości malejącej od pełnej do zera — przezroczystość dymu w `DriftSmoke`
+    /// (maska w kanale R, liniowo). Brzegi kłębu mają gęstość 0, więc mipmapy nie przeciekają między kopiami.
+    static func smokeFadeStrip(steps: Int, cell n: Int = 64) -> TextureResource? {
+        var gray = [UInt8](repeating: 0, count: n * steps * n)
+        for j in 0..<n {
+            for i in 0..<(n * steps) {
+                let level = 1 - (Double(i / n) + 0.5) / Double(steps)
+                let x = (Double(i % n) + 0.5) / Double(n) * 2 - 1, y = (Double(j) + 0.5) / Double(n) * 2 - 1
+                gray[j * n * steps + i] = UInt8(max(0, min(1, puff(x, y) * level)) * 255)
+            }
+        }
+        guard let provider = CGDataProvider(data: Data(gray) as CFData),
+              let image = CGImage(width: n * steps, height: n, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: n * steps,
+                                  space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        else { return nil }
+        return try? TextureResource(image: image, options: .init(semantic: .raw, mipmapsMode: .allocateAndGenerateAll))
     }
 
     static let dot: TextureResource? = make(size: 64) { x, y in

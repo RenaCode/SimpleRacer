@@ -176,7 +176,14 @@ Debug builds accept launch arguments for testing in the simulator:
 - `-mute` turns music and sound effects off (simulator tests play through the Mac speakers),
 - `-rich` gives coins and stars (to look at the shop and unlocks), `-car <id>` picks and owns a car,
 - `-autoNitro` presses nitro every 4 s, `-toggleMuteAt N` toggles sound after N seconds,
-- `-sideCam` puts the race camera low beside the player's car, `-noAO` turns off baked ambient occlusion.
+- `-sideCam` puts the race camera low beside the player's car, `-noAO` turns off baked ambient occlusion,
+- `-noSmoke`, `-noSkids`, `-noPostFX`, `-noMSAA`, `-noRoadside` turn one effect off (cost A/B),
+  `-smokeLook tint,opacity` tunes the tyre smoke.
+
+`tools/perf-run.sh <simulator-udid> <out-dir>` races in every region and prints loading time, frame
+times, hitches (frames over 25 ms), CPU work per frame and memory. The simulator draws on the Mac's
+GPU at 60 Hz, so compare builds A/B on the same simulator, alternating, and look at hitches rather
+than the median; a busy Mac (load average over ~10) makes every build stutter.
 
 These and the timing logs work in Debug and Family builds, not in Release.
 
@@ -415,9 +422,12 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
 - **Skid marks:** while drifting, the rear tyres leave dark marks with soft edges. All marks are one
   mesh with a ring buffer (the oldest disappear); a small mesh with the newest segments is updated
   every frame, so the mark starts right under the tyre.
-- **Tyre smoke:** many faint, growing particles born along the path the wheel travelled in the
+- **Tyre smoke:** many faint, growing puffs born along the path the wheel travelled in the
   frame, so the smoke is a haze rather than separate puffs. Cars more than 60 m from the camera
-  don't smoke.
+  don't smoke. The puffs are camera-facing quads in one mesh rewritten every frame (`DriftSmoke`),
+  not a RealityKit particle emitter: on iOS 27 every active emitter cut the race to 12–15 fps
+  regardless of how many particles it had. Fading uses a strip of 16 copies of the puff texture at
+  decreasing density, picked by the puff's age.
 - **Nitro flame:** a soft tongue of fire (crossed planes with a texture fading along and across)
   going from a white-blue core to orange, flickering, plus a stream of particles.
 - **Nitro canisters:** a modelled N₂O bottle (rounded base, shoulder, valve with handwheel and outlet,
