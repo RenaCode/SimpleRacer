@@ -1,3 +1,4 @@
+import AVFoundation
 import RaceCore
 import RealityKit
 import SwiftUI
@@ -11,6 +12,15 @@ struct RaceScreen: View {
     @State private var progress = 0.0
     /// Ten ekran wstrzymał wczytywanie dalszych aut (`LocalAssets.racesShowing`).
     @State private var holdsAssets = false
+    /// Ładowanie się nie udało (auto gracza, limit czasu) — ekran ładowania pokazuje komunikat i „Spróbuj ponownie”.
+    @State private var loadError: String?
+    @State private var attempt = 0
+    /// Aplikacja wyszła w tło, zanim powstała gra — po odsłonięciu sceny dziecko widzi pauzę, nie odliczanie.
+    @State private var pauseOnReveal = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Dłużej dziecko nie czeka: zamiast kręcącego się paska — komunikat z ponowną próbą.
+    private static let loadTimeout = 60.0
 
     var body: some View {
         ZStack {
@@ -18,56 +28,85 @@ struct RaceScreen: View {
                 RaceContent(model: model, game: game)
             }
             if !revealed {
-                LoadingView(spec: model.track, progress: progress)
+                LoadingView(spec: model.track, progress: progress, error: loadError,
+                            retry: {
+                                loadError = nil
+                                attempt += 1
+                            },
+                            menu: { model.screen = .menu })
                     .transition(.opacity)
             }
         }
         .background(Color.black)
-        .task { await load() }
+        .task(id: attempt) { await load() }
         // Dopiero po wyjściu: na ekranie wyników scalanie modelu (wątek główny) zamrażało go na 0,5–0,7 s.
         .onDisappear { releaseAssets() }
+        // Gdy gra już jest, pauzuje ją RaceContent; tu tylko czas przed jej powstaniem.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active && game == nil { pauseOnReveal = true }
+        }
     }
 
     private func releaseAssets() {
         guard holdsAssets else { return }
         holdsAssets = false
-        LocalAssets.shared.racesShowing -= 1
+        let assets = LocalAssets.shared
+        assets.racesShowing -= 1
+        if assets.racesShowing == 0 { assets.raceCarFile = nil }
     }
 
     /// Ładowanie jak w silnikach gier: ekran ładowania od razu, ciężka praca w tle z prawdziwym postępem,
     /// a scena rozgrzewa się (pierwsze klatki, shadery, efekty) pod zasłoną, zanim ruszy odliczanie.
+    /// Każde czekanie kończy się przy anulowaniu (wyjście z ekranu) — inaczej pętla kręciła się dalej w tle.
     private func load() async {
         guard game == nil else { return }
         let start = ProcessInfo.processInfo.systemUptime
         let assets = LocalAssets.shared, scenery = ScenePreloader.shared
         let spec = model.track
-        // 1. Auta (0–45%) i 2. tekstury krainy (45–90%) — równolegle.
-        async let sceneryDone: Void = scenery.prepare(spec.region)
-        await SceneShaders.warmUp()
+        let player = model.playerCar
+        // Licznik przed pierwszym `await`: zwiększony po nim mógł przyjść już po `onDisappear` i nigdy się nie zwolnić
+        // (pozostałe auta nie wczytywały się do restartu aplikacji).
         if !holdsAssets {
             holdsAssets = true
             assets.racesShowing += 1
         }
-        let player = model.playerCar
+        assets.raceCarFile = player.realistic?.file
+        assets.ensureLoaded(player)
+        // 1. Auta (0–45%) i 2. tekstury krainy (45–90%) — równolegle.
+        async let sceneryDone: Void = scenery.prepare(spec.region)
+        await SceneShaders.warmUp()
         let needed = Double(max(1, min(assets.cars.count, RaceConfig.opponents + 1)))
         while !assets.readyForRace(player: player) || !scenery.isReady(spec.region) {
+            if assets.hasFailed(player) {
+                debugLog("ładowanie wyścigu: auto gracza się nie wczytało")
+                loadError = "Nie udało się wczytać auta."
+                return
+            }
+            if ProcessInfo.processInfo.systemUptime - start > Self.loadTimeout {
+                debugLog("ładowanie wyścigu: przekroczony limit czasu")
+                loadError = "Wczytywanie trwa za długo."
+                return
+            }
             let cars = assets.loadingDone ? 1 : Double(assets.loadedCount) / needed
             progress = 0.45 * min(1, cars) + 0.45 * (scenery.isReady(spec.region) ? 1 : scenery.progress)
-            try? await Task.sleep(for: .milliseconds(50))
+            do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
         }
         await sceneryDone
         progress = 0.9
         // 3. Budowa sceny (szybka — tekstury gotowe), 4. rozgrzewka pod zasłoną.
-        try? await Task.sleep(for: .milliseconds(30)) // pasek zdąży się narysować
+        do { try await Task.sleep(for: .milliseconds(30)) } catch { return } // pasek zdąży się narysować
         var profile = model.profile
         #if DEBUG || FAMILY
         // `-manualSteer`: wyścig bez auto-prowadzenia (testy UI). Tylko ten wyścig — nic nie trafia do profilu,
         // inaczej następne uruchomienia (testy i gra na symulatorze) jeździłyby bez sterowania.
         if ProcessInfo.processInfo.arguments.contains("-manualSteer") { profile.autoSteer = false }
         #endif
-        let g = RaceGame(profile: profile, spec: spec, playerCar: model.playerCar)
+        let g = RaceGame(profile: profile, spec: spec, playerCar: player)
+        if pauseOnReveal { g.paused = true }
         game = g
-        while g.warmFrames < 20 { try? await Task.sleep(for: .milliseconds(30)) }
+        while g.warmFrames < 20 {
+            do { try await Task.sleep(for: .milliseconds(30)) } catch { return }
+        }
         progress = 1
         // Ekran ładowania nie miga: co najmniej 0,8 s.
         let shown = ProcessInfo.processInfo.systemUptime - start
@@ -145,7 +184,7 @@ private struct RaceContent: View {
             if game.buildFailed {
                 TrackErrorView(retry: { model.startRace() }, menu: { model.screen = .menu })
             }
-            if let r = settled {
+            if game.result != nil, let r = settled {
                 ResultsView(result: r,
                             next: r.nextTrackId.map { id in { model.startRace(track: id) } },
                             again: { model.startRace() },
@@ -153,7 +192,8 @@ private struct RaceContent: View {
                             campaign: { model.screen = .campaign })
             }
         }
-        .onChange(of: game.result) { _, r in
+        // Rozliczenie na mecie, nie z ekranem wyników (B5 audytu z 21.10).
+        .onChange(of: game.finishResult) { _, r in
             if let r, settled == nil { settled = model.settle(r) }
         }
         .onAppear {
@@ -165,6 +205,11 @@ private struct RaceContent: View {
         // Wyjście z aplikacji, powiadomienie albo centrum sterowania — gra staje i czeka.
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && game.result == nil && game.phase != .finished { game.paused = true }
+        }
+        // Telefon, FaceTime, budzik: baner nie zmienia `scenePhase`, a dźwięk staje — gra też.
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
+            let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init)
+            if type == .began && game.result == nil && game.phase != .finished { game.paused = true }
         }
         .onDisappear {
             game.subscription?.cancel()

@@ -28,6 +28,10 @@ jobs:
           # Starsze mają go w zestawie i nie znają tej opcji — wtedy błąd ignorujemy.
           xcodebuild -downloadComponent MetalToolchain || true
           # Build na ogólny cel symulatora — nie potrzebuje konkretnego urządzenia ani podpisu.
-          xcodebuild -project SimpleRacer.xcodeproj -scheme SimpleRacer \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO build
+          # Family (wersja dla dzieci, gałęzie `#if FAMILY`) i Release (gałęzie `#else` z kodem do App Store,
+          # wcześniej nigdzie niekompilowane).
+          for config in Family Release; do
+            xcodebuild -project SimpleRacer.xcodeproj -scheme SimpleRacer -configuration "$config" \
+              -destination 'generic/platform=iOS Simulator' \
+              CODE_SIGNING_ALLOWED=NO build
+          done

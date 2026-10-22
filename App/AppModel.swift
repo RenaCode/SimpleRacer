@@ -74,23 +74,30 @@ final class AppModel {
 
     private static let key = "simpleracer.profile"
     private static let campaignKey = "simpleracer.campaign"
+    private static let campaignBackupKey = "simpleracer.campaign.unreadable"
 
     init() {
         debugLog("start: AppModel")
         LocalAssets.shared.registerCars()
         FullVersion.apply()
+        // Auto albo kolor spoza katalogu podmieniamy na domyślne — reszta profilu (dźwięk, auto-prowadzenie) zostaje.
         if let data = UserDefaults.standard.data(forKey: Self.key),
-           let p = try? JSONDecoder().decode(Profile.self, from: data),
-           CarCatalog.all.contains(where: { $0.id == p.carId }),
-           UIColorHex.isValid(p.colorHex) {
+           var p = try? JSONDecoder().decode(Profile.self, from: data) {
+            if !CarCatalog.all.contains(where: { $0.id == p.carId }) { p.carId = Profile.default.carId }
+            if !UIColorHex.isValid(p.colorHex) { p.colorHex = Profile.default.colorHex }
             profile = p
         } else {
             profile = .default
         }
-        if let data = UserDefaults.standard.data(forKey: Self.campaignKey),
-           let c = try? JSONDecoder().decode(CampaignState.self, from: data) {
+        let saved = UserDefaults.standard.data(forKey: Self.campaignKey)
+        if let saved, let c = try? JSONDecoder().decode(CampaignState.self, from: saved) {
             campaign = c
         } else {
+            if let saved {
+                // Zapis, którego ta wersja nie umie odczytać: kopia zostaje, zanim pierwsza zmiana go nadpisze.
+                debugLog("kampania: nieczytelny zapis (\(saved.count) B) — kopia w \(Self.campaignBackupKey)")
+                UserDefaults.standard.set(saved, forKey: Self.campaignBackupKey)
+            }
             campaign = Campaign.newGame()
         }
         // Auto startowe zawsze w garażu; jeździ się tylko własnym autem, które istnieje w katalogu.

@@ -73,6 +73,14 @@ final class LocalAssets {
     /// na ekran ładowania: auto zaczęte wtedy kończyło `Entity(contentsOf:)` (też wątek główny) już po
     /// odsłonięciu sceny i dawało przycięcie ~90 ms na starcie wyścigu.
     var raceInProgress: Bool { racesShowing > 0 && loadedCount >= raceCarCount }
+    /// Plik auta gracza bieżącego wyścigu — blokada `raceInProgress` go nie dotyczy. Bez tego auto wybrane
+    /// w garażu spośród jeszcze niewczytanych czekało na koniec wyścigu, który czekał na nie: ekran
+    /// ładowania kręcił się bez końca, gdy wczytało się już 6 innych aut.
+    @ObservationIgnored var raceCarFile: String?
+    /// Modele, których nie udało się wczytać (obie próby) — wyścig przestaje na nie czekać.
+    private(set) var failed: Set<String> = []
+    /// Modele w trakcie wczytywania — to samo auto nie wczytuje się dwa razy (preload i `ensureLoaded`).
+    @ObservationIgnored private var inFlight: Set<String> = []
     private var raceCarCount: Int { max(1, min(cars.count, RaceConfig.opponents + 1)) }
     @ObservationIgnored private(set) var cars: [LocalCarEntry] = []
     @ObservationIgnored private(set) var templates: [String: Entity] = [:]
@@ -152,7 +160,20 @@ final class LocalAssets {
     /// Wyścig może ruszyć bez czekania na całą listę: wystarczy auto gracza i tyle aut, ile jest rywali
     /// (ich wygląd losujemy z wczytanych). Na zimnym starcie to ok. 6 z 9 modeli.
     func readyForRace(player: CarDef) -> Bool {
-        loadingDone || (isLoaded(player) && loadedCount >= raceCarCount)
+        !hasFailed(player) && (loadingDone || (isLoaded(player) && loadedCount >= raceCarCount))
+    }
+
+    func hasFailed(_ def: CarDef) -> Bool {
+        def.realistic.map { failed.contains($0.file) } ?? false
+    }
+
+    /// Auto gracza wczytuje się od razu, poza kolejką `preload` (tam dwa miejsca mogą zajmować auta
+    /// czekające na koniec wyścigu). Po nieudanym wczytaniu — ponowna próba.
+    func ensureLoaded(_ def: CarDef) {
+        guard let r = def.realistic, let folder, templates[r.file] == nil, !inFlight.contains(r.file),
+              let entry = cars.first(where: { $0.file == r.file }) else { return }
+        failed.remove(r.file)
+        Task { await load(entry, from: folder) }
     }
 
     func isLoaded(_ def: CarDef) -> Bool {
@@ -250,15 +271,33 @@ final class LocalAssets {
     }
 
     private func load(_ e: LocalCarEntry, from folder: URL) async {
-        guard templates[e.file] == nil else { return }
-        while raceInProgress { try? await Task.sleep(for: .milliseconds(250)) }
+        guard templates[e.file] == nil, !inFlight.contains(e.file) else { return }
+        inFlight.insert(e.file)
+        defer { inFlight.remove(e.file) }
+        #if DEBUG || FAMILY
+        // Testy UI ładowania: `-slowCar <n>` wczytuje n-te auto katalogu 15 s później (auto wybrane w garażu,
+        // gdy inne są już wczytane), `-failCar <n>` udaje, że jego plik się nie wczytuje.
+        func testCar(_ flag: String) -> Bool {
+            let args = ProcessInfo.processInfo.arguments
+            guard let i = args.firstIndex(of: flag), i + 1 < args.count, let n = Int(args[i + 1]),
+                  !CarCatalog.all.isEmpty else { return false }
+            return CarCatalog.all[n % CarCatalog.all.count].realistic?.file == e.file
+        }
+        if testCar("-failCar") {
+            debugLog("test: \(e.file) udaje błąd wczytania")
+            failed.insert(e.file)
+            return
+        }
+        if testCar("-slowCar") { try? await Task.sleep(for: .seconds(15)) }
+        #endif
+        while mustWait(e) { try? await Task.sleep(for: .milliseconds(250)) }
         // Druga próba po chwili: przy dużym obciążeniu wczytywanie USDZ potrafi się nie udać za pierwszym razem.
         for attempt in 1...2 {
             do {
                 let entity = try await Entity(contentsOf: folder.appendingPathComponent(e.file))
                 // Wczytanie trwa — w tym czasie mógł ruszyć wyścig.
-                if raceInProgress { debugLog("model: \(e.file) czeka na koniec wyścigu") }
-                while raceInProgress { try? await Task.sleep(for: .milliseconds(250)) }
+                if mustWait(e) { debugLog("model: \(e.file) czeka na koniec wyścigu") }
+                while mustWait(e) { try? await Task.sleep(for: .milliseconds(250)) }
                 let normalized = Self.normalized(entity, yawDegrees: e.yaw)
                 Self.markWheels(normalized, names: Set(e.wheels ?? []))
                 Self.tuneGlass(normalized, file: e.file)
@@ -284,7 +323,10 @@ final class LocalAssets {
                 if attempt == 1 { try? await Task.sleep(for: .milliseconds(400)) }
             }
         }
+        failed.insert(e.file)
     }
+
+    private func mustWait(_ e: LocalCarEntry) -> Bool { raceInProgress && e.file != raceCarFile }
 
     /// Szyby modelu: materiały przezroczyste bez tekstur (w plikach ze Sketchfaba to jednolita „folia”
     /// o krycie 0,5–0,6 — RealityKit trzyma je w alfie barwy, `opacity` ma 1) dostają parametry szkła z `Materials.applyGlass`. Przed scaleniem siatek, żeby

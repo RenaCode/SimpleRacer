@@ -104,7 +104,10 @@ final class RaceGame {
     /// Obróbka obrazu dopasowana do krainy (kolor mgły z panoramy).
     @ObservationIgnored let postFX: PostFXSettings
     @ObservationIgnored private var hudTimer = 0.0
-    @ObservationIgnored private var pendingResult: RaceResult?
+    /// Wynik gracza od chwili przekroczenia mety — rozliczany w kampanii od razu; `result` (ekran wyników)
+    /// pojawia się dopiero po `finishDelay`. Rozliczenie dopiero z ekranem wyników gubiło gwiazdki i monety,
+    /// gdy w tych 3 s aplikacja wyszła w tło i system ją zamknął.
+    private(set) var finishResult: RaceResult?
 
     private static let rivals = ["Kuba", "Ola", "Marek", "Zosia", "Bartek", "Ewa", "Tomek"]
 
@@ -329,6 +332,13 @@ final class RaceGame {
         let dt = min(rawDt, 0.05)
         frameDt = max(dt, 1.0 / 240)
         input.poll()
+        if buildFailed {
+            // Pod komunikatem o błędzie trasy nic nie biegnie (wcześniej słychać było odliczanie i silnik).
+            // Klatki dalej się liczą — ekran ładowania na nie czeka.
+            warmFrames += 1
+            AudioManager.shared.setEngine(speed: 0, nitro: false, running: false)
+            return
+        }
         // Pod ekranem ładowania pauza (wyjście z aplikacji, Esc) nie zatrzymuje rozgrzewki: ekran ładowania
         // czeka na `warmFrames` i bez nich wisiał w nieskończoność, a przycisk „Graj dalej” był pod nim.
         // Pauza zostaje ustawiona — po odsłonięciu sceny dziecko widzi menu pauzy.
@@ -399,9 +409,8 @@ final class RaceGame {
             handleEvents()
             if phase == .finished {
                 finishTimer -= dt
-                if finishTimer <= 0, let r = pendingResult {
+                if finishTimer <= 0, result == nil, let r = finishResult {
                     result = r
-                    pendingResult = nil
                 }
             }
         }
@@ -480,7 +489,7 @@ final class RaceGame {
                 toast("META — \(position). miejsce", .good)
                 // Po mecie autem gracza jedzie AI, a kamera zostaje.
                 sim.setController(AIController(skill: 0.9, rng: SeededRandom(seed: 1)), for: p)
-                pendingResult = RaceResult(position: position, total: sim.cars.count, time: p.finishTime,
+                finishResult = RaceResult(position: position, total: sim.cars.count, time: p.finishTime,
                                            takedowns: p.takedowns, carName: p.def.name, trackId: spec.id)
             default:
                 break
@@ -511,12 +520,17 @@ final class RaceGame {
         for (car, e) in cars {
             let near = car.isPlayer || abs(wrapDelta(car.s, playerS, sim.track.length)) < Self.drawDistance
             setVisible(e.root, near)
-            guard near else { continue }
+            guard near else {
+                // Po powrocie w kadr prędkość kątowa liczy się od nowa (inaczej jednoklatkowe szarpnięcie przechyłu).
+                lastYaw[ObjectIdentifier(car)] = nil
+                continue
+            }
             let pose = pose(car)
             let w = sim.track.toWorld(s: pose.s, d: pose.d)
             e.root.position = [Float(w.x), Self.roadSurface, Float(w.z)]
             e.root.orientation = simd_quatf(angle: Float(w.heading + pose.alphaFace), axis: [0, 1, 0])
             if car.wrecked {
+                lastYaw[ObjectIdentifier(car)] = nil
                 e.setWreck(Float(1 - car.wreckTimer / Physics.wreckTime))
             } else {
                 // Prędkość kątowa toru jazdy (do skrętu kół i przechyłu na zawieszeniu).
