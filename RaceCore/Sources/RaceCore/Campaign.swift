@@ -119,10 +119,17 @@ public enum Campaign {
     /// O ile rywale są słabsi od mocy wymaganej na trasie (gra dla dzieci).
     public static let rivalHandicap = 25
 
-    /// Rywal na trasie: wygląd (model, nazwa) z dowolnego auta, ale statystyki auta startowego
+    /// Wzorzec statystyk rywali: wbudowana „Strzała”, zapisana tu na stałe. Nie z katalogu — aplikacja
+    /// podmienia katalog i `starterCar` na modele lokalne, a balans tras nie może zależeć od tego, jakie to auta.
+    public static let rivalBase = CarDef(
+        id: "rywal", name: "Rywal", description: "", topSpeed: 75, accel: 14, handling: 1.6, nitroPower: 1.0,
+        shape: CarShape(length: 4.4, width: 2.0, height: 1.2, cabinLength: 0.42, cabinOffset: -0.2, spoiler: false)
+    )
+
+    /// Rywal na trasie: wygląd (model, nazwa, wymiary) z dowolnego auta, ale statystyki `rivalBase`
     /// ulepszonego tylko do mocy nieco poniżej wymaganej na tej trasie — żeby rywale nie byli za mocni.
     public static func rival(looking visual: CarDef, on spec: TrackSpec) -> CarDef {
-        let base = CarCatalog.car(id: starterCar)
+        let base = rivalBase
         let stats = upgraded(base, levels: minimalUpgrades(base, toReach: requiredRating(spec) - rivalHandicap))
         var d = visual
         d.topSpeed = stats.topSpeed

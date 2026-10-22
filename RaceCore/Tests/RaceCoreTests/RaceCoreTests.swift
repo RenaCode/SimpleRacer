@@ -787,6 +787,37 @@ final class CampaignTests: XCTestCase {
 }
 
 final class RivalTests: XCTestCase {
+    private var savedCatalog: [CarDef] = []
+    private var savedStarter = ""
+
+    override func setUp() {
+        savedCatalog = CarCatalog.all
+        savedStarter = Campaign.starterCar
+    }
+
+    override func tearDown() {
+        CarCatalog.replaceAll(with: savedCatalog)
+        Campaign.starterCar = savedStarter
+    }
+
+    /// Siła rywala zależy tylko od trasy: aplikacja podmienia katalog i auto startowe na modele lokalne
+    /// o innych statystykach, a rywale mają być tacy sami.
+    func testRivalStatsIndependentOfStarterCar() {
+        let spec = TrackCatalog.track(id: 20)
+        let look = CarCatalog.builtIn[2]
+        let before = Campaign.rival(looking: look, on: spec)
+        var local = CarCatalog.builtIn[1]
+        local.id = "lokalne"
+        local.topSpeed = 66; local.accel = 9; local.handling = 2.1; local.nitroPower = 1.3
+        CarCatalog.replaceAll(with: [local])
+        Campaign.starterCar = local.id
+        let after = Campaign.rival(looking: look, on: spec)
+        XCTAssertEqual(after.topSpeed, before.topSpeed)
+        XCTAssertEqual(after.accel, before.accel)
+        XCTAssertEqual(after.handling, before.handling)
+        XCTAssertEqual(after.nitroPower, before.nitroPower)
+    }
+
     /// Rywal z mocnym wyglądem nie jest mocniejszy, niż wymaga trasa.
     func testRivalStatsMatchTrackNotLooks() {
         var strong = CarCatalog.builtIn[1]
