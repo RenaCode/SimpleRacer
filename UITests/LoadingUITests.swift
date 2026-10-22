@@ -14,7 +14,10 @@ final class LoadingUITests: XCTestCase {
     }
 
     private func speed(_ app: XCUIApplication) -> Int {
-        let label = app.staticTexts["test.player"].label
+        // Etykieta HUD powstaje dopiero z wyścigiem; odczyt nieistniejącej przerywa test.
+        let hud = app.staticTexts["test.player"]
+        guard hud.exists else { return 0 }
+        let label = hud.label
         let pair = label.split(separator: " ").first { $0.hasPrefix("speed=") }
         return pair.flatMap { Int($0.dropFirst("speed=".count)) } ?? 0
     }
