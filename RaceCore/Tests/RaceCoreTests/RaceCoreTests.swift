@@ -517,19 +517,23 @@ final class ArcadePhysicsTests: XCTestCase {
         XCTAssertGreaterThan(hit ?? 0, Physics.wallHitMin)
     }
 
-    /// Po rozbiciu auto rusza bez skoku prędkości.
+    /// Po rozbiciu auto rusza bez skoku prędkości (kop rozłożony na kilka dziesiątych sekundy),
+    /// ale rusza wyraźnie: po sekundzie jedzie szybciej niż ~10 m/s.
     func testWreckRestartHasNoSpeedJump() {
         let c = car(speed: 60)
         c.wreck()
         var last = c.speed
         var maxJump = 0.0
-        for _ in 0..<Int(3 / RaceSim.step) {
+        var sinceRestart = -1.0
+        // Krok, w którym kończy się rozbicie, też się liczy — tam był skok 0 → 12 m/s.
+        while sinceRestart < 1 {
             c.step(dt: RaceSim.step, input: CarInput(steer: 0), track: track)
             maxJump = max(maxJump, c.speed - last)
             last = c.speed
+            if !c.wrecked { sinceRestart = max(0, sinceRestart) + RaceSim.step }
         }
-        XCTAssertFalse(c.wrecked)
-        XCTAssertLessThan(maxJump, Physics.wreckRestartSpeed + 1)
+        XCTAssertLessThan(maxJump, 1, "przyrost prędkości na krok 1/120 s")
+        XCTAssertGreaterThan(c.speed, 10, "auto po rozbiciu rusza")
     }
 
     /// Odpalenie nitro daje natychmiastowego „kopa”.

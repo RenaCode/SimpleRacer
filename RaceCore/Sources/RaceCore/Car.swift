@@ -65,6 +65,8 @@ public final class Car {
     public let nitro = Nitro()
     /// NITRO wciśnięte w trakcie rozbicia — odpala się, gdy auto rusza (wciśnięcie to jednorazowe zbocze).
     private var nitroQueued = false
+    /// Ile jeszcze trwa kop po rozbiciu: auto dochodzi do `wreckRestartSpeed` płynnie, nie w jednym kroku.
+    private var restartKick = 0.0
     public var events: [CarEvent] = []
     /// Skręt z ostatniego kroku (−1…1, dodatnie = w lewo) — do skrętu przednich kół w chwili wciśnięcia,
     /// zanim auto zdąży zmienić tor jazdy.
@@ -97,6 +99,7 @@ public final class Car {
         driftCharge = 0
         driftBoostTimer = 0
         nitro.cancel()
+        restartKick = 0
         events.append(.wreck)
     }
 
@@ -140,6 +143,13 @@ public final class Car {
 
         if drifting { driftCharge += dt * min(1, abs(slide) / Physics.driftSlideAngle) }
         driftBoostTimer = max(0, driftBoostTimer - dt)
+
+        if restartKick > 0 {
+            restartKick = max(0, restartKick - dt)
+            if speed < Physics.wreckRestartSpeed {
+                speed = min(Physics.wreckRestartSpeed, speed + Physics.wreckRestartSpeed / Physics.wreckRestartKickTime * dt)
+            }
+        }
 
         let boost = self.boost
         // Dodatki się nie mnożą: liczy się najmocniejszy z nitro, zrywu po drifcie i slipstreamu.
@@ -196,14 +206,15 @@ public final class Car {
         wreckTimer -= dt
         speed = damp(speed, 0, rate: 3, dt: dt)
         advance(dt: dt, track: track)
-        let limit = track.halfWidth - Physics.carWidth / 2
+        let limit = track.halfWidth - def.shape.width / 2
         d = clamp(d, -limit, limit)
         if wreckTimer <= 0 {
             wreckTimer = 0
             alphaVel = 0
             slide = 0
-            // Rusza z tego, co zostało po koziołkowaniu (bez skoku prędkości) — dalej przyspiesza samo.
-            speed = max(speed, Physics.wreckRestartSpeed)
+            // Rusza z tego, co zostało po koziołkowaniu; do `wreckRestartSpeed` dochodzi przez kop rozłożony
+            // na `wreckRestartKickTime` (wcześniej skok 0 → 12 m/s w jednym kroku szarpał kamerą).
+            restartKick = Physics.wreckRestartKickTime
         }
     }
 
@@ -221,7 +232,7 @@ public final class Car {
     }
 
     private func collideWalls(track: Track) {
-        let limit = track.halfWidth - Physics.carWidth / 2
+        let limit = track.halfWidth - def.shape.width / 2
         guard abs(d) > limit else { return }
         let side: Double = d > 0 ? 1 : -1
         d = side * limit

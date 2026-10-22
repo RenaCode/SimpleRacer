@@ -129,6 +129,152 @@ final class PhysicsEdgeTests: XCTestCase {
         XCTAssertEqual(out.map(\.attacker.name), ["P"])
     }
 
+    /// Próg `wreckImpact`: wbicie w bandę tuż poniżej progu tylko odbija auto, tuż powyżej — rozbija.
+    func testWallWreckThreshold() {
+        let track = TrackData.makeCityLoop()
+        func hit(_ factor: Double) -> Car {
+            let def = CarCatalog.builtIn[0]
+            let c = Car(name: "T", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 100,
+                        startLane: track.halfWidth - def.shape.width / 2 - 0.01, trackLength: track.length)
+            c.alphaVel = 0.5
+            c.speed = Physics.wreckImpact / sin(c.alphaVel) * factor
+            c.step(dt: RaceSim.step, input: CarInput(), track: track)
+            return c
+        }
+        XCTAssertFalse(hit(0.95).wrecked)
+        XCTAssertTrue(hit(1.05).wrecked)
+    }
+
+    /// Banda liczona z szerokości tego auta, nie ze stałej 2 m: szerokie auto zatrzymuje się dalej od krawędzi.
+    func testWallUsesCarWidth() {
+        let track = TrackData.makeCityLoop()
+        var wide = CarCatalog.builtIn[0]
+        wide.shape.width = 3.0
+        let c = Car(name: "T", def: wide, color: "#FFFFFF", isPlayer: false, startDistance: 100,
+                    startLane: track.halfWidth - 1.6, trackLength: track.length)
+        c.speed = 30; c.alphaVel = 0.2
+        for _ in 0..<60 { c.step(dt: RaceSim.step, input: CarInput(), track: track) }
+        XCTAssertLessThanOrEqual(abs(c.d), track.halfWidth - wide.shape.width / 2 + 1e-9)
+        // To samo dla rozbitego auta.
+        let w = Car(name: "W", def: wide, color: "#FFFFFF", isPlayer: false, startDistance: 100,
+                    startLane: track.halfWidth - 1.6, trackLength: track.length)
+        w.speed = 30; w.alphaVel = 0.5
+        w.wreck()
+        for _ in 0..<60 { w.step(dt: RaceSim.step, input: CarInput(), track: track) }
+        XCTAssertLessThanOrEqual(abs(w.d), track.halfWidth - wide.shape.width / 2 + 1e-9)
+    }
+
+    /// Dwaj rywale z dużą różnicą prędkości: zwykła wymiana prędkości, nikt nie rozbity
+    /// (wcześniej przy różnicy > `rearTakedownDelta` prędkości zostawały bez zmian i tylny przenikał w przedni).
+    func testRivalsRearHitExchangesSpeedWithoutWreck() {
+        let len = 1000.0, def = CarCatalog.builtIn[0]
+        let front = Car(name: "F", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 104, startLane: 0, trackLength: len)
+        let back = Car(name: "B", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 0, trackLength: len)
+        front.speed = 20; back.speed = 50
+        let out = Collisions.resolve([front, back], trackLength: len)
+        XCTAssertTrue(out.isEmpty)
+        XCTAssertFalse(front.wrecked || back.wrecked)
+        XCTAssertEqual(back.speed, 34, accuracy: 1e-9)
+        XCTAssertEqual(front.speed, 36, accuracy: 1e-9)
+    }
+
+    /// Rywal wjeżdżający w tył gracza: gracz nie rozbity, a jego prędkość rośnie najwyżej jak przy zwykłej
+    /// wymianie (średnia + 1), nie do 90% prędkości rywala w jednym kroku.
+    func testRivalRearHitGivesPlayerNoSpeedJump() {
+        let len = 1000.0, def = CarCatalog.builtIn[0]
+        let p = Car(name: "P", def: def, color: "#FFFFFF", isPlayer: true, startDistance: 104, startLane: 0, trackLength: len)
+        let r = Car(name: "R", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 0, trackLength: len)
+        p.speed = 20; r.speed = 64
+        let out = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertTrue(out.isEmpty)
+        XCTAssertFalse(p.wrecked || r.wrecked)
+        XCTAssertLessThanOrEqual(p.speed, (20 + 64) / 2 + 1 + 1e-9)
+        XCTAssertLessThan(r.speed, 64, "rywal oddaje prędkość, nie przenika przez gracza")
+    }
+
+    /// Rywal ocierający się mocno bokiem o wolnego gracza: bez rozbicia i bez zmiany prędkości gracza.
+    func testRivalSideSlamGivesPlayerNoSpeedJump() {
+        let len = 1000.0, def = CarCatalog.builtIn[0]
+        let p = Car(name: "P", def: def, color: "#FFFFFF", isPlayer: true, startDistance: 100, startLane: 0, trackLength: len)
+        let r = Car(name: "R", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 1.5, trackLength: len)
+        p.speed = 20; r.speed = 60
+        r.alphaVel = -0.5 // rywal wjeżdża bokiem w gracza
+        let out = Collisions.resolve([p, r], trackLength: len)
+        XCTAssertTrue(out.isEmpty)
+        XCTAssertFalse(p.wrecked || r.wrecked)
+        XCTAssertEqual(p.speed, 20, accuracy: 1e-9)
+    }
+
+    /// Dwaj rywale zderzający się mocno bokiem: tylko się odpychają.
+    func testRivalsSideSlamNoWreck() {
+        let len = 1000.0, def = CarCatalog.builtIn[0]
+        let a = Car(name: "A", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 0, trackLength: len)
+        let b = Car(name: "B", def: def, color: "#FFFFFF", isPlayer: false, startDistance: 100, startLane: 1.5, trackLength: len)
+        a.speed = 50; b.speed = 50
+        a.alphaVel = 0.4; b.alphaVel = -0.4
+        let out = Collisions.resolve([a, b], trackLength: len)
+        XCTAssertTrue(out.isEmpty)
+        XCTAssertFalse(a.wrecked || b.wrecked)
+        XCTAssertEqual(a.alphaVel, 0.2, accuracy: 1e-9)
+        XCTAssertEqual(b.alphaVel, -0.2, accuracy: 1e-9)
+    }
+
+    private final class Brake: Controller {
+        func read(car: Car, dt: Double, ctx: RaceContext) -> CarInput { CarInput(brake: true) }
+    }
+
+    /// Największe nakładanie się prostokątów jadącego auta z wrakiem (w poprzek, m) przy przejeździe obok.
+    private func overlapPassingWreck(_ controller: Controller, isPlayer: Bool, speed: Double = 40, gap: Double = 140,
+                                     lane: (Car) -> Double) -> Double {
+        let track = TrackData.makeCityLoop()
+        let def = CarCatalog.builtIn[0]
+        let sim = RaceSim(track: track, entries: [
+            Entry(name: "W", def: def, color: "#FFFFFF", isPlayer: false, controller: Brake()),
+            Entry(name: "C", def: def, color: "#FFFFFF", isPlayer: isPlayer, controller: controller),
+        ], laps: 5)
+        let wreck = sim.cars[0], car = sim.cars[1]
+        car.s = 60; car.distance = 60; car.d = 0; car.speed = speed
+        wreck.s = 60 + gap; wreck.distance = 60 + gap; wreck.speed = 0
+        sim.advance() // kontroler wybiera pas
+        car.d = lane(car); wreck.d = car.d
+        wreck.wreck(); wreck.wreckTimer = 30
+        var worst = 0.0
+        for _ in 0..<Int(4 / RaceSim.step) {
+            sim.advance()
+            sim.events.removeAll()
+            let ds = abs(wrapDelta(car.s, wreck.s, track.length))
+            let overS = (car.def.shape.length + wreck.def.shape.length) / 2 - ds
+            let overD = (car.def.shape.width + wreck.def.shape.width) / 2 - abs(car.d - wreck.d)
+            if overS > 0 && overD > 0 { worst = max(worst, overD) }
+        }
+        XCTAssertGreaterThan(car.distance, wreck.distance + 10, "auto minęło wrak")
+        return worst
+    }
+
+    /// Przypadki: wrak widoczny z daleka, wrak, który pojawił się 30 m przed autem (0,75 s jazdy),
+    /// i szybka jazda. Wrak bliżej niż ok. 0,5 s jazdy da się ominąć tylko częściowo (resztę robi `Collisions`).
+    private let wreckCases: [(speed: Double, gap: Double)] = [(40, 140), (40, 30), (70, 50)]
+
+    /// Rywal jadący prosto na wrak omija go z wyprzedzeniem, zamiast przenikać przez niego w ok. 0,2 s.
+    func testRivalSteersAroundWreckAhead() {
+        for c in wreckCases {
+            let ai = AIController(skill: 0.9, rng: SeededRandom(seed: 7))
+            let worst = overlapPassingWreck(ai, isPlayer: false, speed: c.speed, gap: c.gap) { _ in ai.lane }
+            print(String(format: "rywal przy wraku (%.0f m/s, %.0f m): nakładanie %.2f m", c.speed, c.gap, worst))
+            XCTAssertEqual(worst, 0, accuracy: 0.05, "\(c)")
+        }
+    }
+
+    /// Auto-prowadzenie gracza też omija wrak na swoim pasie.
+    func testAutopilotSteersAroundWreckAhead() {
+        for c in wreckCases {
+            let worst = overlapPassingWreck(AutoSteerController(input: FakeInput()), isPlayer: true,
+                                            speed: c.speed, gap: c.gap) { _ in 0 }
+            print(String(format: "auto-prowadzenie przy wraku (%.0f m/s, %.0f m): nakładanie %.2f m", c.speed, c.gap, worst))
+            XCTAssertEqual(worst, 0, accuracy: 0.05, "\(c)")
+        }
+    }
+
     /// NITRO wciśnięte w trakcie rozbicia odpala się, gdy auto rusza (wcześniej wciśnięcie przepadało:
     /// rozbite auto nie czytało wejścia, a wciśnięcie to jednorazowe zbocze).
     func testNitroPressedWhileWreckedFiresOnRecovery() {

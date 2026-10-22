@@ -5,20 +5,16 @@ public struct Takedown {
 
 /// Zderzenia aut jako prostokątów we współrzędnych trasy — o wymiarach z `def.shape` każdego auta
 /// (dla pary: średnia długości i szerokości, czyli styk dwóch prostokątów o połówkach La/2 i Lb/2).
-/// Mocne uderzenie bokiem albo w tył rozbija rywala (takedown), lżejsze — odpycha.
+/// Mocne uderzenie gracza bokiem albo w tył rozbija rywala (takedown), lżejsze — odpycha.
+///
+/// Gra dla dzieci: takedown to wyłącznie nagroda gracza. Rywal nigdy nie rozbija gracza, a rywale
+/// między sobą też się nie rozbijają (rozbicia w ścisku na starcie tylko zaśmiecały ekran) — takie
+/// zderzenia kończą się zwykłym odepchnięciem albo wymianą prędkości.
 public enum Collisions {
     public static func resolve(_ cars: [Car], trackLength: Double) -> [Takedown] {
         var out: [Takedown] = []
 
         func takedown(_ attacker: Car, _ victim: Car) {
-            // Gra dla dzieci: rywal nigdy nie rozbija gracza — kończy się na odepchnięciu.
-            if victim.isPlayer && !attacker.isPlayer {
-                victim.speed = max(victim.speed, attacker.speed * 0.9)
-                return
-            }
-            // Rywale między sobą tylko się przepychają: rozbicia w ścisku na starcie (ok. 1–2 na wyścig)
-            // tylko zaśmiecały ekran koziołkującymi autami. Takedown to nagroda gracza.
-            if !attacker.isPlayer && !victim.isPlayer { return }
             victim.wreck()
             attacker.takedowns += 1
             attacker.nitro.add(Physics.takedownNitro)
@@ -66,7 +62,9 @@ public enum Collisions {
                     let attackerIsA = playerShock ? a.isPlayer : aPush >= bPush
                     let attacker = attackerIsA ? a : b
                     let victim = attackerIsA ? b : a
-                    if aPush + bPush > Physics.sideSlamSpeed || (attackerIsA ? shockA : shockB) {
+                    // Mocniej pchający rywal nie dostaje nic: dawniej gracz-„ofiara” dostawał 90% prędkości rywala,
+                    // czyli skok np. 20 → 54 m/s w jednym kroku od samego otarcia.
+                    if attacker.isPlayer && (aPush + bPush > Physics.sideSlamSpeed || (attackerIsA ? shockA : shockB)) {
                         takedown(attacker, victim)
                         if victim.wrecked { victim.alphaVel = attackerIsA ? -sign * 0.5 : sign * 0.5 }
                     } else {
@@ -85,9 +83,11 @@ public enum Collisions {
                     if playerShock && front.isPlayer && delta > 0 {
                         // Rywal, który wjeżdża w tył gracza w fali, rozbija się.
                         takedown(front, back)
-                    } else if delta > Physics.rearTakedownDelta || (backShock && delta > 0) {
+                    } else if back.isPlayer && (delta > Physics.rearTakedownDelta || (backShock && delta > 0)) {
                         takedown(back, front)
                     } else if delta > 0 {
+                        // Także rywal wjeżdżający szybko w gracza albo w innego rywala: wymiana prędkości,
+                        // bez niej tylny przenikał przez przedni.
                         let v = (back.speed + front.speed) / 2
                         back.speed = max(0, v - 1) // przy styku poniżej 1 m/s auto toczyło się wstecz
                         front.speed = v + 1
