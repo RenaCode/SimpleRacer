@@ -11,6 +11,8 @@ public enum RaceConfig {
 }
 
 public enum Physics {
+    /// Wymiary typowego auta (punkt odniesienia w testach). Kolizje, banda, butle i mijanie „na włos”
+    /// liczą się z `def.shape` konkretnego auta.
     public static let carLength = 4.4
     public static let carWidth = 2.0
     public static let brakeDecel = 28.0
@@ -59,8 +61,16 @@ public enum Physics {
     public static let wallHitMin = 1.5
     /// O ile metrów na krok fizyki auto odsuwa się bokiem od rozbitego (omijanie bez szarpnięcia).
     public static let wreckAvoidStep = 0.08
-    /// Prędkość, z jaką auto rusza po rozbiciu (m/s).
+    /// Komputer omija rozbite auto, które widzi przed sobą na tylu metrach (więcej przy dużej prędkości:
+    /// tyle, ile auto przejedzie w sekundę), z takim zapasem (m) ponad styk boków.
+    public static let wreckLookahead = 40.0
+    public static let wreckAvoidMargin = 1.2
+    /// Ostrzejszy zjazd z pasa przy omijaniu wraku (zwykle 0,04 rad na metr odchyłki).
+    public static let wreckAvoidGain = 0.1
+    /// Prędkość, z jaką auto rusza po rozbiciu (m/s), i czas (s), w jakim do niej dochodzi.
+    /// 12 m/s w 0,3 s to ok. 0,33 m/s na krok fizyki — płynnie, a auto i tak od razu rusza.
     public static let wreckRestartSpeed = 12.0
+    public static let wreckRestartKickTime = 0.3
     public static let wallFriction = 0.5
     public static let wreckTime = 2.0
     public static let driftNitroGain = 0.22

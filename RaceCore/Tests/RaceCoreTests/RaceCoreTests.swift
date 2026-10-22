@@ -517,19 +517,23 @@ final class ArcadePhysicsTests: XCTestCase {
         XCTAssertGreaterThan(hit ?? 0, Physics.wallHitMin)
     }
 
-    /// Po rozbiciu auto rusza bez skoku prędkości.
+    /// Po rozbiciu auto rusza bez skoku prędkości (kop rozłożony na kilka dziesiątych sekundy),
+    /// ale rusza wyraźnie: po sekundzie jedzie szybciej niż ~10 m/s.
     func testWreckRestartHasNoSpeedJump() {
         let c = car(speed: 60)
         c.wreck()
         var last = c.speed
         var maxJump = 0.0
-        for _ in 0..<Int(3 / RaceSim.step) {
+        var sinceRestart = -1.0
+        // Krok, w którym kończy się rozbicie, też się liczy — tam był skok 0 → 12 m/s.
+        while sinceRestart < 1 {
             c.step(dt: RaceSim.step, input: CarInput(steer: 0), track: track)
             maxJump = max(maxJump, c.speed - last)
             last = c.speed
+            if !c.wrecked { sinceRestart = max(0, sinceRestart) + RaceSim.step }
         }
-        XCTAssertFalse(c.wrecked)
-        XCTAssertLessThan(maxJump, Physics.wreckRestartSpeed + 1)
+        XCTAssertLessThan(maxJump, 1, "przyrost prędkości na krok 1/120 s")
+        XCTAssertGreaterThan(c.speed, 10, "auto po rozbiciu rusza")
     }
 
     /// Odpalenie nitro daje natychmiastowego „kopa”.
@@ -787,6 +791,37 @@ final class CampaignTests: XCTestCase {
 }
 
 final class RivalTests: XCTestCase {
+    private var savedCatalog: [CarDef] = []
+    private var savedStarter = ""
+
+    override func setUp() {
+        savedCatalog = CarCatalog.all
+        savedStarter = Campaign.starterCar
+    }
+
+    override func tearDown() {
+        CarCatalog.replaceAll(with: savedCatalog)
+        Campaign.starterCar = savedStarter
+    }
+
+    /// Siła rywala zależy tylko od trasy: aplikacja podmienia katalog i auto startowe na modele lokalne
+    /// o innych statystykach, a rywale mają być tacy sami.
+    func testRivalStatsIndependentOfStarterCar() {
+        let spec = TrackCatalog.track(id: 20)
+        let look = CarCatalog.builtIn[2]
+        let before = Campaign.rival(looking: look, on: spec)
+        var local = CarCatalog.builtIn[1]
+        local.id = "lokalne"
+        local.topSpeed = 66; local.accel = 9; local.handling = 2.1; local.nitroPower = 1.3
+        CarCatalog.replaceAll(with: [local])
+        Campaign.starterCar = local.id
+        let after = Campaign.rival(looking: look, on: spec)
+        XCTAssertEqual(after.topSpeed, before.topSpeed)
+        XCTAssertEqual(after.accel, before.accel)
+        XCTAssertEqual(after.handling, before.handling)
+        XCTAssertEqual(after.nitroPower, before.nitroPower)
+    }
+
     /// Rywal z mocnym wyglądem nie jest mocniejszy, niż wymaga trasa.
     func testRivalStatsMatchTrackNotLooks() {
         var strong = CarCatalog.builtIn[1]

@@ -161,11 +161,14 @@ final class GaragePreview {
         let ft = now - lastFrameAt
         frameTimes.append(ft)
         if ft > 0.025 { debugLog(String(format: "menu: przycięcie %.0f ms", ft * 1000)) }
-        if frameTimes.count % 600 == 0 {
+        if frameTimes.count >= 600 {
             let sorted = frameTimes.sorted()
             debugLog(String(format: "menu: klatki %d, p95 %.1f ms, max %.0f ms, przycięć %d", sorted.count,
                             sorted[Int(Double(sorted.count) * 0.95)] * 1000, sorted.last! * 1000,
                             frameTimes.filter { $0 > 0.025 }.count))
+            // Podsumowanie za ostatnie 600 klatek: tablica z całej sesji rosła bez końca (po godzinie w menu
+            // ~430 tys. próbek sortowanych na wątku głównym co 5 s).
+            frameTimes.removeAll(keepingCapacity: true)
         }
     }
     #endif

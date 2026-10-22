@@ -25,6 +25,8 @@ final class AudioManager {
     private var lastImpact = 0.0
     private var musicBuffers: [String: AVAudioPCMBuffer] = [:]
     private var currentTrack: Track?
+    /// Plik grającej muzyki — po powrocie z tła albo przerwaniu wraca ten sam utwór, nie następny.
+    private var currentFile: String?
     private var raceTrackIndex = 0
     private static let synthRate = 44_100.0
     private let synth = EngineSynth(sampleRate: AudioManager.synthRate)
@@ -72,11 +74,27 @@ final class AudioManager {
             impactBuffers[i] = Self.synthesizeImpact(i, format: format)
         }
 
-        // Przerwania (telefon, FaceTime, Siri) i zmiany wyjścia audio zatrzymują silnik — wznawiamy go.
+        // Przerwania (telefon, FaceTime, Siri, budzik) i zmiany wyjścia audio zatrzymują silnik — wznawiamy go.
+        // Przy `.began` silnik już stoi: `play()` węzła na zatrzymanym silniku rzuca wyjątek (`_engine->IsRunning()`),
+        // więc dźwięki czekają na `.ended`. Wyścig pauzuje sam (RaceContent słucha tego samego powiadomienia).
         let nc = NotificationCenter.default
         nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init)
-            if type == .ended { MainActor.assumeIsolated { self?.restart() } }
+            MainActor.assumeIsolated {
+                if type == .began {
+                    debugLog("audio: przerwanie")
+                    self?.started = false
+                } else if type == .ended {
+                    self?.restart()
+                }
+            }
+        }
+        // Restart usług multimediów systemu (rzadki): silnik trzeba uruchomić od nowa.
+        nc.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                debugLog("audio: restart usług multimediów")
+                self?.restart()
+            }
         }
         nc.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.restart() }
@@ -94,7 +112,8 @@ final class AudioManager {
             started = true
             debugLog("audio: silnik uruchomiony")
             applyVolumes()
-            if let t = currentTrack { currentTrack = nil; play(t) }
+            // Węzeł muzyki po pauzie silnika gra dalej od miejsca przerwania; po przerwaniu bywa zatrzymany.
+            if let f = currentFile, !music.isPlaying { playMusic(f) }
         } catch {
             // Bez dźwięku gra działa dalej — brak audio nie może jej zatrzymać.
             debugLog("audio: start nieudany: \(error)")
@@ -124,7 +143,12 @@ final class AudioManager {
             file = "race-\(raceTrackIndex)"
         }
         currentTrack = track
-        guard started, let buffer = musicBuffer(file) else {
+        currentFile = file
+        playMusic(file)
+    }
+
+    private func playMusic(_ file: String) {
+        guard started, engine.isRunning, let buffer = musicBuffer(file) else {
             debugLog("audio: brak muzyki \(file) (started=\(started))")
             return
         }
@@ -150,7 +174,7 @@ final class AudioManager {
     }
 
     func play(_ effect: Effect) {
-        guard started, soundOn, let b = buffers[effect] else { return }
+        guard started, engine.isRunning, soundOn, let b = buffers[effect] else { return }
         let node = sfx[nextSfx]
         nextSfx = (nextSfx + 1) % sfx.count
         node.stop()
@@ -193,7 +217,7 @@ final class AudioManager {
     }
 
     private func trigger(_ sound: ImpactSound, volume: Float) {
-        guard let node = impactNodes[sound], let buffer = impactBuffers[sound] else { return }
+        guard engine.isRunning, let node = impactNodes[sound], let buffer = impactBuffers[sound] else { return }
         node.stop()
         node.volume = volume
         node.scheduleBuffer(buffer, at: nil)

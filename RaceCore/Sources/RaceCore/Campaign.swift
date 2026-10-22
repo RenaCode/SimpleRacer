@@ -15,7 +15,14 @@ public enum Upgrade: String, CaseIterable, Codable, Sendable {
 }
 
 /// Postęp gracza w kampanii. Zapisywany na urządzeniu.
+///
+/// Odczyt jest wyrozumiały: brakujące pole dostaje wartość domyślną, a nieznane ulepszenie jest pomijane —
+/// błąd dekodowania oznaczał w aplikacji nową grę i nadpisanie postępu dziecka.
+/// Zapis (syntetyzowany `encode(to:)`) się nie zmienia: ulepszenia auta to naprzemienna tablica
+/// `["engine", 2, "nitro", 1]`, bo `Upgrade` nie jest kluczem słownika dla JSONEncoder.
 public struct CampaignState: Codable, Equatable, Sendable {
+    /// Wersja formatu zapisu — do przyszłych migracji. Zapis bez niej to wersja 1.
+    public var version = 1
     public var coins: Int = 0
     /// Najlepsze gwiazdki na trasie (id trasy → 1…3).
     public var bestStars: [Int: Int] = [:]
@@ -26,6 +33,36 @@ public struct CampaignState: Codable, Equatable, Sendable {
     public init(coins: Int = 0, ownedCars: Set<String> = []) {
         self.coins = coins
         self.ownedCars = ownedCars
+    }
+
+    enum CodingKeys: String, CodingKey { case version, coins, bestStars, ownedCars, upgrades }
+
+    private struct AnyKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        coins = try c.decodeIfPresent(Int.self, forKey: .coins) ?? 0
+        bestStars = try c.decodeIfPresent([Int: Int].self, forKey: .bestStars) ?? [:]
+        ownedCars = try c.decodeIfPresent(Set<String>.self, forKey: .ownedCars) ?? []
+        guard c.contains(.upgrades), try !c.decodeNil(forKey: .upgrades) else { return }
+        let cars = try c.nestedContainer(keyedBy: AnyKey.self, forKey: .upgrades)
+        for key in cars.allKeys {
+            // Pary (nazwa, poziom) czytane po jednej: ulepszenie spoza tej wersji gry nie psuje reszty.
+            var list = try cars.nestedUnkeyedContainer(forKey: key)
+            var levels: [Upgrade: Int] = [:]
+            while !list.isAtEnd {
+                let name = try list.decode(String.self)
+                let level = try list.decode(Int.self)
+                if let u = Upgrade(rawValue: name) { levels[u] = level }
+            }
+            upgrades[key.stringValue] = levels
+        }
     }
 
     public var totalStars: Int { bestStars.values.reduce(0, +) }
@@ -82,10 +119,17 @@ public enum Campaign {
     /// O ile rywale są słabsi od mocy wymaganej na trasie (gra dla dzieci).
     public static let rivalHandicap = 25
 
-    /// Rywal na trasie: wygląd (model, nazwa) z dowolnego auta, ale statystyki auta startowego
+    /// Wzorzec statystyk rywali: wbudowana „Strzała”, zapisana tu na stałe. Nie z katalogu — aplikacja
+    /// podmienia katalog i `starterCar` na modele lokalne, a balans tras nie może zależeć od tego, jakie to auta.
+    public static let rivalBase = CarDef(
+        id: "rywal", name: "Rywal", description: "", topSpeed: 75, accel: 14, handling: 1.6, nitroPower: 1.0,
+        shape: CarShape(length: 4.4, width: 2.0, height: 1.2, cabinLength: 0.42, cabinOffset: -0.2, spoiler: false)
+    )
+
+    /// Rywal na trasie: wygląd (model, nazwa, wymiary) z dowolnego auta, ale statystyki `rivalBase`
     /// ulepszonego tylko do mocy nieco poniżej wymaganej na tej trasie — żeby rywale nie byli za mocni.
     public static func rival(looking visual: CarDef, on spec: TrackSpec) -> CarDef {
-        let base = CarCatalog.car(id: starterCar)
+        let base = rivalBase
         let stats = upgraded(base, levels: minimalUpgrades(base, toReach: requiredRating(spec) - rivalHandicap))
         var d = visual
         d.topSpeed = stats.topSpeed

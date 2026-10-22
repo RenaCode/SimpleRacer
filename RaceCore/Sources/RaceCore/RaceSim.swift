@@ -91,7 +91,7 @@ public final class RaceSim {
         let dt = RaceSim.step
         time += dt
         let player = self.player
-        let ctx = RaceContext(track: track, playerDistance: player?.distance ?? 0)
+        let ctx = RaceContext(track: track, playerDistance: player?.distance ?? 0, cars: cars)
 
         updateSlipstream()
         for car in cars {
@@ -108,8 +108,10 @@ public final class RaceSim {
         cars.forEach(drainEvents)
         // Odepchnięcia w zderzeniach nie pilnują bandy — auto zostawało w niej do następnego kroku
         // (widać to na ekranie, bo obraz interpoluje pozycje).
-        let limit = track.halfWidth - Physics.carWidth / 2
-        for car in cars where abs(car.d) > limit { car.d = car.d > 0 ? limit : -limit }
+        for car in cars {
+            let limit = track.halfWidth - car.def.shape.width / 2
+            if abs(car.d) > limit { car.d = car.d > 0 ? limit : -limit }
+        }
 
         if let player { checkNearMiss(player) }
         collectPickups(dt: dt)
@@ -145,8 +147,8 @@ public final class RaceSim {
             }
             let p = pickups[i]
             for car in cars where !car.wrecked && !car.finished {
-                if abs(wrapDelta(car.s, p.s, track.length)) < Physics.carLength / 2 + 0.5
-                    && abs(car.d - p.d) < Physics.carWidth / 2 + 0.6 {
+                if abs(wrapDelta(car.s, p.s, track.length)) < car.def.shape.length / 2 + 0.5
+                    && abs(car.d - p.d) < car.def.shape.width / 2 + 0.6 {
                     car.nitro.add(Physics.pickupNitro)
                     pickups[i].respawnIn = Physics.pickupRespawn
                     events.append(.pickup(car))
@@ -177,8 +179,10 @@ public final class RaceSim {
             // Zmiana znaku liczy się tylko obok gracza: pół okrążenia dalej `wrapDelta` przeskakuje z −len/2
             // na +len/2 i bez tego warunku rywal oddalony o setki metrów dawał „NA WŁOS!”.
             guard prev == -1, side == 1, abs(ds) < Physics.nearMissWindow, !player.wrecked, !other.wrecked else { continue }
+            // Odstęp środków przy styku boków — średnia szerokości pary, jak w `Collisions`.
             let gap = abs(player.d - other.d)
-            if gap > Physics.carWidth && gap < Physics.carWidth + Physics.nearMissGap {
+            let touch = (player.def.shape.width + other.def.shape.width) / 2
+            if gap > touch && gap < touch + Physics.nearMissGap {
                 player.nitro.add(Physics.nearMissNitro)
                 events.append(.nearMiss(player))
             }

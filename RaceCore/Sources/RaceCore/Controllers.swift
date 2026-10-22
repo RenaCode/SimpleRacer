@@ -1,6 +1,8 @@
 public struct RaceContext {
     public let track: Track
     public let playerDistance: Double
+    /// Wszystkie auta wyścigu (z tym, które steruje) — do omijania wraków.
+    public var cars: [Car] = []
 }
 
 public protocol Controller: AnyObject {
@@ -27,12 +29,42 @@ public final class PlayerController: Controller {
 
 /// Wspólna „kierownica” rywali i auto-prowadzenia: trzyma pas i z wyprzedzeniem wchodzi w zakręty.
 public enum LineFollower {
-    /// Skręt potrzebny, żeby jechać pasem `lane` (przesunięcie w bok, m).
-    public static func steer(car: Car, track: Track, lane: Double) -> Double {
+    /// Skręt potrzebny, żeby jechać pasem `lane` (przesunięcie w bok, m). `gain` — jak ostro zjeżdżać
+    /// na pas (kąt na metr odchyłki); większy przy omijaniu wraku.
+    public static func steer(car: Car, track: Track, lane: Double, gain: Double = 0.04) -> Double {
         let near = track.sample(at: car.s + clamp(car.speed * 0.25, 4, 20))
         let curveSteer = near.curvature * car.speed / max(0.1, car.yawRatePerSteer)
-        let desiredAlpha = clamp((lane - car.d) * 0.04, -0.25, 0.25)
+        let desiredAlpha = clamp((lane - car.d) * gain, -0.25, 0.25)
         return clamp(curveSteer + (desiredAlpha - car.alphaVel) * 2.5, -1, 1)
+    }
+
+    /// Pas, który omija rozbite auta przed `car`: gdy wrak stoi na drodze do `lane` (bliżej niż styk boków
+    /// plus zapas), cel przesuwa się obok wraku. Strona: ta, po której auto już jest; gdy jedzie prosto
+    /// na wrak — ta z większym miejscem do bandy. Bez tego jadący z tyłu przenikał przez wrak w ok. 0,2 s
+    /// (odpychanie w `Collisions` to tylko ułamek metra na krok).
+    public static func avoidingWrecks(car: Car, lane: Double, ctx: RaceContext) -> Double {
+        let track = ctx.track
+        var lane = lane
+        let lookahead = max(Physics.wreckLookahead, car.speed)
+        for other in ctx.cars where other !== car && other.wrecked {
+            let ahead = wrapDelta(other.s, car.s, track.length)
+            // Także gdy auto jest już obok wraku — inaczej wracałoby na pas w połowie mijania.
+            guard ahead > -(car.def.shape.length + other.def.shape.length) / 2, ahead < lookahead else { continue }
+            let clearance = (car.def.shape.width + other.def.shape.width) / 2 + Physics.wreckAvoidMargin
+            guard abs(lane - other.d) < clearance else { continue }
+            let edge = track.halfWidth - car.def.shape.width / 2
+            let left = other.d + clearance, right = other.d - clearance
+            let fitsLeft = left <= edge, fitsRight = right >= -edge
+            let side = car.d - other.d
+            let goLeft: Bool
+            if abs(side) > 0.5 && (side > 0 ? fitsLeft : fitsRight) {
+                goLeft = side > 0
+            } else {
+                goLeft = edge - left >= right + edge
+            }
+            lane = goLeft ? min(left, edge) : max(right, -edge)
+        }
+        return lane
     }
 
     /// Czy przed autem jest zakręt ciaśniejszy, niż auto zdoła pokonać nawet w drifcie przy obecnej prędkości.
@@ -77,8 +109,9 @@ public final class AutoSteerController: Controller {
         if raw < -0.5 && prevSteer >= -0.5 { laneIndex = max(0, laneIndex! - 1) }
         prevSteer = raw
 
-        let lane = Self.lanes[laneIndex!] * track.halfWidth
-        let steer = LineFollower.steer(car: car, track: track, lane: lane)
+        let wanted = Self.lanes[laneIndex!] * track.halfWidth
+        let lane = LineFollower.avoidingWrecks(car: car, lane: wanted, ctx: ctx)
+        let steer = LineFollower.steer(car: car, track: track, lane: lane, gain: lane == wanted ? 0.04 : Physics.wreckAvoidGain)
         let drift = input.drift || LineFollower.needsDrift(car: car, track: track, steer: steer)
         return CarInput(steer: steer, drift: drift, nitro: input.consumeNitro(),
                         brake: LineFollower.needsBrake(car: car, track: track))
@@ -90,7 +123,7 @@ public final class AutoSteerController: Controller {
 public final class AIController: Controller {
     private let skill: Double
     private let rng: SeededRandom
-    private var lane = 0.0
+    private(set) var lane = 0.0
     private var laneTimer = 0.0
 
     public init(skill: Double, rng: SeededRandom) {
@@ -106,7 +139,8 @@ public final class AIController: Controller {
             laneTimer = 3 + rng.next() * 4
         }
 
-        let steer = LineFollower.steer(car: car, track: track, lane: lane)
+        let target = LineFollower.avoidingWrecks(car: car, lane: lane, ctx: ctx)
+        let steer = LineFollower.steer(car: car, track: track, lane: target, gain: target == lane ? 0.04 : Physics.wreckAvoidGain)
         let drift = LineFollower.needsDrift(car: car, track: track, steer: steer)
 
         var nitro = false

@@ -227,9 +227,12 @@ xcodebuild test -project SimpleRacer.xcodeproj -scheme SimpleRacer \
 menu → garage → campaign → race. `AllTracksUITests` (about 40 minutes) races on all 40 tracks,
 cycling through the cars, and drives every car to the finish.
 
-GitHub Actions (`.github/workflows/ci.yml`) runs those tests and builds the app for a generic
-iOS Simulator destination on every push to `main` and on pull requests. The workflow uses the
-latest stable Xcode and needs no specific simulator or code signing.
+GitHub Actions (`.github/workflows/ci.yml`) runs the `RaceCore` tests and builds the app in the
+Family and Release configurations (Release compiles the store-only code paths) for a generic iOS
+Simulator destination on every push to `main` and on pull requests. The UI tests are not run in CI:
+they need the local car models (`LocalModels/`, outside the repository) and a GPU-backed simulator,
+so they run locally before merging. The workflow uses the latest stable Xcode and needs no specific
+simulator or code signing.
 
 ## Architecture
 

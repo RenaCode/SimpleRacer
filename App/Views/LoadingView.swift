@@ -7,6 +7,11 @@ import SwiftUI
 struct LoadingView: View {
     let spec: TrackSpec
     let progress: Double
+    /// Ładowanie się nie udało: zamiast paska komunikat i „Spróbuj ponownie”.
+    var error: String?
+    var retry: () -> Void = {}
+    /// Powrót do menu — zawsze widoczny: bez niego zawieszone ładowanie wymagało zabicia aplikacji.
+    var menu: () -> Void = {}
     @State private var photo: UIImage?
     @State private var tip = LoadingView.tips.randomElement()!
 
@@ -49,14 +54,30 @@ struct LoadingView: View {
                 HStack(alignment: .bottom, spacing: 28) {
                     TipCard(icon: tip.icon, text: tip.text)
                     Spacer(minLength: 0)
-                    ProgressBar(value: progress)
-                        .frame(width: 380)
+                    if let error {
+                        VStack(alignment: .trailing, spacing: 12) {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundStyle(.white)
+                            Button(action: retry) { Label("Spróbuj ponownie", systemImage: "arrow.clockwise") }
+                                .buttonStyle(RaceButtonStyle(primary: true))
+                        }
+                        .frame(width: 380, alignment: .trailing)
+                    } else {
+                        ProgressBar(value: progress)
+                            .frame(width: 380)
+                    }
                 }
                 .padding(.horizontal, 40)
                 .padding(.top, 30)
                 .padding(.bottom, 36)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+
+            Button(action: menu) { Label("Menu", systemImage: "house.fill") }
+                .buttonStyle(RaceButtonStyle())
+                .padding(.top, 34).padding(.trailing, 40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
         .ignoresSafeArea()
         .task {
