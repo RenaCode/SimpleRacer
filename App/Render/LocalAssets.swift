@@ -275,8 +275,8 @@ final class LocalAssets {
         inFlight.insert(e.file)
         defer { inFlight.remove(e.file) }
         #if DEBUG || FAMILY
-        // Testy UI ładowania: `-slowCar <n>` wczytuje n-te auto katalogu 15 s później (auto wybrane w garażu,
-        // gdy inne są już wczytane), `-failCar <n>` udaje, że jego plik się nie wczytuje.
+        // Testy UI ładowania: `-slowCar <n>` wczytuje n-te auto katalogu dopiero wtedy, gdy ekran wyścigu jest otwarty
+        // i wczytanych jest tyle aut, ile startuje (stan z zawieszenia: auto wybrane w garażu, zanim się wczytało), `-failCar <n>` udaje, że jego plik się nie wczytuje.
         func testCar(_ flag: String) -> Bool {
             let args = ProcessInfo.processInfo.arguments
             guard let i = args.firstIndex(of: flag), i + 1 < args.count, let n = Int(args[i + 1]),
@@ -288,7 +288,9 @@ final class LocalAssets {
             failed.insert(e.file)
             return
         }
-        if testCar("-slowCar") { try? await Task.sleep(for: .seconds(15)) }
+        if testCar("-slowCar") {
+            while !(racesShowing > 0 && loadedCount >= raceCarCount) { try? await Task.sleep(for: .milliseconds(100)) }
+        }
         #endif
         while mustWait(e) { try? await Task.sleep(for: .milliseconds(250)) }
         // Druga próba po chwili: przy dużym obciążeniu wczytywanie USDZ potrafi się nie udać za pierwszym razem.
