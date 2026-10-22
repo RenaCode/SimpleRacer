@@ -15,7 +15,14 @@ public enum Upgrade: String, CaseIterable, Codable, Sendable {
 }
 
 /// Postęp gracza w kampanii. Zapisywany na urządzeniu.
+///
+/// Odczyt jest wyrozumiały: brakujące pole dostaje wartość domyślną, a nieznane ulepszenie jest pomijane —
+/// błąd dekodowania oznaczał w aplikacji nową grę i nadpisanie postępu dziecka.
+/// Zapis (syntetyzowany `encode(to:)`) się nie zmienia: ulepszenia auta to naprzemienna tablica
+/// `["engine", 2, "nitro", 1]`, bo `Upgrade` nie jest kluczem słownika dla JSONEncoder.
 public struct CampaignState: Codable, Equatable, Sendable {
+    /// Wersja formatu zapisu — do przyszłych migracji. Zapis bez niej to wersja 1.
+    public var version = 1
     public var coins: Int = 0
     /// Najlepsze gwiazdki na trasie (id trasy → 1…3).
     public var bestStars: [Int: Int] = [:]
@@ -26,6 +33,36 @@ public struct CampaignState: Codable, Equatable, Sendable {
     public init(coins: Int = 0, ownedCars: Set<String> = []) {
         self.coins = coins
         self.ownedCars = ownedCars
+    }
+
+    enum CodingKeys: String, CodingKey { case version, coins, bestStars, ownedCars, upgrades }
+
+    private struct AnyKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        coins = try c.decodeIfPresent(Int.self, forKey: .coins) ?? 0
+        bestStars = try c.decodeIfPresent([Int: Int].self, forKey: .bestStars) ?? [:]
+        ownedCars = try c.decodeIfPresent(Set<String>.self, forKey: .ownedCars) ?? []
+        guard c.contains(.upgrades), try !c.decodeNil(forKey: .upgrades) else { return }
+        let cars = try c.nestedContainer(keyedBy: AnyKey.self, forKey: .upgrades)
+        for key in cars.allKeys {
+            // Pary (nazwa, poziom) czytane po jednej: ulepszenie spoza tej wersji gry nie psuje reszty.
+            var list = try cars.nestedUnkeyedContainer(forKey: key)
+            var levels: [Upgrade: Int] = [:]
+            while !list.isAtEnd {
+                let name = try list.decode(String.self)
+                let level = try list.decode(Int.self)
+                if let u = Upgrade(rawValue: name) { levels[u] = level }
+            }
+            upgrades[key.stringValue] = levels
+        }
     }
 
     public var totalStars: Int { bestStars.values.reduce(0, +) }
