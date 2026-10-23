@@ -790,6 +790,60 @@ final class CampaignTests: XCTestCase {
     }
 }
 
+final class DifficultyTests: XCTestCase {
+    private let starter = CarCatalog.builtIn[0]
+
+    /// Miejsce gracza na auto-prowadzeniu (bez dotykania) autem o wymaganej mocy, przy danej trudności.
+    private func autopilotPlace(track id: Int, _ difficulty: Difficulty, seed: UInt64 = 0) -> Int {
+        let spec = TrackCatalog.track(id: id)
+        let def = Campaign.upgraded(starter, levels: Campaign.minimalUpgrades(starter, toReach: Campaign.requiredRating(spec)))
+        var entries = (0..<5).map { (i: Int) -> Entry in
+            Entry(name: "AI \(i)", def: Campaign.rival(looking: CarCatalog.builtIn[i % 3], on: spec, difficulty: difficulty),
+                  color: "#FFFFFF", isPlayer: false,
+                  controller: AIController(skill: Campaign.aiSkill(spec, difficulty: difficulty),
+                                           rng: SeededRandom(seed: UInt64(i) * 31 + UInt64(id) + seed),
+                                           rubberBand: difficulty.rubberBand))
+        }
+        entries.append(Entry(name: "Gracz", def: def, color: "#FFFFFF", isPlayer: true,
+                             controller: AutoSteerController(input: FakeInput())))
+        let sim = RaceSim(track: spec.makeTrack(), entries: entries, laps: spec.laps)
+        while !(sim.player!.finished) && sim.time < 300 { sim.advance(); sim.events.removeAll() }
+        return sim.finishOrder.firstIndex { $0 === sim.player! }.map { $0 + 1 } ?? 99
+    }
+
+    /// Poziomy są uporządkowane: słabsi i wolniejsi rywale na niższym poziomie, na każdej trasie.
+    func testLevelsOrderRivalStrength() {
+        for id in [1, 20, 40] {
+            let spec = TrackCatalog.track(id: id)
+            let rating = Difficulty.allCases.map { Campaign.rating(Campaign.rival(looking: starter, on: spec, difficulty: $0)) }
+            let skill = Difficulty.allCases.map { Campaign.aiSkill(spec, difficulty: $0) }
+            XCTAssertEqual(rating, rating.sorted(), "moc rywali, trasa \(id)")
+            // Na pierwszych trasach rywale mają już najsłabsze statystyki — różni ich wtedy tylko umiejętność i gumka.
+            if id >= 20 { XCTAssertLessThan(rating[0], rating[2], "trasa \(id)") }
+            XCTAssertEqual(skill, skill.sorted(), "umiejętność rywali, trasa \(id)")
+            XCTAssertLessThan(skill[0], skill[2], "trasa \(id)")
+        }
+    }
+
+    /// „Bardzo łatwy”: samo auto-prowadzenie wygrywa w całej kampanii.
+    func testVeryEasyAutopilotWinsAcrossCampaign() {
+        for id in [1, 10, 20, 30, 40] {
+            let place = autopilotPlace(track: id, .veryEasy)
+            print("trasa \(id): bardzo łatwy — miejsce \(place)")
+            XCTAssertEqual(place, 1, "trasa \(id)")
+        }
+    }
+
+    /// Niższy poziom nigdy nie daje gorszego miejsca niż wyższy (te same trasy i losowanie).
+    func testLowerLevelNeverWorsePlace() {
+        for id in [1, 10, 20, 30, 40] {
+            let places = Difficulty.allCases.map { autopilotPlace(track: id, $0) }
+            print("trasa \(id): miejsca \(zip(Difficulty.allCases.map(\.name), places).map { "\($0) \($1)" })")
+            XCTAssertEqual(places, places.sorted(), "trasa \(id)")
+        }
+    }
+}
+
 final class RivalTests: XCTestCase {
     private var savedCatalog: [CarDef] = []
     private var savedStarter = ""

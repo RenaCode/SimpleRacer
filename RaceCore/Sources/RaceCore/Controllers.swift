@@ -123,12 +123,14 @@ public final class AutoSteerController: Controller {
 public final class AIController: Controller {
     private let skill: Double
     private let rng: SeededRandom
+    private let rubberBand: ClosedRange<Double>
     private(set) var lane = 0.0
     private var laneTimer = 0.0
 
-    public init(skill: Double, rng: SeededRandom) {
+    public init(skill: Double, rng: SeededRandom, rubberBand: ClosedRange<Double> = Difficulty.easy.rubberBand) {
         self.skill = skill
         self.rng = rng
+        self.rubberBand = rubberBand
     }
 
     public func read(car: Car, dt: Double, ctx: RaceContext) -> CarInput {
@@ -158,7 +160,7 @@ public final class AIController: Controller {
         // Gumka: dystans do gracza lekko zmienia prędkość, żeby wyścig był wyrównany.
         let gap = ctx.playerDistance - car.distance
         // Na korzyść gracza (gra dla dzieci): rywal daleko z przodu zwalnia mocniej, niż przyspiesza z tyłu.
-        car.speedScale = skill * clamp(1 + gap / 600, 0.85, 1.05)
+        car.speedScale = skill * clamp(1 + gap / 600, rubberBand.lowerBound, rubberBand.upperBound)
 
         return CarInput(steer: steer, drift: drift, nitro: nitro, brake: LineFollower.needsBrake(car: car, track: track))
     }

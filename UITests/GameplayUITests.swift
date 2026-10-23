@@ -10,7 +10,7 @@ final class GameplayUITests: XCTestCase {
     private func launch(_ args: [String]) -> XCUIApplication {
         let app = XCUIApplication()
         // -mute: symulator gra przez głośniki Maca.
-        app.launchArguments = ["-mute"] + args
+        app.launchArguments = ["-mute", "-logFile"] + args
         app.launch()
         return app
     }
@@ -118,5 +118,35 @@ final class GameplayUITests: XCTestCase {
         XCTAssertTrue(track8.waitForExistence(timeout: 5), "brak karty trasy 8")
         track8.tap()
         raceStarted(app)
+    }
+
+    /// Poziom trudności w ustawieniach: domyślnie „Bardzo łatwy”, wybór zostaje po ponownym uruchomieniu.
+    /// Na końcu wraca do domyślnego — profil przecieka do kolejnych testów na tym urządzeniu.
+    func testDifficultySettingPersists() {
+        func openSettings(_ app: XCUIApplication) -> XCUIElement {
+            XCTAssertTrue(app.buttons["Ustawienia"].waitForExistence(timeout: 60), "menu się nie pokazało")
+            app.buttons["Ustawienia"].tap()
+            let picker = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Poziom trudności'")).firstMatch
+            XCTAssertTrue(picker.waitForExistence(timeout: 5), "brak wyboru trudności")
+            return picker
+        }
+        func choose(_ name: String, in app: XCUIApplication, picker: XCUIElement) {
+            picker.tap()
+            let item = app.buttons[name]
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "brak poziomu \(name)")
+            item.tap()
+            XCTAssertTrue(picker.label.contains(name), "wybrany \(picker.label), oczekiwano \(name)")
+        }
+        var app = launch([])
+        var picker = openSettings(app)
+        choose("Normalny", in: app, picker: picker)
+        app.buttons["Zamknij"].tap()
+        app.terminate()
+
+        app = launch([])
+        picker = openSettings(app)
+        XCTAssertTrue(picker.label.contains("Normalny"), "po restarcie: \(picker.label)")
+        choose("Bardzo łatwy", in: app, picker: picker)
+        app.buttons["Zamknij"].tap()
     }
 }

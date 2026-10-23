@@ -344,11 +344,43 @@ final class AudioManager {
 /// Diagnostyka tylko w buildzie Debug (widoczna w konsoli Xcode / `simctl launch --console-pty`).
 func debugLog(_ message: @autoclosure () -> String) {
     #if DEBUG || FAMILY
-    print(String(format: "[%.2f s] ", ProcessInfo.processInfo.systemUptime - appStartUptime) + message())
+    let line = String(format: "[%.2f s] ", ProcessInfo.processInfo.systemUptime - appStartUptime) + message()
+    print(line)
     // Log do pliku (`simctl launch --stdout`) jest buforowany — bez tego koniec logu ginie przy zamknięciu apki.
     fflush(stdout)
+    // Testy UI na iPadzie nie mają konsoli: `-logFile` dopisuje log do Documents/perf.log (`devicectl device copy from`).
+    if let logFile { logFile.write(Data((line + "\n").utf8)) }
     #endif
 }
+
+#if DEBUG || FAMILY
+private let logFile: FileHandle? = {
+    guard ProcessInfo.processInfo.arguments.contains("-logFile"),
+          let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+    let url = dir.appendingPathComponent("perf.log")
+    if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
+    let h = try? FileHandle(forWritingTo: url)
+    _ = try? h?.seekToEnd()
+    h?.write(Data("=== start \(Date()) termika \(ProcessInfo.processInfo.thermalState.rawValue) \(ProcessInfo.processInfo.arguments.dropFirst().joined(separator: " "))\n".utf8))
+    // Oś czasu nagrzewania przez cały test, także poza wyścigiem.
+    NotificationCenter.default.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: nil) { _ in
+        h?.write(Data("=== termika \(ProcessInfo.processInfo.thermalState.rawValue) o \(Date())\n".utf8))
+    }
+    return h
+}()
+#endif
+
+#if DEBUG || FAMILY
+/// Pamięć procesu (phys_footprint, MB) — to samo, co liczy iOS przy zabijaniu aplikacji za pamięć.
+func memoryFootprintMB() -> Double {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let kr = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+    }
+    return kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+}
+#endif
 
 /// Chwila startu procesu (do pomiaru czasów ładowania w logach Debug).
 let appStartUptime = ProcessInfo.processInfo.systemUptime

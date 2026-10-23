@@ -310,6 +310,10 @@ final class CarEntity {
     /// Snop iskier z boku auta (`side` +1 — lewy, −1 — prawy, jak `d` na trasie); `intensity` — prędkość
     /// wbicia w bandę (m/s), od niej zależy liczba iskier.
     func sparks(side: Double, intensity: Double) {
+        #if DEBUG || FAMILY
+        if Self.sparksOff { return }
+        debugLog(String(format: "efekt: iskry %.0f m/s", intensity))
+        #endif
         guard sparkEmitters.count == 2 else { return }
         let e = sparkEmitters[side > 0 ? 1 : 0]
         guard var emitter = e.components[ParticleEmitterComponent.self] else { return }
@@ -317,6 +321,11 @@ final class CarEntity {
         emitter.burst()
         e.components.set(emitter)
     }
+
+    #if DEBUG || FAMILY
+    /// `-noSparks`: uderzenia w bandę bez iskier (pomiar kosztu A/B).
+    private static let sparksOff = ProcessInfo.processInfo.arguments.contains("-noSparks")
+    #endif
 
     private static func sparkEmitter(side: Float) -> ParticleEmitterComponent {
         var p = ParticleEmitterComponent()

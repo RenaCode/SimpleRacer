@@ -73,6 +73,7 @@ final class RaceGame {
     @ObservationIgnored private let sim: RaceSim
     @ObservationIgnored private var cars: [(Car, CarEntity)] = []
     @ObservationIgnored private var pickupEntities: [Entity] = []
+    @ObservationIgnored private var pickupGlows: [Entity?] = []
     /// Otoczenie wzdłuż trasy — rysowane tylko w pobliżu gracza.
     @ObservationIgnored private var scenery: [(entity: Entity, s: Double)] = []
     @ObservationIgnored private var skyDome = Entity()
@@ -122,11 +123,12 @@ final class RaceGame {
         // a gdyby na urządzeniu była pełna, mgła nałożyłaby się dwa razy.
         fx.fogDensity = 0
         postFX = fx
-        debugLog("wyścig: start budowania (trasa \(spec.id))")
+        debugLog("wyścig: start budowania (trasa \(spec.id), trudność \(profile.difficulty.rawValue))")
         defer {
             #if DEBUG || FAMILY
             func models(_ e: Entity) -> Int { (e is ModelEntity ? 1 : 0) + e.children.reduce(0) { $0 + models($1) } }
             debugLog("wyścig: scena gotowa — razem \(models(root)) modeli (auta: \(cars.map { models($0.1.root) }))")
+            debugLog(String(format: "pamięć: %.0f MB (start wyścigu %d, auto %@)", memoryFootprintMB(), spec.id, playerCar.id))
             #else
             debugLog("wyścig: scena gotowa")
             #endif
@@ -136,10 +138,12 @@ final class RaceGame {
         let names = Self.rivals.shuffled()
         // Rywale: dowolny wygląd, statystyki dopasowane do trasy (lekko słabsze od wymaganych).
         var entries: [Entry] = (0..<RaceConfig.opponents).map { i in
-            Entry(name: names[i], def: Campaign.rival(looking: rng.pick(LocalAssets.shared.loadedCars), on: spec),
+            Entry(name: names[i], def: Campaign.rival(looking: rng.pick(LocalAssets.shared.loadedCars), on: spec,
+                                                      difficulty: profile.difficulty),
                   color: rng.pick(CarCatalog.colors), isPlayer: false,
-                  controller: AIController(skill: Campaign.aiSkill(spec) + rng.next() * 0.04,
-                                           rng: SeededRandom(seed: UInt64(rng.next() * 1e15))))
+                  controller: AIController(skill: Campaign.aiSkill(spec, difficulty: profile.difficulty) + rng.next() * 0.04,
+                                           rng: SeededRandom(seed: UInt64(rng.next() * 1e15)),
+                                           rubberBand: profile.difficulty.rubberBand))
         }
         // Gracz startuje z końca stawki i musi przebić się do przodu.
         #if DEBUG || FAMILY
@@ -213,6 +217,7 @@ final class RaceGame {
             e.position = [Float(w.x), 0.9, Float(w.z)]
             root.addChild(e)
             pickupEntities.append(e)
+            pickupGlows.append(e.findEntity(named: NitroCanister.glowName))
         }
 
         camera.camera.near = 0.5
@@ -298,12 +303,16 @@ final class RaceGame {
         if ft > 0.025 && (raceClock > 0.5 || !holdStart) {
             debugLog(String(format: "klatka: przycięcie %.0f ms (%.1f s wyścigu, faza %@, s=%.0f m)", ft * 1000, raceClock, "\(phase)", player.s))
         }
-        if frameTimes.count % 600 == 0 {
+        // Co 300 klatek (5 s): długi test UI przełącza wyścigi po kilku sekundach jazdy.
+        if frameTimes.count % 300 == 0 {
             let sorted = frameTimes.sorted()
             let p = { (q: Double) in sorted[min(sorted.count - 1, Int(Double(sorted.count) * q))] * 1000 }
             let hitches = frameTimes.filter { $0 > 0.025 }.count
-            debugLog(String(format: "klatki: %d, mediana %.1f ms, p95 %.1f ms, max %.0f ms, przycięć %d",
-                            frameTimes.count, p(0.5), p(0.95), sorted.last! * 1000, hitches))
+            // Stan termiczny i tryb oszczędzania: na iPadzie te same ustawienia dawały raz 60, raz 20 kl./s.
+            let info = ProcessInfo.processInfo
+            debugLog(String(format: "klatki: %d, mediana %.1f ms, p95 %.1f ms, max %.0f ms, przycięć %d, termika %d, oszczędzanie %@",
+                            frameTimes.count, p(0.5), p(0.95), sorted.last! * 1000, hitches,
+                            info.thermalState.rawValue, info.isLowPowerModeEnabled ? "tak" : "nie"))
         }
     }
     #endif
@@ -577,6 +586,7 @@ final class RaceGame {
             guard visible else { continue }
             e.orientation = spin
             e.position.y = 0.9 + bob
+            if let g = pickupGlows[i] { NitroCanister.faceCamera(g, camera: camera.position(relativeTo: nil)) }
         }
     }
 

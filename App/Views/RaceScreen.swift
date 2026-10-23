@@ -125,6 +125,17 @@ private struct RaceContent: View {
     @State private var settled: RaceResult?
 
     /// Smugi prędkości: pełne przy nitro, słabe od 260 km/h.
+    #if DEBUG || FAMILY
+    /// `-noHUD`: wyścig bez nakładek SwiftUI (pomiar kosztu kompozycji A/B).
+    private static let hudOff = ProcessInfo.processInfo.arguments.contains("-noHUD")
+    /// Smugi prędkości tylko z `-speedLines`: pełnoekranowy `Canvas` przerysowywany co klatkę zbijał wyścig na
+    /// iPadzie A16 do ~20 kl./s (A/B 23.10: bez smug 4/5 przebiegów płynnych, z nimi 0/5).
+    private static let speedLinesOff = !ProcessInfo.processInfo.arguments.contains("-speedLines")
+    #else
+    private static let hudOff = false
+    private static let speedLinesOff = true
+    #endif
+
     private var speedLineIntensity: Double {
         let hud = game.hud
         if game.result != nil || game.paused { return 0 }
@@ -160,10 +171,14 @@ private struct RaceContent: View {
             }
             .ignoresSafeArea()
 
-            SpeedLines(intensity: speedLineIntensity)
-                .animation(.easeOut(duration: 0.4), value: speedLineIntensity)
-            HudView(game: game)
-                .opacity(game.result == nil ? 1 : 0.25)
+            if !Self.hudOff {
+                if !Self.speedLinesOff {
+                    SpeedLines(intensity: speedLineIntensity)
+                        .animation(.easeOut(duration: 0.4), value: speedLineIntensity)
+                }
+                HudView(game: game)
+                    .opacity(game.result == nil ? 1 : 0.25)
+            }
             // Po mecie (3 s do ekranu wyników) bez pauzy: „Menu” albo „Od nowa” w tym oknie
             // przerywały wyścig przed rozliczeniem i ukończona trasa nie dawała gwiazdek ani monet.
             if game.result == nil && game.phase != .finished {
@@ -197,6 +212,8 @@ private struct RaceContent: View {
             if let r, settled == nil { settled = model.settle(r) }
         }
         .onAppear {
+            // Auto-prowadzenie i auto-gaz: dziecko może nie dotykać ekranu przez cały wyścig — bez tego iPad gaśnie w trakcie.
+            UIApplication.shared.isIdleTimerDisabled = true
             game.input.onEscape = { [weak game] in
                 guard let game, game.phase != .finished else { return }
                 game.paused.toggle()
@@ -212,6 +229,7 @@ private struct RaceContent: View {
             if type == .began && game.result == nil && game.phase != .finished { game.paused = true }
         }
         .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
             game.subscription?.cancel()
             AudioManager.shared.setEngine(speed: 0, nitro: false, running: false)
         }

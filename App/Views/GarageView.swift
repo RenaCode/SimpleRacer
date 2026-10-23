@@ -147,7 +147,12 @@ struct GarageView: View {
                                 text: String(format: "×%.2f", stats.nitroPower))
                     }
                     Text("KOLOR").font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary)
-                    colors
+                    // Auta z bajki (lakier w teksturze z napisami i rdzą): kolor nic by nie zmienił.
+                    if let r = shown.realistic, r.paintParts.isEmpty {
+                        Text("Oryginalne malowanie").font(.callout).foregroundStyle(.secondary)
+                    } else {
+                        colors
+                    }
                     Spacer(minLength: 0)
                     Button {
                         model.garageCarId = nil

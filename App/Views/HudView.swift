@@ -13,11 +13,13 @@ struct HudView: View {
                         Text("\(h.position)").font(Theme.display(56))
                         Text("/\(h.total)").font(Theme.display(22)).opacity(0.8)
                     }
+                    .hudShadow()
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("OKR. \(h.lap)/\(h.laps)").font(Theme.display(22))
                         Text(formatTime(h.time)).font(.system(size: 16, weight: .bold)).monospacedDigit().opacity(0.85)
                     }
+                    .hudShadow()
                 }
                 Spacer()
                 VStack(spacing: 6) {
@@ -27,6 +29,7 @@ struct HudView: View {
                     }
                     NitroBar(hud: h)
                 }
+                .hudShadow()
                 .padding(.bottom, 4)
             }
             .padding(.horizontal, 24)
@@ -34,6 +37,7 @@ struct HudView: View {
 
             if let c = game.countdownText {
                 Text(c).font(Theme.display(160)).foregroundStyle(Theme.accent)
+                    .hudShadow()
                     .transition(.scale.combined(with: .opacity))
                     .id(c)
             }
@@ -43,6 +47,7 @@ struct HudView: View {
                     Text(t.text)
                         .font(Theme.display(34))
                         .foregroundStyle(t.kind == .good ? Theme.accent : t.kind == .bad ? Theme.bad : Theme.nitro)
+                        .hudShadow()
                         .transition(.asymmetric(insertion: .scale(scale: 1.6).combined(with: .opacity), removal: .opacity))
                 }
             }
@@ -64,7 +69,6 @@ struct HudView: View {
             }
         }
         .foregroundStyle(.white)
-        .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
         .allowsHitTesting(false)
     }
 }
@@ -106,6 +110,12 @@ private struct NitroBar: View {
             Text(label).font(Theme.display(15)).foregroundStyle(hud.perfectWindow ? Theme.perfect : .white)
         }
     }
+}
+
+private extension View {
+    /// Cień pod napisami HUD — na każdej grupie osobno. Jeden cień na całym HUD rozmywał co klatkę warstwę
+    /// wielkości ekranu (licznik i czas zmieniają się stale): na iPadzie A16 zabierało to ok. 1/5 GPU.
+    func hudShadow() -> some View { shadow(color: .black.opacity(0.6), radius: 4, y: 2) }
 }
 
 func formatTime(_ t: Double) -> String {

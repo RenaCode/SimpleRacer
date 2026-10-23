@@ -11,6 +11,16 @@ import UIKit
 /// Środek butli w zerze, wysokość ok. 1,3 m (jak dawna kapsuła).
 @MainActor
 enum NitroCanister {
+    static let glowName = "nitro-glow"
+
+    /// Poświata zwrócona do kamery (płaszczyzna +Z → kamera; tekstura okrągła, więc obrót wokół osi patrzenia nie gra roli).
+    static func faceCamera(_ glow: Entity, camera: SIMD3<Float>) {
+        let d = camera - glow.position(relativeTo: nil)
+        let len = simd_length(d)
+        guard len > 1e-3 else { return }
+        glow.setOrientation(simd_quatf(from: [0, 0, 1], to: d / len), relativeTo: nil)
+    }
+
     static func make() -> Entity {
         let e = Entity()
         if let body = bottle() { e.addChild(body) }
@@ -283,7 +293,9 @@ enum NitroCanister {
         var m = UnlitMaterial(color: UIColor(red: 0.35, green: 0.7, blue: 1, alpha: 1))
         m.blending = .transparent(opacity: .init(scale: 0.28, texture: .init(tex)))
         let e = ModelEntity(mesh: .generatePlane(width: 1.9, height: 1.9), materials: [m])
-        e.components.set(BillboardComponent())
+        // Bez BillboardComponent: po wyjściu z wyścigu do garażu RealityKit (iOS 27) padał w
+        // BillboardManager na usuniętych encjach poświat. Do kamery obraca ją RaceGame (`faceCamera`).
+        e.name = glowName
         return e
     }
 }
