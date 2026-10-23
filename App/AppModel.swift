@@ -64,6 +64,9 @@ final class AppModel {
     var profile: Profile {
         didSet {
             save()
+            // Długi test na iPadzie: auto-prowadzenie wyłączyło się raz po ~340 wyścigach bez śladu stuknięcia.
+            if profile.autoSteer != oldValue.autoSteer { debugLog("profil: auto-prowadzenie \(profile.autoSteer ? "ON" : "OFF")") }
+            if profile.difficulty != oldValue.difficulty { debugLog("profil: trudność \(profile.difficulty.rawValue)") }
             AudioManager.shared.musicOn = profile.musicOn
             AudioManager.shared.soundOn = profile.soundOn
         }

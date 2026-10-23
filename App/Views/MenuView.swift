@@ -120,6 +120,7 @@ private struct AutoSteerPill: View {
         }
         .buttonStyle(PressScaleStyle())
         .accessibilityLabel("Auto-prowadzenie")
+        .accessibilityValue(isOn ? "ON" : "OFF")
         .accessibilityValue(isOn ? "włączone" : "wyłączone")
     }
 }

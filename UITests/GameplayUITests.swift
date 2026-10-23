@@ -125,9 +125,13 @@ final class GameplayUITests: XCTestCase {
     func testDifficultySettingPersists() {
         func openSettings(_ app: XCUIApplication) -> XCUIElement {
             XCTAssertTrue(app.buttons["Ustawienia"].waitForExistence(timeout: 60), "menu się nie pokazało")
-            app.buttons["Ustawienia"].tap()
             let picker = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Poziom trudności'")).firstMatch
-            XCTAssertTrue(picker.waitForExistence(timeout: 5), "brak wyboru trudności")
+            // Pierwsze stuknięcie bywa pochłonięte przez wygaszany splash (zielony na iPadzie rano, czerwony wieczorem).
+            for _ in 0..<3 where !picker.exists {
+                app.buttons["Ustawienia"].tap()
+                _ = picker.waitForExistence(timeout: 5)
+            }
+            XCTAssertTrue(picker.exists, "brak wyboru trudności")
             return picker
         }
         func choose(_ name: String, in app: XCUIApplication, picker: XCUIElement) {

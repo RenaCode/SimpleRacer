@@ -10,6 +10,8 @@ final class LongSessionUITests: XCTestCase {
     private static let env = ProcessInfo.processInfo.environment
     private static let trackCount = Int(env["LONG_TRACKS"] ?? "") ?? 40
     private static let carLimit = Int(env["LONG_CARS"] ?? "") ?? .max
+    /// Start od wybranej trasy (odtworzenie błędu z dalszej części sesji): `TEST_RUNNER_LONG_FIRST_TRACK=32`.
+    private static let firstTrack = Int(env["LONG_FIRST_TRACK"] ?? "") ?? 1
     /// `TEST_RUNNER_LONG_ALL_COLORS=1`: pełny iloczyn auto × kolor × trasa (~3000 wyścigów, ~17 h) zamiast
     /// kolorów po kolei (każda para auto–trasa, auto–kolor i trasa–kolor, ~440 wyścigów).
     private static let allColors = env["LONG_ALL_COLORS"] == "1"
@@ -57,6 +59,18 @@ final class LongSessionUITests: XCTestCase {
     }
 
     /// Garaż: auto o numerze `car` i kolor `hex` (auta z bajki nie mają palety — wtedy tylko auto).
+    /// Auto-prowadzenie w menu musi być włączone (długa sesja na iPadzie: raz wyłączyło się bez śladu i auto
+    /// rozbijało się o bandy). Zgłasza błąd, włącza z powrotem i jedzie dalej.
+    private func ensureAutoSteer(in app: XCUIApplication, race: Int) {
+        let pill = app.buttons["Auto-prowadzenie"]
+        guard pill.waitForExistence(timeout: 10) else { return }
+        if (pill.value as? String) == "OFF" {
+            XCTFail("wyścig \(race): auto-prowadzenie w menu wyłączone — włączam z powrotem")
+            shot(app, "auto-prowadzenie-off-\(race)")
+            pill.tap()
+        }
+    }
+
     /// Zwraca nazwę auta i to, czy auto ma paletę, albo nil, gdy garaż nie odpowiada.
     private func pick(car: Int, hex: String, in app: XCUIApplication) -> (name: String, palette: Bool)? {
         guard tap("Garaż", until: "Gotowe", in: app) else { return nil }
@@ -114,7 +128,7 @@ final class LongSessionUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 15)
 
         var race = 0
-        for track in 1...Self.trackCount {
+        for track in Self.firstTrack...Self.trackCount {
             for car in 0..<cars {
               for k in 0..<(Self.allColors ? Self.colors.count : 1) {
                 race += 1
@@ -123,6 +137,7 @@ final class LongSessionUITests: XCTestCase {
                     XCTFail("wyścig \(race): aplikacja nie działa (\(app.state.rawValue)) — koniec sesji")
                     return
                 }
+                ensureAutoSteer(in: app, race: race)
                 guard let (name, palette) = pick(car: car, hex: hex, in: app) else {
                     XCTFail("wyścig \(race), trasa \(track), auto \(car): garaż nie odpowiada")
                     shot(app, "garaz-blad-\(race)")
