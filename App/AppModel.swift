@@ -87,6 +87,13 @@ final class AppModel {
         debugLog("start: AppModel")
         LocalAssets.shared.registerCars()
         FullVersion.apply()
+        #if DEBUG || FAMILY
+        // `-resetProfile`: profil i kampania od zera (po testach na iPadzie dziecka — MDM blokuje usunięcie aplikacji).
+        if ProcessInfo.processInfo.arguments.contains("-resetProfile") {
+            for k in [Self.key, Self.campaignKey, Self.campaignBackupKey] { UserDefaults.standard.removeObject(forKey: k) }
+            debugLog("profil: skasowany (-resetProfile)")
+        }
+        #endif
         // Auto albo kolor spoza katalogu podmieniamy na domyślne — reszta profilu (dźwięk, auto-prowadzenie) zostaje.
         if let data = UserDefaults.standard.data(forKey: Self.key),
            var p = try? JSONDecoder().decode(Profile.self, from: data) {

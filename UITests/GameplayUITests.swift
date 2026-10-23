@@ -153,4 +153,20 @@ final class GameplayUITests: XCTestCase {
         choose("Bardzo łatwy", in: app, picker: picker)
         app.buttons["Zamknij"].tap()
     }
+
+    /// Pigułka „Auto-prowadzenie” w menu podaje stan (ON/OFF) — na nim opiera się kontrola w długiej sesji.
+    func testAutoSteerPillReportsState() {
+        let app = launch([])
+        let pill = app.buttons["Auto-prowadzenie"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 60), "brak pigułki auto-prowadzenia")
+        Thread.sleep(forTimeInterval: 2)  // splash
+        let before = pill.value as? String
+        // iOS podaje stan po swojemu („włączone”/„wyłączone” w polskim systemie), nie „ON”/„OFF” z accessibilityValue.
+        XCTAssertNotNil(before, "pigułka nie podaje stanu")
+        pill.tap()
+        let after = pill.value as? String
+        XCTAssertNotEqual(before, after, "stuknięcie nie zmieniło stanu")
+        pill.tap()
+        XCTAssertEqual(pill.value as? String, before, "stan nie wrócił")
+    }
 }

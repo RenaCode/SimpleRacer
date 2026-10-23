@@ -64,7 +64,9 @@ final class LongSessionUITests: XCTestCase {
     private func ensureAutoSteer(in app: XCUIApplication, race: Int) {
         let pill = app.buttons["Auto-prowadzenie"]
         guard pill.waitForExistence(timeout: 10) else { return }
-        if (pill.value as? String) == "OFF" {
+        // iOS podaje stan po swojemu: „wyłączone” w polskim systemie (nie „OFF” z accessibilityValue).
+        let value = (pill.value as? String)?.lowercased() ?? ""
+        if ["off", "wyłączone", "0"].contains(value) {
             XCTFail("wyścig \(race): auto-prowadzenie w menu wyłączone — włączam z powrotem")
             shot(app, "auto-prowadzenie-off-\(race)")
             pill.tap()
