@@ -3,6 +3,9 @@
 <plist version="1.0">
 <dict>
 	<!-- Ekran startowy systemu: ciemne tło z logo (jak splash gry) zamiast białego. Reszta kluczy pochodzi z ustawień INFOPLIST_KEY_* w project.yml. -->
+	<!-- Tryb gry iPadOS: priorytet CPU/GPU dla gry na pełnym ekranie. -->
+	<key>GCSupportsGameMode</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

@@ -129,6 +129,7 @@ final class RaceGame {
             func models(_ e: Entity) -> Int { (e is ModelEntity ? 1 : 0) + e.children.reduce(0) { $0 + models($1) } }
             debugLog("wyścig: scena gotowa — razem \(models(root)) modeli (auta: \(cars.map { models($0.1.root) }))")
             debugLog(String(format: "pamięć: %.0f MB (start wyścigu %d, auto %@)", memoryFootprintMB(), spec.id, playerCar.id))
+            debugLog("rywale: " + cars.filter { !$0.0.isPlayer }.map { $0.0.def.realistic?.file ?? $0.0.def.id }.joined(separator: " "))
             #else
             debugLog("wyścig: scena gotowa")
             #endif

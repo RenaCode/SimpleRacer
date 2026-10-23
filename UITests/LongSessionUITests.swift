@@ -39,6 +39,16 @@ final class LongSessionUITests: XCTestCase {
         return nil
     }
 
+    /// Stuka w `button`, aż pojawi się `next` (pierwsze stuknięcie bywa pochłonięte przez wygaszany splash).
+    private func tap(_ button: String, until next: String, in app: XCUIApplication, tries: Int = 3) -> Bool {
+        for _ in 0..<tries {
+            guard app.buttons[button].waitForExistence(timeout: 30) else { return false }
+            app.buttons[button].tap()
+            if app.buttons[next].waitForExistence(timeout: 8) { return true }
+        }
+        return false
+    }
+
     private func shot(_ app: XCUIApplication, _ name: String) {
         let a = XCTAttachment(screenshot: app.screenshot())
         a.name = name
@@ -49,9 +59,7 @@ final class LongSessionUITests: XCTestCase {
     /// Garaż: auto o numerze `car` i kolor `hex` (auta z bajki nie mają palety — wtedy tylko auto).
     /// Zwraca nazwę auta i to, czy auto ma paletę, albo nil, gdy garaż nie odpowiada.
     private func pick(car: Int, hex: String, in app: XCUIApplication) -> (name: String, palette: Bool)? {
-        guard app.buttons["Garaż"].waitForExistence(timeout: 30) else { return nil }
-        app.buttons["Garaż"].tap()
-        guard app.buttons["Gotowe"].waitForExistence(timeout: 15) else { return nil }
+        guard tap("Garaż", until: "Gotowe", in: app) else { return nil }
         let tiles = app.buttons.matching(NSPredicate(format: "label CONTAINS 'moc '"))
         guard tiles.firstMatch.waitForExistence(timeout: 10), car < tiles.count else { return nil }
         let tile = tiles.element(boundBy: car)
@@ -92,10 +100,11 @@ final class LongSessionUITests: XCTestCase {
     func testEveryCarEveryTrackOneSession() {
         continueAfterFailure = true
         let app = XCUIApplication()
-        app.launchArguments = ["-mute", "-logFile", "-allUpgrades"]
+        // `TEST_RUNNER_LONG_ARGS="-noPostFX -noMSAA"` — dodatkowe argumenty (pomiar A/B w warunkach sesji).
+        app.launchArguments = ["-mute", "-logFile", "-allUpgrades"] + (Self.env["LONG_ARGS"].map { $0.split(separator: " ").map(String.init) } ?? [])
         app.launch()
         XCTAssertTrue(app.buttons["Garaż"].waitForExistence(timeout: 90), "menu się nie pokazało")
-        app.buttons["Garaż"].tap()
+        XCTAssertTrue(tap("Garaż", until: "Gotowe", in: app), "garaż się nie otwiera")
         let tiles = app.buttons.matching(NSPredicate(format: "label CONTAINS 'moc '"))
         XCTAssertTrue(tiles.firstMatch.waitForExistence(timeout: 15), "brak kafelków aut")
         let cars = min(tiles.count, Self.carLimit)
