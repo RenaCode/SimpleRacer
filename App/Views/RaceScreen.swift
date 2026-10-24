@@ -1,4 +1,5 @@
 import AVFoundation
+import GameController
 import RaceCore
 import RealityKit
 import SwiftUI
@@ -226,6 +227,10 @@ private struct RaceContent: View {
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
             let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init)
             if type == .began && game.result == nil && game.phase != .finished { game.paused = true }
+        }
+        // Pad odłączony (bateria, Bluetooth) w trakcie jazdy: auto zostawało bez sterowania.
+        .onReceive(NotificationCenter.default.publisher(for: .GCControllerDidDisconnect)) { _ in
+            if game.result == nil && game.phase != .finished { game.paused = true }
         }
         // Pauza i wyniki: iPad może zgasnąć (dziecko odchodzi, a gra na pauzie świeciłaby do wyczerpania baterii).
         .onChange(of: game.paused) { updateIdleTimer() }
