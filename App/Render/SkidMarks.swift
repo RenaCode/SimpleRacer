@@ -84,10 +84,14 @@ final class SkidMarks {
     private static let bounds = BoundingBox(min: [-20_000, -1, -20_000], max: [20_000, 1, 20_000])
 
     private static func write(_ q: Quad, into v: UnsafeMutableBufferPointer<Vertex>, slot: Int) {
-        let corners = [(q.0, Float(0), Float(0)), (q.1, 1, 0), (q.2, 1, 1), (q.3, 0, 1)]
-        for (k, c) in corners.enumerated() {
-            v[slot * 4 + k] = Vertex(px: c.0.x, py: c.0.y, pz: c.0.z, nx: 0, ny: 1, nz: 0, u: c.1, v: c.2)
+        // Cztery narożniki wprost, bez tablicy pomocniczej (co klatkę dla każdego koła w drifcie).
+        func put(_ k: Int, _ p: SIMD3<Float>, _ u: Float, _ w: Float) {
+            v[slot * 4 + k] = Vertex(px: p.x, py: p.y, pz: p.z, nx: 0, ny: 1, nz: 0, u: u, v: w)
         }
+        put(0, q.0, 0, 0)
+        put(1, q.1, 1, 0)
+        put(2, q.2, 1, 1)
+        put(3, q.3, 0, 1)
     }
 
     /// `key` — stały numer koła (auto × 4 + koło); `active` — czy opona teraz ślizga się po asfalcie.

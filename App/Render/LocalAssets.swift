@@ -23,30 +23,14 @@ struct LocalCarEntry: Decodable {
     var source: String
 }
 
-/// Model otoczenia (budynek, drzewo, krzak, tło) z `scenery.json`.
+/// Model otoczenia z `scenery.json` — w grze tylko jako impostor (zdjęcie na płaszczyźnie), stąd sam opis
+/// do listy autorów. Otoczenie 3D z tych modeli wyglądało źle i spowalniało grę; dalszy plan to panorama krainy.
 struct SceneryEntry: Decodable {
     var file: String
-    var kind: String
-    /// Nazwa węzła, którego dzieci to osobne obiekty (np. paczka budynków).
-    var split: String?
-    /// Tylko te węzły (np. góry i las w tle z większej sceny).
-    var only: [String]?
-    var regions: [String]
-    var height: [Double]
-    var max: Int?
     var author: String
     var license: String
     var source: String
     var title: String
-}
-
-/// Pojedynczy obiekt otoczenia gotowy do klonowania: wyśrodkowany w X/Z, stoi na y = 0, w skali pliku.
-struct SceneryPiece {
-    let entry: SceneryEntry
-    let template: Entity
-    let height: Float
-    let footprint: Float
-    var regions: Set<String> { Set(entry.regions) }
 }
 
 struct Credit: Identifiable {
@@ -85,17 +69,6 @@ final class LocalAssets {
     @ObservationIgnored private(set) var cars: [LocalCarEntry] = []
     @ObservationIgnored private(set) var templates: [String: Entity] = [:]
     @ObservationIgnored private(set) var sceneryEntries: [SceneryEntry] = []
-    /// Obiekty otoczenia wg rodzaju ("building", "tree", "bush", "backdrop").
-    @ObservationIgnored private(set) var scenery: [String: [SceneryPiece]] = [:]
-
-    /// Realistyczne otoczenie 3D (budynki, drzewa, góry) — wyłączone: wyglądało źle i spowalniało grę.
-    /// Daleki plan to teraz panorama krainy (SkyEnvironment), bliski — lekkie modele Kenney.
-    static let sceneryEnabled = false
-
-    func scenery(_ kind: String, region: Region) -> [SceneryPiece] {
-        guard Self.sceneryEnabled else { return [] }
-        return (scenery[kind] ?? []).filter { $0.regions.contains(Self.regionKey(region)) }
-    }
 
     static func regionKey(_ r: Region) -> String {
         switch r {
@@ -129,14 +102,19 @@ final class LocalAssets {
         // Wymiary do kolizji: wzorce modeli są skalowane do długości `carLength` (`normalized`).
         var shape = fallback.shape
         shape.length = Double(Self.carLength)
-        CarCatalog.replaceAll(with: cars.map { e in
+        let defs = cars.map { e in
             CarDef(id: e.id, name: e.name, description: Self.describe(topSpeed: e.topSpeed, accel: e.accel, handling: e.handling),
                    topSpeed: e.topSpeed, accel: e.accel, handling: e.handling, nitroPower: e.nitroPower,
                    shape: shape, model: fallback.model,
                    realistic: RealisticModelRef(file: e.file, paintParts: e.paint, yawDegrees: e.yaw,
                                                 commercial: e.commercial, author: e.author, license: e.license,
                                                 source: e.source))
-        })
+        }
+        // Błędne osiągi w cars.json (np. topSpeed 0): auto pomijane, zamiast NaN w fizyce wyścigu.
+        for d in defs where !d.isValid { debugLog("model: \(d.id) — błędne dane w cars.json, pominięte") }
+        let valid = Set(defs.filter(\.isValid).map(\.id))
+        cars = cars.filter { valid.contains($0.id) }
+        CarCatalog.replaceAll(with: defs)
         if cars.isEmpty {
             loadingDone = true
         } else {
@@ -190,11 +168,9 @@ final class LocalAssets {
     /// Do czasu wczytania auto ma model zapasowy (Kenney).
     func preload(first: String? = nil) async {
         guard let folder else { return }
-        if !Self.sceneryEnabled {
-            // Same opisy (autorzy, licencje) — z tych modeli powstały impostory, więc trzeba je podpisać.
-            // Od razu, bo lista autorów może się otworzyć, zanim wczytają się auta.
-            sceneryEntries = Self.sceneryEntries(in: folder)
-        }
+        // Same opisy (autorzy, licencje) — z tych modeli powstały impostory, więc trzeba je podpisać.
+        // Od razu, bo lista autorów może się otworzyć, zanim wczytają się auta.
+        sceneryEntries = Self.sceneryEntries(in: folder)
         // Auto gracza pierwsze, reszta od najmniejszego pliku — wyścig rusza po 6 wczytanych autach.
         func size(_ e: LocalCarEntry) -> Int {
             (try? folder.appendingPathComponent(e.file).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
@@ -216,7 +192,6 @@ final class LocalAssets {
                 running += 1
             }
         }
-        if Self.sceneryEnabled { await preloadScenery(from: folder) }
         loadingDone = true
         debugLog("model: wszystkie wczytane")
     }
@@ -224,50 +199,6 @@ final class LocalAssets {
     private static func sceneryEntries(in folder: URL) -> [SceneryEntry] {
         guard let data = try? Data(contentsOf: folder.appendingPathComponent("scenery.json")) else { return [] }
         return (try? JSONDecoder().decode([SceneryEntry].self, from: data)) ?? []
-    }
-
-    /// Modele otoczenia: paczki rozbite na pojedyncze obiekty, każdy wyśrodkowany i postawiony na ziemi.
-    private func preloadScenery(from folder: URL) async {
-        guard let data = try? Data(contentsOf: folder.appendingPathComponent("scenery.json")),
-              let entries = try? JSONDecoder().decode([SceneryEntry].self, from: data) else { return }
-        let fm = FileManager.default
-        sceneryEntries = entries.filter { fm.fileExists(atPath: folder.appendingPathComponent($0.file).path) }
-        await withTaskGroup(of: Void.self) { group in
-            for e in sceneryEntries {
-                group.addTask { await self.loadScenery(e, from: folder) }
-            }
-        }
-    }
-
-    private func loadScenery(_ e: SceneryEntry, from folder: URL) async {
-        guard let entity = try? await Entity(contentsOf: folder.appendingPathComponent(e.file)) else {
-            debugLog("otoczenie: \(e.file) — błąd wczytania")
-            return
-        }
-        var parts: [Entity] = []
-        if let split = e.split, let node = entity.findEntity(named: split) {
-            parts = Array(node.children)
-        } else if let only = e.only {
-            parts = only.compactMap { entity.findEntity(named: $0) }
-        } else {
-            parts = [entity]
-        }
-        var pieces: [SceneryPiece] = []
-        for part in parts {
-            // Zachowujemy transformację części względem pliku (skala, obrót z eksportu).
-            let world = part.transformMatrix(relativeTo: nil)
-            part.removeFromParent()
-            part.setTransformMatrix(world, relativeTo: nil)
-            let root = Entity()
-            root.addChild(part)
-            let b = part.visualBounds(relativeTo: root)
-            guard b.extents.y > 0.001 else { continue }
-            part.position -= SIMD3<Float>(b.center.x, b.min.y, b.center.z)
-            pieces.append(SceneryPiece(entry: e, template: root, height: b.extents.y,
-                                       footprint: max(b.extents.x, b.extents.z)))
-        }
-        scenery[e.kind, default: []] += pieces
-        debugLog("otoczenie: \(e.file) — \(pieces.count) obiektów")
     }
 
     private func load(_ e: LocalCarEntry, from folder: URL) async {
@@ -312,7 +243,7 @@ final class LocalAssets {
                 let noMerge = false
                 #endif
                 let t0 = ProcessInfo.processInfo.systemUptime
-                let merged = noMerge ? nil : await CarMeshMerge.merge(normalized, paintNames: Set(e.paint), file: e.file)
+                let merged = noMerge ? nil : await CarMeshMerge.merge(normalized, paintNames: Set(e.paint), file: e.file) { [weak self] in self?.mustWait(e) ?? false }
                 if merged != nil {
                     debugLog(String(format: "model: %@ scalanie %.0f ms", e.file, (ProcessInfo.processInfo.systemUptime - t0) * 1000))
                 }
@@ -409,7 +340,7 @@ final class LocalAssets {
                    author: "Poly Haven (polyhaven.com)", license: "CC0", source: "https://polyhaven.com/textures"),
         ]
         out += cars.map { Credit(title: $0.name, author: $0.author, license: $0.license, source: $0.source) }
-        // Podpisujemy modele otoczenia, które są w grze: wczytane w 3D albo jako impostory (nazwa impostora
+        // Podpisujemy modele otoczenia, które są w grze jako impostory (nazwa impostora
         // zaczyna się od nazwy pliku modelu, np. buildings-pack-1-3 ← scenery/buildings-pack-1.usdz).
         let impostors = ImpostorLibrary.shared.all.map(\.def.name)
         // Lista może się otworzyć, zanim wczytywanie w tle zdąży przeczytać opisy — wtedy czytamy je tu.
@@ -417,7 +348,7 @@ final class LocalAssets {
         out += entries
             .filter { e in
                 let base = ((e.file as NSString).lastPathComponent as NSString).deletingPathExtension
-                return Self.sceneryEnabled || impostors.contains { $0 == base || $0.hasPrefix(base + "-") }
+                return impostors.contains { $0 == base || $0.hasPrefix(base + "-") }
             }
             .map { Credit(title: $0.title, author: $0.author, license: $0.license, source: $0.source) }
         return out

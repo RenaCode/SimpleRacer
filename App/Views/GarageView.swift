@@ -51,6 +51,9 @@ struct GarageView: View {
                             }
                             .disabled(model.campaign.coins < cost)
                             .accessibilityIdentifier("ulepsz.\(u.rawValue)")
+                            // VoiceOver czytał samą cenę („120”), bez tego, co się ulepsza.
+                            .accessibilityLabel("Ulepsz: \(u.name)")
+                            .accessibilityValue("\(cost) monet, poziom \(level) z \(Campaign.maxLevel)")
                         } else {
                             Text("MAX").font(.caption.weight(.heavy)).foregroundStyle(Theme.accent)
                         }
@@ -98,6 +101,11 @@ struct GarageView: View {
         }
     }
 
+    private static let colorNames = [
+        "#E63946": "Czerwony", "#F77F00": "Pomarańczowy", "#FFD60A": "Żółty", "#2A9D8F": "Morski",
+        "#3A86FF": "Niebieski", "#8338EC": "Fioletowy", "#F1F1F1": "Biały", "#1B1B1E": "Czarny",
+    ]
+
     private var colors: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.fixed(36), spacing: 10), count: 5), alignment: .leading, spacing: 10) {
             ForEach(CarCatalog.colors, id: \.self) { hex in
@@ -107,7 +115,9 @@ struct GarageView: View {
                         .overlay(Circle().stroke(Theme.accent, lineWidth: 3).padding(-4)
                             .opacity(hex == model.profile.colorHex ? 1 : 0))
                 }
-                .accessibilityLabel("Kolor \(hex)")
+                // Identyfikator dla testów UI; VoiceOver czyta nazwę koloru, nie „#3A86FF”.
+                .accessibilityIdentifier("Kolor \(hex)")
+                .accessibilityLabel(Self.colorNames[hex] ?? "Kolor")
             }
             ColorPicker("Własny kolor", selection: customColor, supportsOpacity: false)
                 .labelsHidden()

@@ -581,9 +581,8 @@ final class RaceGame {
             // Ślady opon: w drifcie, gdy auto jest blisko gracza (dalej i tak ich nie widać).
             if abs(wrapDelta(car.s, playerS, sim.track.length)) < 80 && !Self.skidsOff {
                 let base = cars.firstIndex { $0.0 === car }.map { $0 * 4 } ?? 0
-                for (i, p) in e.rearContacts().enumerated() {
-                    skidMarks.track(key: base + i, at: p, active: car.drifting && !car.wrecked && car.speed > 8)
-                }
+                let active = car.drifting && !car.wrecked && car.speed > 8
+                e.forEachRearContact { i, p in skidMarks.track(key: base + i, at: p, active: active) }
             }
         }
         skidMarks.flush(dt: frameDt)

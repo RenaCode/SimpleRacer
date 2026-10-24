@@ -677,8 +677,13 @@ final class CarEntity {
     }
 
     /// Punkty styku tylnych kół z jezdnią (świat) — do śladów opon. Bez rozpoznanych kół: puste.
-    func rearContacts() -> [SIMD3<Float>] {
-        wheels.filter { $0.position.z < 0 }.map { $0.position(relativeTo: nil) }
+    /// Punkty styku tylnych kół (świat) z kolejnym numerem koła. Bez tablic: wołane co klatkę dla aut przy graczu.
+    func forEachRearContact(_ body: (Int, SIMD3<Float>) -> Void) {
+        var i = 0
+        for w in wheels where w.position.z < 0 {
+            body(i, w.position(relativeTo: nil))
+            i += 1
+        }
     }
 
     // MARK: - Zawieszenie i skręt kół

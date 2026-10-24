@@ -24,7 +24,10 @@ enum CarMeshMerge {
     /// Zwraca nowy wzorzec (te same współrzędne co `template`) albo nil, gdy scalanie się nie udało.
     /// Części zbiera kawałkami (`MainThreadSlices`): w jednym ciągu blokowało to wątek główny na 40–510 ms
     /// i obrotnica w menu stawała przy każdym wczytanym aucie.
-    static func merge(_ template: Entity, paintNames: Set<String>, file: String) async -> Entity? {
+    /// `holdWhile`: scalanie stoi między kawałkami, dopóki zwraca true (wyścig ruszył w trakcie scalania —
+    /// kawałki po 6 ms przy budżecie klatki 8,3 ms dawały przycięcia w czasie jazdy).
+    static func merge(_ template: Entity, paintNames: Set<String>, file: String,
+                      holdWhile: @MainActor () -> Bool = { false }) async -> Entity? {
         let wheelGroups = CarEntity.realisticWheelGroups(template, space: template)
         var wheelOf: [ObjectIdentifier: Int] = [:]
         for (i, g) in (wheelGroups ?? []).enumerated() {
@@ -43,7 +46,12 @@ enum CarMeshMerge {
         }
         walk(template, inPaint: false)
         let slices = MainThreadSlices()
+        var held = false
         for (m, paint) in sources {
+            while holdWhile() {
+                if !held { held = true; debugLog("model: \(file) — scalanie czeka na koniec wyścigu") }
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return nil }
+            }
             guard let model = m.model else { continue }
             sourceCount += 1
             let wheel = wheelOf[ObjectIdentifier(m)] ?? -1

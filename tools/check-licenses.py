@@ -2,7 +2,9 @@
 """Bramka licencji dla wydania (Release): przerywa build, gdy do paczki trafiłby model bez licencji
 pozwalającej na płatną grę. Sprawdza LocalModels/Commercial: każdy model aut w cars.json musi mieć
 "commercial": true, a żadna licencja (auta, scenografia) nie może być niekomercyjna (NC), redakcyjna
-(editorial) ani bez dzieł zależnych (ND). Każdy plik .usdz w katalogu musi mieć wpis z licencją.
+(editorial) ani bez dzieł zależnych (ND). Każdy plik .usdz w katalogu musi mieć wpis z licencją, a każdy
+impostor (impostors/<model>-<n>-front.png) musi pochodzić z modelu wpisanego do scenery.json — impostory
+trafiają do paczki gry, a ich źródłowe modele nie.
 
 Użycie: check-licenses.py <katalog LocalModels/Commercial>
 """
@@ -37,6 +39,12 @@ def main(root: pathlib.Path) -> int:
     for usdz in (root / "scenery").glob("*.usdz") if (root / "scenery").exists() else []:
         if usdz.name not in listed:
             errors.append(f"scenery/{usdz.name} — model bez wpisu i licencji w scenery.json")
+    # Impostor nazywa się od pliku modelu: buildings-pack-1-3-front.png ← scenery/buildings-pack-1.usdz.
+    scenery = {pathlib.Path(f).stem for f in listed}
+    impostors = root / "impostors"
+    for img in sorted(impostors.iterdir()) if impostors.exists() else []:
+        if not any(img.stem == b or img.stem.startswith(b + "-") for b in scenery):
+            errors.append(f"impostors/{img.name} — impostor z modelu bez wpisu i licencji w scenery.json")
     for e in errors:
         print(f"error: licencje: {e}")
     if not errors:

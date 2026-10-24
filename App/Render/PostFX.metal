@@ -63,10 +63,11 @@ fragment float4 postComposite(PostVertex in [[stage_in]],
     float4 base = src.sample(point, in.uv);
     float3 c = base.rgb;
 
-    // Mgła powietrzna: odległość z głębi (odwrócona głębia: 0 = nieskończoność).
-    float z = depth.sample(point, in.uv);
+    // Mgła powietrzna: odległość z głębi (odwrócona głębia: 0 = nieskończoność). Przy wyłączonej mgle
+    // (dziś w wyścigu) bez odczytu głębi — to cały ekran próbek w każdej klatce na darmo.
+    float z = u.fog.a > 0 ? depth.sample(point, in.uv) : 0;
     float denom = z + u.depth.x;
-    if (denom > 1e-6) {
+    if (u.fog.a > 0 && denom > 1e-6) {
         float dist = u.depth.y / denom;
         float f = u.fog.a * (1 - exp(-dist / u.fogScale));
         f *= 1 - smoothstep(u.fogEnd * 0.85, u.fogEnd, dist);
@@ -78,7 +79,8 @@ fragment float4 postComposite(PostVertex in [[stage_in]],
     c = 1 - (1 - c) * (1 - saturate(g));
 
     // Korekcja tonów w przestrzeni gamma: łagodna krzywa S, nasycenie, winieta.
-    float3 d = u.linear > 0.5 ? toGamma(c) : c;
+    // `saturate`: krzywa S poza [0, 1] daje wartości ujemne (źródło HDR); dziś źródło jest 8-bitowe.
+    float3 d = saturate(u.linear > 0.5 ? toGamma(c) : c);
     d = mix(d, d * d * (3 - 2 * d), u.contrast);
     float luma = dot(d, float3(0.2126, 0.7152, 0.0722));
     d = mix(float3(luma), d, u.saturation);

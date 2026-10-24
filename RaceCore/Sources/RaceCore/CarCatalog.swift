@@ -73,6 +73,13 @@ public struct CarDef: Identifiable, Sendable {
         self.model = model
         self.realistic = realistic
     }
+
+    /// Dane nadają się do jazdy: dodatnie i skończone osiągi i wymiary. Auto z `cars.json` z `topSpeed = 0`
+    /// dawało NaN w fizyce, a stąd awarię przy próbkowaniu trasy.
+    public var isValid: Bool {
+        let positive = [topSpeed, accel, handling, shape.length, shape.width, shape.height]
+        return positive.allSatisfy { $0.isFinite && $0 > 0 } && nitroPower.isFinite && nitroPower >= 0
+    }
 }
 
 public enum CarCatalog {
@@ -80,9 +87,11 @@ public enum CarCatalog {
     public private(set) static var all: [CarDef] = builtIn
 
     /// Zastępuje katalog aut (np. tylko modele lokalne). Pusta lista nic nie zmienia.
+    /// Auta z błędnymi danymi (`isValid`) są pomijane.
     public static func replaceAll(with defs: [CarDef]) {
-        guard !defs.isEmpty else { return }
-        all = defs
+        let valid = defs.filter(\.isValid)
+        guard !valid.isEmpty else { return }
+        all = valid
     }
 
     public static let builtIn: [CarDef] = [
