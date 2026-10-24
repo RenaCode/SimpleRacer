@@ -7,11 +7,12 @@ final class GameplayUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launch(_ args: [String]) -> XCUIApplication {
+    /// `reset: false` — ponowne uruchomienie w tym samym teście (sprawdzenie, że ustawienie się zapisało).
+    private func launch(_ args: [String], reset: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
         // -mute: symulator gra przez głośniki Maca. -resetProfile: czysty profil — padnięty test zostawiał np.
         // wyłączone auto-prowadzenie i kolejne testy padały na asercji.
-        app.launchArguments = ["-mute", "-logFile", "-resetProfile"] + args
+        app.launchArguments = ["-mute", "-logFile"] + (reset ? ["-resetProfile"] : []) + args
         app.launch()
         return app
     }
@@ -162,7 +163,7 @@ final class GameplayUITests: XCTestCase {
         app.buttons["Zamknij"].tap()
         app.terminate()
 
-        app = launch([])
+        app = launch([], reset: false)
         picker = openSettings(app)
         XCTAssertTrue(picker.label.contains("Normalny"), "po restarcie: \(picker.label)")
         choose("Bardzo łatwy", in: app, picker: picker)
