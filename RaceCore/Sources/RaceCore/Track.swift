@@ -25,7 +25,7 @@ public final class Track {
 
     public init(points: [SIMD2<Double>], halfWidth: Double) {
         self.halfWidth = halfWidth
-        let dense = Track.centripetalCatmullRom(points, samplesPerSegment: 200)
+        let dense = Track.centripetalCatmullRom(Track.withoutRepeats(points), samplesPerSegment: 200)
 
         // Długość łuku wzdłuż gęstej łamanej, potem próbki co ~1 m.
         var cum = [0.0]
@@ -66,7 +66,8 @@ public final class Track {
     }
 
     public func sample(at s: Double) -> TrackSample {
-        let u = wrap(s, length) / ds
+        // NaN/∞ (np. z auta o zerowej prędkości maksymalnej) — `Int(u)` niżej przerwałoby program.
+        let u = s.isFinite ? wrap(s, length) / ds : 0
         let i = Int(u) % count
         let j = (i + 1) % count
         let f = u - floor(u)
@@ -92,6 +93,15 @@ public final class Track {
             best = min(best, dx * dx + dz * dz)
         }
         return best.squareRoot()
+    }
+
+    /// Punkty kontrolne bez powtórzeń (także ostatni = pierwszy): w splajnie centripetalnym zerowa odległość
+    /// między sąsiednimi punktami dzieli przez zero i cała trasa staje się NaN.
+    static func withoutRepeats(_ p: [SIMD2<Double>]) -> [SIMD2<Double>] {
+        var out: [SIMD2<Double>] = []
+        for q in p where out.last.map({ simd_distance($0, q) > 1e-6 }) ?? true { out.append(q) }
+        while out.count > 1, let first = out.first, let last = out.last, simd_distance(first, last) <= 1e-6 { out.removeLast() }
+        return out
     }
 
     /// Zamknięty spline Catmulla-Roma w wersji centripetalnej (bez pętelek na ostrych łukach).
