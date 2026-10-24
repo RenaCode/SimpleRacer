@@ -9,8 +9,9 @@ final class GameplayUITests: XCTestCase {
 
     private func launch(_ args: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        // -mute: symulator gra przez głośniki Maca.
-        app.launchArguments = ["-mute", "-logFile"] + args
+        // -mute: symulator gra przez głośniki Maca. -resetProfile: czysty profil — padnięty test zostawiał np.
+        // wyłączone auto-prowadzenie i kolejne testy padały na asercji.
+        app.launchArguments = ["-mute", "-logFile", "-resetProfile"] + args
         app.launch()
         return app
     }
@@ -89,6 +90,16 @@ final class GameplayUITests: XCTestCase {
         wait(app, timeout: 2, "◀ nie skręca") { ($0["left"] ?? 0) > 0 }
         app.buttons["W prawo"].press(forDuration: 0.8)
         wait(app, timeout: 2, "▶ nie skręca") { ($0["right"] ?? 0) > 0 }
+    }
+
+    /// Palec przesunięty z ◀ na ▶ bez odrywania skręca w prawo (wcześniej trzymał pierwszy kierunek).
+    func testSlideFromLeftToRight() {
+        let app = launch(["-manualSteer", "-autostartRace", "-track", "1"])
+        raceStarted(app, auto: 0)
+        let before = state(app)["right"] ?? 0
+        app.buttons["W lewo"].press(forDuration: 0.6, thenDragTo: app.buttons["W prawo"],
+                                    withVelocity: .slow, thenHoldForDuration: 1.0)
+        wait(app, timeout: 2, "przesunięcie z ◀ na ▶ nie skręca w prawo") { ($0["right"] ?? 0) > before }
     }
 
     /// Pauza zatrzymuje wyścig, „Graj dalej” go wznawia.

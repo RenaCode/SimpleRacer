@@ -8,7 +8,7 @@ final class AllTracksUITests: XCTestCase {
 
     private func launch(_ args: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-mute", "-logFile"] + args
+        app.launchArguments = ["-mute", "-logFile", "-resetProfile"] + args
         app.launch()
         return app
     }

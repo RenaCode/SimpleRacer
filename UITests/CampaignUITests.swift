@@ -37,9 +37,11 @@ final class CampaignUITests: XCTestCase {
         for _ in 0..<40 {
             let buttons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'ulepsz.'")).allElementsBoundByIndex
             let enabled = buttons.filter { $0.isEnabled }
-            // Najtańsze pierwsze: etykieta przycisku to koszt.
-            guard let cheapest = enabled.min(by: { (Int($0.label.filter(\.isNumber)) ?? .max) < (Int($1.label.filter(\.isNumber)) ?? .max) })
-            else { break }
+            // Najtańsze pierwsze: wartość przycisku zaczyna się od kosztu („120 monet, poziom 2 z 5”).
+            func cost(_ e: XCUIElement) -> Int {
+                Int(((e.value as? String) ?? e.label).prefix { $0.isNumber }) ?? .max
+            }
+            guard let cheapest = enabled.min(by: { cost($0) < cost($1) }) else { break }
             cheapest.tap()
             bought += 1
             Thread.sleep(forTimeInterval: 0.3)

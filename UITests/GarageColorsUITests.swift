@@ -16,7 +16,7 @@ final class GarageColorsUITests: XCTestCase {
 
     func testEveryCarEveryColor() {
         let app = XCUIApplication()
-        app.launchArguments = ["-mute", "-logFile", "-screen", "garage"]
+        app.launchArguments = ["-mute", "-logFile", "-resetProfile", "-screen", "garage"]
         app.launch()
         XCTAssertTrue(app.buttons["Gotowe"].waitForExistence(timeout: 60), "garaż się nie pokazał")
         // Kafelki aut: nazwa i „moc N” (w pełnej wersji wszystkie auta są kupione).

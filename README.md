@@ -9,10 +9,12 @@ the App Store or TestFlight. The in-game interface is in Polish.
 
 ## Features
 
-- **Race**: 6 cars, 2 laps on a city circuit, the player starts from the back of the grid.
+- **Race**: 6 cars, up to 2 laps on any of the 40 campaign tracks, the player starts from the back
+  of the grid.
   Countdown, position, lap, race time, speed and nitro gauge on the HUD; a results screen with
   the finishing position, time and number of takedowns.
-- **Garage**: three cars with different top speed, acceleration, handling and nitro power, and
+- **Garage**: cars with different top speed, acceleration, handling and nitro power (three built-in
+  models in the repository, more from local realistic models — see below), and
   the paint colour — eight presets or any colour from the system colour picker. The choice is
   saved on the device.
 - **Rivals**: five AI drivers that hold a lane, counter-steer into corners, drift through tight
@@ -22,7 +24,7 @@ the App Store or TestFlight. The in-game interface is in Polish.
   (GameController framework), all at the same time.
 
 Not implemented yet: ramps and jumps (barrel rolls, 360s), traffic, a takedown camera,
-more tracks, tilt steering.
+tilt steering, an English interface.
 
 ## Campaign
 
@@ -230,8 +232,18 @@ xcodebuild test -project SimpleRacer.xcodeproj -scheme SimpleRacer \
   -only-testing:SimpleRacerUITests/GameplayUITests
 ```
 
-`GameplayUITests` (about 3 minutes) holds and taps DRIFT, fires NITRO, steers, pauses and goes
-menu → garage → campaign → race. `AllTracksUITests` (about 40 minutes) races on all 40 tracks,
+`GameplayUITests` (about 3 minutes) holds and taps DRIFT, fires NITRO, steers (also sliding a finger
+from ◀ to ▶), pauses and goes menu → garage → campaign → race. `LoadingUITests` covers a car picked
+before its model has loaded and a model that fails to load. `SoundUITests` runs **unmuted** with
+`-audioProbe`, which taps the audio mixer and shows the output level, the Music and Sounds switches and
+effect counters in an invisible label: it checks menu and race music, the countdown, pause, the in-race
+mute button, both switches in Settings, the return from background and the settings surviving a relaunch.
+`CampaignUITests` plays the whole campaign from a fresh profile (about 1.5 hours; with
+`TEST_RUNNER_CAMPAIGN_FAST=1` every race ends at once, about 20 minutes), buying upgrades with the coins
+it earns whenever a track says the car is too weak. `TEST_RUNNER_CAMPAIGN_MIX=1` also visits the garage
+before every track (next owned car, next colour) and pauses and resumes every race. The UI tests start
+from a clean profile (`-resetProfile`; the long session below keeps its own), so a failed test does not
+leave settings behind for the next one. `AllTracksUITests` (about 40 minutes) races on all 40 tracks,
 cycling through the cars, and drives every car to the finish. `GarageColorsUITests` paints every car
 in every palette colour (cars whose paint lives in the texture show "Oryginalne malowanie" instead
 of the palette).
