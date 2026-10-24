@@ -5,7 +5,11 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    #if DEBUG || FAMILY
     @State private var path: [String] = ProcessInfo.processInfo.arguments.contains("-showCredits") ? ["credits"] : []
+    #else
+    @State private var path: [String] = []
+    #endif
 
     var body: some View {
         NavigationStack(path: $path) {

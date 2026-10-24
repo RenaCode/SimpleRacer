@@ -212,8 +212,7 @@ private struct RaceContent: View {
             if let r, settled == nil { settled = model.settle(r) }
         }
         .onAppear {
-            // Auto-prowadzenie i auto-gaz: dziecko może nie dotykać ekranu przez cały wyścig — bez tego iPad gaśnie w trakcie.
-            UIApplication.shared.isIdleTimerDisabled = true
+            updateIdleTimer()
             game.input.onEscape = { [weak game] in
                 guard let game, game.phase != .finished else { return }
                 game.paused.toggle()
@@ -228,11 +227,22 @@ private struct RaceContent: View {
             let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init)
             if type == .began && game.result == nil && game.phase != .finished { game.paused = true }
         }
+        // Pauza i wyniki: iPad może zgasnąć (dziecko odchodzi, a gra na pauzie świeciłaby do wyczerpania baterii).
+        .onChange(of: game.paused) { updateIdleTimer() }
+        .onChange(of: game.result) { updateIdleTimer() }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             game.subscription?.cancel()
             AudioManager.shared.setEngine(speed: 0, nitro: false, running: false)
         }
+    }
+}
+
+private extension RaceContent {
+    /// Auto-prowadzenie i auto-gaz: w trakcie jazdy dziecko może nie dotykać ekranu, więc iPad nie gaśnie;
+    /// w pauzie i na wynikach — normalnie.
+    func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = !game.paused && game.result == nil
     }
 }
 

@@ -349,7 +349,8 @@ func debugLog(_ message: @autoclosure () -> String) {
     // Log do pliku (`simctl launch --stdout`) jest buforowany — bez tego koniec logu ginie przy zamknięciu apki.
     fflush(stdout)
     // Testy UI na iPadzie nie mają konsoli: `-logFile` dopisuje log do Documents/perf.log (`devicectl device copy from`).
-    if let logFile { logFile.write(Data((line + "\n").utf8)) }
+    // `write(contentsOf:)` rzuca błąd Swifta (np. brak miejsca); stare `write(_:)` kończyło proces wyjątkiem ObjC.
+    if let logFile { try? logFile.write(contentsOf: Data((line + "\n").utf8)) }
     #endif
 }
 
@@ -358,13 +359,17 @@ private let logFile: FileHandle? = {
     guard ProcessInfo.processInfo.arguments.contains("-logFile"),
           let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
     let url = dir.appendingPathComponent("perf.log")
-    if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
+    // Bez rotacji plik rósł przez wszystkie przebiegi testów (~20 MB po dniu na iPadzie); ponad 20 MB — od nowa.
+    let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+    if !FileManager.default.fileExists(atPath: url.path) || size > 20_000_000 || ProcessInfo.processInfo.arguments.contains("-resetProfile") {
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+    }
     let h = try? FileHandle(forWritingTo: url)
     _ = try? h?.seekToEnd()
-    h?.write(Data("=== start \(Date()) termika \(ProcessInfo.processInfo.thermalState.rawValue) \(ProcessInfo.processInfo.arguments.dropFirst().joined(separator: " "))\n".utf8))
+    try? h?.write(contentsOf: Data("=== start \(Date()) termika \(ProcessInfo.processInfo.thermalState.rawValue) \(ProcessInfo.processInfo.arguments.dropFirst().joined(separator: " "))\n".utf8))
     // Oś czasu nagrzewania przez cały test, także poza wyścigiem.
     NotificationCenter.default.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: nil) { _ in
-        h?.write(Data("=== termika \(ProcessInfo.processInfo.thermalState.rawValue) o \(Date())\n".utf8))
+        try? h?.write(contentsOf: Data("=== termika \(ProcessInfo.processInfo.thermalState.rawValue) o \(Date())\n".utf8))
     }
     return h
 }()
