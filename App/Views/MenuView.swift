@@ -93,34 +93,57 @@ private struct MenuPill: View {
     }
 }
 
-/// Przełącznik auto-prowadzenia jak na makiecie: kapsuła ON/OFF z gałką i podpis.
+/// Przełącznik auto-prowadzenia jak na makiecie: kapsuła ON/OFF z gałką i podpis. Zmienia się dopiero po
+/// przytrzymaniu: bez auto-prowadzenia auto dziecka wjeżdża w bandy, a przypadkowe stuknięcie w menu (raz w długiej
+/// sesji na iPadzie) wyłączało je bez śladu. Krótkie stuknięcie pokazuje tylko podpowiedź.
 private struct AutoSteerPill: View {
     @Binding var isOn: Bool
+    @State private var pressing = false
+    @State private var showHint = false
+
+    static let holdDuration = 0.6
 
     var body: some View {
-        Button { withAnimation(.snappy(duration: 0.2)) { isOn.toggle() } } label: {
-            HStack(spacing: 14) {
-                ZStack(alignment: isOn ? .trailing : .leading) {
-                    Capsule().fill(isOn ? Theme.nitro.opacity(0.9) : Color.white.opacity(0.18))
-                    Text(isOn ? "ON" : "OFF")
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(isOn ? Color(white: 0.07) : .white)
-                        .frame(maxWidth: .infinity, alignment: isOn ? .leading : .trailing)
-                        .padding(.horizontal, 10)
-                    Circle().fill(.white).padding(4)
-                }
-                .frame(width: 78, height: 38)
-                Image(systemName: "steeringwheel").font(.system(size: 20, weight: .bold))
-                Text("Auto-prowadzenie").font(.system(size: 19, weight: .bold))
+        HStack(spacing: 14) {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule().fill(isOn ? Theme.nitro.opacity(0.9) : Color.white.opacity(0.18))
+                Text(isOn ? "ON" : "OFF")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(isOn ? Color(white: 0.07) : .white)
+                    .frame(maxWidth: .infinity, alignment: isOn ? .leading : .trailing)
+                    .padding(.horizontal, 10)
+                Circle().fill(.white).padding(4)
             }
-            .foregroundStyle(.white)
-            .padding(.leading, 8).padding(.trailing, 20).padding(.vertical, 7)
-            .background(Color(white: 0.06).opacity(0.8), in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.15)))
+            .frame(width: 78, height: 38)
+            Image(systemName: "steeringwheel").font(.system(size: 20, weight: .bold))
+            Text(showHint ? "Przytrzymaj, aby zmienić" : "Auto-prowadzenie").font(.system(size: 19, weight: .bold))
         }
-        .buttonStyle(PressScaleStyle())
+        .foregroundStyle(.white)
+        .padding(.leading, 8).padding(.trailing, 20).padding(.vertical, 7)
+        .background(Color(white: 0.06).opacity(0.8), in: Capsule())
+        .overlay(Capsule().stroke(pressing ? Theme.nitro : .white.opacity(0.15), lineWidth: pressing ? 2 : 1))
+        .scaleEffect(pressing ? 0.96 : 1)
+        .animation(.snappy(duration: 0.2), value: pressing)
+        .contentShape(Capsule())
+        .onTapGesture { hint() }
+        .onLongPressGesture(minimumDuration: Self.holdDuration) {
+            withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
+            showHint = false
+        } onPressingChanged: { pressing = $0 }
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
         .accessibilityLabel("Auto-prowadzenie")
-        .accessibilityValue(isOn ? "ON" : "OFF")
         .accessibilityValue(isOn ? "włączone" : "wyłączone")
+        .accessibilityHint("Przytrzymaj, aby zmienić")
+        // VoiceOver: dwukrotne stuknięcie to świadoma czynność — przełącza od razu.
+        .accessibilityAction { withAnimation(.snappy(duration: 0.2)) { isOn.toggle() } }
+    }
+
+    private func hint() {
+        withAnimation(.easeOut(duration: 0.2)) { showHint = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeOut(duration: 0.2)) { showHint = false }
+        }
     }
 }

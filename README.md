@@ -67,7 +67,9 @@ The car accelerates by itself.
 
 **Auto-steering** (the "Auto-prowadzenie" switch in the menu, on by default): the car keeps to the
 track and takes corners by itself, drifting through tight ones. ◀ ▶ (or ← / →) move it one lane
-left or right; DRIFT and NITRO work as usual. With auto-steering off, ◀ ▶ steer directly.
+left or right; DRIFT and NITRO work as usual. With auto-steering off, ◀ ▶ steer directly. The menu
+switch changes only when held (0.6 s) — a short tap just shows "Przytrzymaj, aby zmienić" — so a child
+cannot turn it off by accident; Settings has an ordinary switch.
 
 **Mute**: the 🔊 button next to pause mutes music and sounds at once (separate switches are in
 the menu).
@@ -440,6 +442,9 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
 - **Tyre contact:** cars stand on the asphalt surface (y 0.02), with the tyre bottoms aligned to it;
   road paint is 8 mm above the asphalt. A baked contact shadow (soft patch under the body and darker
   spots under each tyre) grounds the car where the sun's shadow map is too coarse.
+- **Sun shadows** reach 80 m on M-chip iPads and 35 m on A-chip ones (under 7.5 GB of RAM, e.g. the
+  iPad with A16), which have far less GPU headroom; nearby cars keep their shadows (`DeviceTier`).
+  Debug/Family switches for measuring on a device: `-lowTier`/`-highTier`, `-shadowDistance <m>`, `-noShadow`.
 - **Skid marks:** while drifting, the rear tyres leave dark marks with soft edges. All marks are one
   mesh with a ring buffer (the oldest disappear); a small mesh with the newest segments is updated
   every frame, so the mark starts right under the tyre.

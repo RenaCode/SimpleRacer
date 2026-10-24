@@ -74,6 +74,12 @@ final class AudioManager {
             impactBuffers[i] = Self.synthesizeImpact(i, format: format)
         }
 
+        #if DEBUG || FAMILY
+        if AudioProbe.enabled {
+            engine.mainMixerNode.installTap(onBus: 0, bufferSize: 4096, format: nil, block: AudioProbe.tapBlock())
+        }
+        #endif
+
         // Przerwania (telefon, FaceTime, Siri, budzik) i zmiany wyjścia audio zatrzymują silnik — wznawiamy go.
         // Przy `.began` silnik już stoi: `play()` węzła na zatrzymanym silniku rzuca wyjątek (`_engine->IsRunning()`),
         // więc dźwięki czekają na `.ended`. Wyścig pauzuje sam (RaceContent słucha tego samego powiadomienia).
@@ -125,6 +131,13 @@ final class AudioManager {
         engine.pause()
         started = false
     }
+
+    #if DEBUG || FAMILY
+    /// Stan dla `AudioProbe`: przełączniki, uruchomienie silnika i bieżący utwór.
+    var probeState: String {
+        "music=\(musicOn ? 1 : 0) sound=\(soundOn ? 1 : 0) running=\(started && engine.isRunning ? 1 : 0) track=\(currentFile ?? "-")"
+    }
+    #endif
 
     private func restart() {
         started = false
@@ -180,6 +193,9 @@ final class AudioManager {
         node.stop()
         node.scheduleBuffer(b, at: nil)
         node.play()
+        #if DEBUG || FAMILY
+        AudioProbe.shared.count("\(effect)")
+        #endif
     }
 
     /// Dźwięk jazdy, wołany co klatkę. `speed` 0…1+ (względem prędkości maksymalnej), `nitro` podbija
@@ -210,6 +226,9 @@ final class AudioManager {
         guard now - lastImpact >= 0.07 else { return }
         lastImpact = now
         let force = min(1, intensity)
+        #if DEBUG || FAMILY
+        AudioProbe.shared.count("impact")
+        #endif
         trigger(.scrape, volume: Self.sfxVolume * Float(0.35 + 0.65 * force))
         if force >= 0.3 {
             trigger(.hit, volume: Self.sfxVolume * Float((force - 0.3) / 0.7 * 0.8 + 0.2))
@@ -341,6 +360,59 @@ final class AudioManager {
     }
 }
 
+#if DEBUG || FAMILY
+/// `-audioProbe` (Debug/Family): poziom sygnału na wyjściu miksera i liczniki efektów w niewidocznej etykiecie
+/// `test.audio` — test UI sprawdza dźwięk bez słuchania (XCUITest nie ma dostępu do wyjścia audio symulatora).
+/// Poziom w dBFS z ostatnich ~0,5 s; cisza cyfrowa = -200.
+@MainActor @Observable
+final class AudioProbe {
+    static let shared = AudioProbe()
+    nonisolated static let enabled = ProcessInfo.processInfo.arguments.contains("-audioProbe")
+    private(set) var info = ""
+    @ObservationIgnored private var sumSquares = 0.0
+    @ObservationIgnored private var frames = 0
+    @ObservationIgnored private var peak: Float = 0
+    @ObservationIgnored private var effects: [String: Int] = [:]
+    @ObservationIgnored private var lastLog = 0.0
+
+    func count(_ effect: String) { effects[effect, default: 0] += 1 }
+
+    /// Blok tapu powstaje poza aktorem: wołany na wątku audio, wynik przekazuje na główny.
+    nonisolated static func tapBlock() -> AVAudioNodeTapBlock {
+        { buffer, _ in
+            guard let data = buffer.floatChannelData, buffer.frameLength > 0 else { return }
+            let n = Int(buffer.frameLength)
+            var sum = 0.0
+            var peak: Float = 0
+            for ch in 0..<Int(buffer.format.channelCount) {
+                for i in 0..<n {
+                    let v = data[ch][i]
+                    sum += Double(v * v)
+                    peak = max(peak, abs(v))
+                }
+            }
+            let total = n * Int(buffer.format.channelCount)
+            DispatchQueue.main.async { MainActor.assumeIsolated { shared.add(sum, total, peak) } }
+        }
+    }
+
+    private func add(_ sum: Double, _ n: Int, _ p: Float) {
+        sumSquares += sum
+        frames += n
+        peak = max(peak, p)
+        guard frames >= 44_100 else { return }
+        func db(_ x: Double) -> Int { x > 1e-10 ? Int((20 * log10(x)).rounded()) : -200 }
+        let fx = effects.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ",")
+        info = "rms=\(db((sumSquares / Double(frames)).squareRoot())) peak=\(db(Double(peak))) \(AudioManager.shared.probeState) fx=\(fx.isEmpty ? "-" : fx)"
+        sumSquares = 0
+        frames = 0
+        peak = 0
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastLog >= 2 { lastLog = now; debugLog("dźwięk: \(info)") }
+    }
+}
+#endif
+
 /// Diagnostyka tylko w buildzie Debug (widoczna w konsoli Xcode / `simctl launch --console-pty`).
 func debugLog(_ message: @autoclosure () -> String) {
     #if DEBUG || FAMILY
@@ -349,7 +421,8 @@ func debugLog(_ message: @autoclosure () -> String) {
     // Log do pliku (`simctl launch --stdout`) jest buforowany — bez tego koniec logu ginie przy zamknięciu apki.
     fflush(stdout)
     // Testy UI na iPadzie nie mają konsoli: `-logFile` dopisuje log do Documents/perf.log (`devicectl device copy from`).
-    if let logFile { logFile.write(Data((line + "\n").utf8)) }
+    // `write(contentsOf:)` rzuca błąd Swifta (np. brak miejsca); stare `write(_:)` kończyło proces wyjątkiem ObjC.
+    if let logFile { try? logFile.write(contentsOf: Data((line + "\n").utf8)) }
     #endif
 }
 
@@ -358,13 +431,17 @@ private let logFile: FileHandle? = {
     guard ProcessInfo.processInfo.arguments.contains("-logFile"),
           let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
     let url = dir.appendingPathComponent("perf.log")
-    if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
+    // Bez rotacji plik rósł przez wszystkie przebiegi testów (~20 MB po dniu na iPadzie); ponad 20 MB — od nowa.
+    let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+    if !FileManager.default.fileExists(atPath: url.path) || size > 20_000_000 || ProcessInfo.processInfo.arguments.contains("-resetProfile") {
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+    }
     let h = try? FileHandle(forWritingTo: url)
     _ = try? h?.seekToEnd()
-    h?.write(Data("=== start \(Date()) termika \(ProcessInfo.processInfo.thermalState.rawValue) \(ProcessInfo.processInfo.arguments.dropFirst().joined(separator: " "))\n".utf8))
+    try? h?.write(contentsOf: Data("=== start \(Date()) termika \(ProcessInfo.processInfo.thermalState.rawValue) \(ProcessInfo.processInfo.arguments.dropFirst().joined(separator: " "))\n".utf8))
     // Oś czasu nagrzewania przez cały test, także poza wyścigiem.
     NotificationCenter.default.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: nil) { _ in
-        h?.write(Data("=== termika \(ProcessInfo.processInfo.thermalState.rawValue) o \(Date())\n".utf8))
+        try? h?.write(contentsOf: Data("=== termika \(ProcessInfo.processInfo.thermalState.rawValue) o \(Date())\n".utf8))
     }
     return h
 }()

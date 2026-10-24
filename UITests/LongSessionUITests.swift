@@ -69,7 +69,7 @@ final class LongSessionUITests: XCTestCase {
         if ["off", "wyłączone", "0"].contains(value) {
             XCTFail("wyścig \(race): auto-prowadzenie w menu wyłączone — włączam z powrotem")
             shot(app, "auto-prowadzenie-off-\(race)")
-            pill.tap()
+            pill.press(forDuration: 1.0)  // pigułka przełącza się dopiero po przytrzymaniu
         }
     }
 

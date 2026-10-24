@@ -106,8 +106,12 @@ final class GameplayUITests: XCTestCase {
     func testMenuGarageCampaignRace() {
         let app = launch([])
         XCTAssertTrue(app.buttons["Garaż"].waitForExistence(timeout: 60), "menu się nie pokazało")
-        app.buttons["Garaż"].tap()
-        XCTAssertTrue(app.buttons["Gotowe"].waitForExistence(timeout: 5))
+        // Pierwsze stuknięcie bywa pochłonięte przez wygaszany splash (iPad Wojtka 24.10).
+        for _ in 0..<3 where !app.buttons["Gotowe"].exists {
+            app.buttons["Garaż"].tap()
+            _ = app.buttons["Gotowe"].waitForExistence(timeout: 5)
+        }
+        XCTAssertTrue(app.buttons["Gotowe"].exists, "garaż się nie otwiera")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Kup za'")).firstMatch.exists,
                        "w pełnej wersji żadne auto nie jest na sprzedaż")
         app.buttons["Gotowe"].tap()
@@ -154,19 +158,23 @@ final class GameplayUITests: XCTestCase {
         app.buttons["Zamknij"].tap()
     }
 
-    /// Pigułka „Auto-prowadzenie” w menu podaje stan (ON/OFF) — na nim opiera się kontrola w długiej sesji.
-    func testAutoSteerPillReportsState() {
+    /// Pigułka „Auto-prowadzenie” w menu: podaje stan, stuknięcie go NIE zmienia (dziecko łatwo trąci ją
+    /// przypadkiem), przytrzymanie zmienia.
+    func testAutoSteerPillNeedsHold() {
         let app = launch([])
         let pill = app.buttons["Auto-prowadzenie"]
         XCTAssertTrue(pill.waitForExistence(timeout: 60), "brak pigułki auto-prowadzenia")
         Thread.sleep(forTimeInterval: 2)  // splash
+        // iOS podaje stan po swojemu („włączone”/„wyłączone”).
         let before = pill.value as? String
-        // iOS podaje stan po swojemu („włączone”/„wyłączone” w polskim systemie), nie „ON”/„OFF” z accessibilityValue.
         XCTAssertNotNil(before, "pigułka nie podaje stanu")
         pill.tap()
+        Thread.sleep(forTimeInterval: 0.5)
+        XCTAssertEqual(pill.value as? String, before, "krótkie stuknięcie zmieniło auto-prowadzenie")
+        pill.press(forDuration: 1.0)
         let after = pill.value as? String
-        XCTAssertNotEqual(before, after, "stuknięcie nie zmieniło stanu")
-        pill.tap()
+        XCTAssertNotEqual(after, before, "przytrzymanie nie zmieniło stanu")
+        pill.press(forDuration: 1.0)
         XCTAssertEqual(pill.value as? String, before, "stan nie wrócił")
     }
 }

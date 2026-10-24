@@ -50,6 +50,7 @@ struct GarageView: View {
                                 Label("\(cost)", systemImage: "plus.circle.fill").font(.footnote.weight(.bold))
                             }
                             .disabled(model.campaign.coins < cost)
+                            .accessibilityIdentifier("ulepsz.\(u.rawValue)")
                         } else {
                             Text("MAX").font(.caption.weight(.heavy)).foregroundStyle(Theme.accent)
                         }

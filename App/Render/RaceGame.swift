@@ -88,6 +88,9 @@ final class RaceGame {
     @ObservationIgnored private var cullTimer = 0.0
     @ObservationIgnored private var clock = 0.0
     @ObservationIgnored private var countdown = RaceConfig.countdown
+    /// Ostatnia cyfra odliczania z sygnałem. Osobno od `countdownText`: ten pokazuje „3” już w trakcie ładowania,
+    /// więc porównanie z nim gubiło pierwszy sygnał (słychać było tylko „2” i „1”).
+    @ObservationIgnored private var beepedCount: String?
     @ObservationIgnored private var finishTimer = 0.0
     @ObservationIgnored private var acc = 0.0
     @ObservationIgnored private var camHeading = 0.0
@@ -196,9 +199,12 @@ final class RaceGame {
         let sun = DirectionalLight()
         sun.light.intensity = 3500
         sun.light.color = sunInfo.color
-        if #available(iOS 18.0, *) {
-            sun.shadow = DirectionalLightComponent.Shadow(shadowProjection: .automatic(maximumDistance: 80), depthBias: 2)
+        if #available(iOS 18.0, *), DeviceTier.shadowsOn {
+            sun.shadow = DirectionalLightComponent.Shadow(shadowProjection: .automatic(maximumDistance: DeviceTier.shadowDistance),
+                                                          depthBias: 2)
         }
+        debugLog(String(format: "cienie: %@, zasięg %.0f m (klasa %@)", DeviceTier.shadowsOn ? "tak" : "nie",
+                        DeviceTier.shadowDistance, DeviceTier.isLowGPU ? "A" : "M"))
         sun.look(at: .zero, from: sunInfo.direction * 160, relativeTo: nil)
         root.addChild(sun)
         debugLog(String(format: "słońce: kierunek (%.2f, %.2f, %.2f), z panoramy: %@", sunInfo.direction.x, sunInfo.direction.y,
@@ -292,6 +298,8 @@ final class RaceGame {
     /// Pomiar płynności: czasy klatek (s), przycięcia > 25 ms z chwilą i fazą.
     @ObservationIgnored private var frameTimes: [Double] = []
     @ObservationIgnored private var lastFrameAt = 0.0
+    @ObservationIgnored private var frameCount = 0
+    @ObservationIgnored private var hitchCount = 0
     @ObservationIgnored private var raceClock = 0.0
 
     private func recordFrame() {
@@ -301,18 +309,23 @@ final class RaceGame {
         let ft = now - lastFrameAt
         raceClock += ft
         frameTimes.append(ft)
+        frameCount += 1
+        if ft > 0.025 { hitchCount += 1 }
+        // Tylko ostatnie ~30 s do median: w pauzie i na wynikach update biegnie dalej, a tablica rosła bez końca
+        // i była sortowana na wątku głównym (w menu ten sam błąd naprawiono wcześniej).
+        if frameTimes.count > 3600 { frameTimes.removeFirst(1800) }
         if ft > 0.025 && (raceClock > 0.5 || !holdStart) {
             debugLog(String(format: "klatka: przycięcie %.0f ms (%.1f s wyścigu, faza %@, s=%.0f m)", ft * 1000, raceClock, "\(phase)", player.s))
         }
         // Co 300 klatek (5 s): długi test UI przełącza wyścigi po kilku sekundach jazdy.
-        if frameTimes.count % 300 == 0 {
+        if frameCount % 300 == 0 {
             let sorted = frameTimes.sorted()
             let p = { (q: Double) in sorted[min(sorted.count - 1, Int(Double(sorted.count) * q))] * 1000 }
-            let hitches = frameTimes.filter { $0 > 0.025 }.count
+            let hitches = hitchCount
             // Stan termiczny i tryb oszczędzania: na iPadzie te same ustawienia dawały raz 60, raz 20 kl./s.
             let info = ProcessInfo.processInfo
             debugLog(String(format: "klatki: %d, mediana %.1f ms, p95 %.1f ms, max %.0f ms, przycięć %d, termika %d, oszczędzanie %@",
-                            frameTimes.count, p(0.5), p(0.95), sorted.last! * 1000, hitches,
+                            frameCount, p(0.5), p(0.95), sorted.last! * 1000, hitches,
                             info.thermalState.rawValue, info.isLowPowerModeEnabled ? "tak" : "nie"))
         }
     }
@@ -320,6 +333,7 @@ final class RaceGame {
 
     #if DEBUG || FAMILY
     @ObservationIgnored private var workTimes: [Double] = []
+    @ObservationIgnored private var workCount = 0
     @ObservationIgnored private var physTimes: [Double] = []
     @ObservationIgnored private var entTimes: [Double] = []
     #endif
@@ -330,7 +344,12 @@ final class RaceGame {
         let t0 = ProcessInfo.processInfo.systemUptime
         defer {
             workTimes.append(ProcessInfo.processInfo.systemUptime - t0)
-            if workTimes.count % 600 == 0 {
+            workCount += 1
+            // Ostatnie ~30 s, jak czasy klatek.
+            if workTimes.count > 3600 { workTimes.removeFirst(1800) }
+            if physTimes.count > 3600 { physTimes.removeFirst(1800) }
+            if entTimes.count > 3600 { entTimes.removeFirst(1800) }
+            if workCount % 600 == 0 {
                 // Fizyka i encje nie liczą się pod ekranem ładowania, w pauzie ani w kadrze `-shotAt` — ich tablice
                 // bywają puste, gdy praca w klatce ma już 600 pomiarów.
                 func p95(_ a: [Double]) -> Double { a.isEmpty ? 0 : a.sorted()[Int(Double(a.count) * 0.95)] * 1000 }
@@ -393,8 +412,9 @@ final class RaceGame {
             countdown -= dt
             if countdown > 0 {
                 let text = String(Int(countdown.rounded(.up)))
-                if text != countdownText {
-                    countdownText = text
+                if text != countdownText { countdownText = text }
+                if text != beepedCount {
+                    beepedCount = text
                     AudioManager.shared.play(.beep)
                 }
             } else {

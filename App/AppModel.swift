@@ -67,10 +67,16 @@ final class AppModel {
             // Długi test na iPadzie: auto-prowadzenie wyłączyło się raz po ~340 wyścigach bez śladu stuknięcia.
             if profile.autoSteer != oldValue.autoSteer { debugLog("profil: auto-prowadzenie \(profile.autoSteer ? "ON" : "OFF")") }
             if profile.difficulty != oldValue.difficulty { debugLog("profil: trudność \(profile.difficulty.rawValue)") }
-            AudioManager.shared.musicOn = profile.musicOn
-            AudioManager.shared.soundOn = profile.soundOn
+            AudioManager.shared.musicOn = profile.musicOn && !testMute
+            AudioManager.shared.soundOn = profile.soundOn && !testMute
         }
     }
+
+    /// `-mute` (Debug/Family): cisza tylko w tym uruchomieniu. Wcześniej trafiała do profilu — po testach z `-mute`
+    /// gra na iPadach dzieci zostawała niema.
+    @ObservationIgnored private var testMute = false
+    /// `-allUpgrades`/`-rich` (Debug/Family): testowe monety i ulepszenia nie mogą trafić do zapisu kampanii.
+    @ObservationIgnored private var campaignSaveDisabled = false
 
     /// Postęp kampanii (gwiazdki, monety, auta, ulepszenia) — zapisywany na urządzeniu.
     var campaign: CampaignState {
@@ -127,12 +133,10 @@ final class AppModel {
         // Do testów w symulatorze z wiersza poleceń: `simctl launch <udid> com.renacode.simpleracer -autostartRace`.
         // `-mute` wycisza muzykę i efekty (testy w symulatorze grają przez głośniki Maca).
         if ProcessInfo.processInfo.arguments.contains("-mute") {
-            // W init `didSet` nie działa — dźwięk wyciszamy i zapisujemy wprost.
-            profile.musicOn = false
-            profile.soundOn = false
+            // Tylko w pamięci: profil (zapisany) zostaje z dźwiękiem.
+            testMute = true
             AudioManager.shared.musicOn = false
             AudioManager.shared.soundOn = false
-            save()
         }
         if ProcessInfo.processInfo.arguments.contains("-autostartRace") { startRace() }
         // `-car <id>` wybiera auto (podgląd modeli w symulatorze).
@@ -143,15 +147,18 @@ final class AppModel {
         }
         // `-carIndex <n>` wybiera n-te auto z katalogu (testy UI przechodzą po wszystkich autach bez znajomości ich id).
         if let i = args.firstIndex(of: "-carIndex"), i + 1 < args.count, let n = Int(args[i + 1]), !CarCatalog.all.isEmpty {
-            let id = CarCatalog.all[n % CarCatalog.all.count].id
+            let c = CarCatalog.all.count
+            let id = CarCatalog.all[((n % c) + c) % c].id
             campaign.ownedCars.insert(id)
             profile.carId = id
         }
         // `-colorIndex <n>` — n-ty kolor palety (testy UI: każde auto w różnych kolorach).
         if let i = args.firstIndex(of: "-colorIndex"), i + 1 < args.count, let n = Int(args[i + 1]) {
-            profile.colorHex = CarCatalog.colors[n % CarCatalog.colors.count]
+            let c = CarCatalog.colors.count
+            profile.colorHex = CarCatalog.colors[((n % c) + c) % c]
         }
         // `-allUpgrades`: wszystkie auta w pełni ulepszone (długi test UI — każde auto na każdej trasie).
+        if args.contains("-allUpgrades") || args.contains("-rich") { campaignSaveDisabled = true }
         if args.contains("-allUpgrades") {
             for car in CarCatalog.all {
                 campaign.upgrades[car.id] = Dictionary(uniqueKeysWithValues: Upgrade.allCases.map { ($0, Campaign.maxLevel) })
@@ -218,6 +225,7 @@ final class AppModel {
     }
 
     private func saveCampaign() {
+        guard !campaignSaveDisabled else { return }
         if let data = try? JSONEncoder().encode(campaign) {
             UserDefaults.standard.set(data, forKey: Self.campaignKey)
         }
