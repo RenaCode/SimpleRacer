@@ -195,6 +195,14 @@ enum SkyEnvironment {
         return n > 0 ? sum / n : nil
     }
 
+    /// Podpina `e` pod oświetlenie z nieba, które `applyLighting` dodało już do `root`. Model dodany po policzeniu
+    /// środowiska (auto wybrane w garażu) nie miał odbić hali. Gdy środowiska jeszcze nie ma, podepnie je samo
+    /// `applyLighting` (obejmuje całe drzewo w chwili dodania).
+    static func receiveLighting(_ e: Entity, from root: Entity) {
+        guard let ibl = root.children.first(where: { $0.components.has(ImageBasedLightComponent.self) }) else { return }
+        attach(e, to: ibl)
+    }
+
     private static func attach(_ e: Entity, to ibl: Entity) {
         if e is ModelEntity { e.components.set(ImageBasedLightReceiverComponent(imageBasedLight: ibl)) }
         for c in e.children { attach(c, to: ibl) }

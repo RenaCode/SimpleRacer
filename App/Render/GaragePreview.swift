@@ -125,6 +125,7 @@ final class GaragePreview {
             car?.root.removeFromParent()
             let c = CarEntity(def: def, color: UIColorHex.color(colorHex))
             turntable.addChild(c.root)
+            SkyEnvironment.receiveLighting(c.root, from: root)
             car = c
             carId = def.id
             realisticShown = realisticReady
