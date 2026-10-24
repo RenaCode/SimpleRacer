@@ -39,6 +39,13 @@ struct RootView: View {
         .overlay {
             if splash { SplashView().transition(.opacity) }
         }
+        #if DEBUG || FAMILY
+        .overlay(alignment: .bottomLeading) {
+            if AudioProbe.enabled {
+                Text(AudioProbe.shared.info).font(.system(size: 2)).opacity(0.02).accessibilityIdentifier("test.audio")
+            }
+        }
+        #endif
         .background(Color.black)
         .task { await startUp() }
         .onAppear { AudioManager.shared.start() }

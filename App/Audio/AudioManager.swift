@@ -74,6 +74,12 @@ final class AudioManager {
             impactBuffers[i] = Self.synthesizeImpact(i, format: format)
         }
 
+        #if DEBUG || FAMILY
+        if AudioProbe.enabled {
+            engine.mainMixerNode.installTap(onBus: 0, bufferSize: 4096, format: nil, block: AudioProbe.tapBlock())
+        }
+        #endif
+
         // Przerwania (telefon, FaceTime, Siri, budzik) i zmiany wyjścia audio zatrzymują silnik — wznawiamy go.
         // Przy `.began` silnik już stoi: `play()` węzła na zatrzymanym silniku rzuca wyjątek (`_engine->IsRunning()`),
         // więc dźwięki czekają na `.ended`. Wyścig pauzuje sam (RaceContent słucha tego samego powiadomienia).
@@ -125,6 +131,13 @@ final class AudioManager {
         engine.pause()
         started = false
     }
+
+    #if DEBUG || FAMILY
+    /// Stan dla `AudioProbe`: przełączniki, uruchomienie silnika i bieżący utwór.
+    var probeState: String {
+        "music=\(musicOn ? 1 : 0) sound=\(soundOn ? 1 : 0) running=\(started && engine.isRunning ? 1 : 0) track=\(currentFile ?? "-")"
+    }
+    #endif
 
     private func restart() {
         started = false
@@ -180,6 +193,9 @@ final class AudioManager {
         node.stop()
         node.scheduleBuffer(b, at: nil)
         node.play()
+        #if DEBUG || FAMILY
+        AudioProbe.shared.count("\(effect)")
+        #endif
     }
 
     /// Dźwięk jazdy, wołany co klatkę. `speed` 0…1+ (względem prędkości maksymalnej), `nitro` podbija
@@ -210,6 +226,9 @@ final class AudioManager {
         guard now - lastImpact >= 0.07 else { return }
         lastImpact = now
         let force = min(1, intensity)
+        #if DEBUG || FAMILY
+        AudioProbe.shared.count("impact")
+        #endif
         trigger(.scrape, volume: Self.sfxVolume * Float(0.35 + 0.65 * force))
         if force >= 0.3 {
             trigger(.hit, volume: Self.sfxVolume * Float((force - 0.3) / 0.7 * 0.8 + 0.2))
@@ -340,6 +359,59 @@ final class AudioManager {
         return buffer
     }
 }
+
+#if DEBUG || FAMILY
+/// `-audioProbe` (Debug/Family): poziom sygnału na wyjściu miksera i liczniki efektów w niewidocznej etykiecie
+/// `test.audio` — test UI sprawdza dźwięk bez słuchania (XCUITest nie ma dostępu do wyjścia audio symulatora).
+/// Poziom w dBFS z ostatnich ~0,5 s; cisza cyfrowa = -200.
+@MainActor @Observable
+final class AudioProbe {
+    static let shared = AudioProbe()
+    nonisolated static let enabled = ProcessInfo.processInfo.arguments.contains("-audioProbe")
+    private(set) var info = ""
+    @ObservationIgnored private var sumSquares = 0.0
+    @ObservationIgnored private var frames = 0
+    @ObservationIgnored private var peak: Float = 0
+    @ObservationIgnored private var effects: [String: Int] = [:]
+    @ObservationIgnored private var lastLog = 0.0
+
+    func count(_ effect: String) { effects[effect, default: 0] += 1 }
+
+    /// Blok tapu powstaje poza aktorem: wołany na wątku audio, wynik przekazuje na główny.
+    nonisolated static func tapBlock() -> AVAudioNodeTapBlock {
+        { buffer, _ in
+            guard let data = buffer.floatChannelData, buffer.frameLength > 0 else { return }
+            let n = Int(buffer.frameLength)
+            var sum = 0.0
+            var peak: Float = 0
+            for ch in 0..<Int(buffer.format.channelCount) {
+                for i in 0..<n {
+                    let v = data[ch][i]
+                    sum += Double(v * v)
+                    peak = max(peak, abs(v))
+                }
+            }
+            let total = n * Int(buffer.format.channelCount)
+            DispatchQueue.main.async { MainActor.assumeIsolated { shared.add(sum, total, peak) } }
+        }
+    }
+
+    private func add(_ sum: Double, _ n: Int, _ p: Float) {
+        sumSquares += sum
+        frames += n
+        peak = max(peak, p)
+        guard frames >= 44_100 else { return }
+        func db(_ x: Double) -> Int { x > 1e-10 ? Int((20 * log10(x)).rounded()) : -200 }
+        let fx = effects.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ",")
+        info = "rms=\(db((sumSquares / Double(frames)).squareRoot())) peak=\(db(Double(peak))) \(AudioManager.shared.probeState) fx=\(fx.isEmpty ? "-" : fx)"
+        sumSquares = 0
+        frames = 0
+        peak = 0
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastLog >= 2 { lastLog = now; debugLog("dźwięk: \(info)") }
+    }
+}
+#endif
 
 /// Diagnostyka tylko w buildzie Debug (widoczna w konsoli Xcode / `simctl launch --console-pty`).
 func debugLog(_ message: @autoclosure () -> String) {

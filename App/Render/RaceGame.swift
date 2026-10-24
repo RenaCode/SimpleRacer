@@ -88,6 +88,9 @@ final class RaceGame {
     @ObservationIgnored private var cullTimer = 0.0
     @ObservationIgnored private var clock = 0.0
     @ObservationIgnored private var countdown = RaceConfig.countdown
+    /// Ostatnia cyfra odliczania z sygnałem. Osobno od `countdownText`: ten pokazuje „3” już w trakcie ładowania,
+    /// więc porównanie z nim gubiło pierwszy sygnał (słychać było tylko „2” i „1”).
+    @ObservationIgnored private var beepedCount: String?
     @ObservationIgnored private var finishTimer = 0.0
     @ObservationIgnored private var acc = 0.0
     @ObservationIgnored private var camHeading = 0.0
@@ -409,8 +412,9 @@ final class RaceGame {
             countdown -= dt
             if countdown > 0 {
                 let text = String(Int(countdown.rounded(.up)))
-                if text != countdownText {
-                    countdownText = text
+                if text != countdownText { countdownText = text }
+                if text != beepedCount {
+                    beepedCount = text
                     AudioManager.shared.play(.beep)
                 }
             } else {
