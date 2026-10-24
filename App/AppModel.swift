@@ -184,7 +184,9 @@ final class AppModel {
                 try? await Task.sleep(for: .seconds(t))
                 guard let self else { return }
                 debugLog("test: Ścigaj się")
-                self.startRace(track: Campaign.nextTrack(self.campaign, car: self.car).id)
+                // Z `-track`: trasa z innej krainy niż ta, którą menu właśnie przygotowuje (zmiana krainy w trakcie wczytywania).
+                let next = Campaign.nextTrack(self.campaign, car: self.car).id
+                self.startRace(track: args.contains("-track") ? self.trackId : next)
             }
         }
         if let i = args.firstIndex(of: "-screen"), i + 1 < args.count {
