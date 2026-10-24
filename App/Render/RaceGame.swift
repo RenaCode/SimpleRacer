@@ -196,9 +196,12 @@ final class RaceGame {
         let sun = DirectionalLight()
         sun.light.intensity = 3500
         sun.light.color = sunInfo.color
-        if #available(iOS 18.0, *) {
-            sun.shadow = DirectionalLightComponent.Shadow(shadowProjection: .automatic(maximumDistance: 80), depthBias: 2)
+        if #available(iOS 18.0, *), DeviceTier.shadowsOn {
+            sun.shadow = DirectionalLightComponent.Shadow(shadowProjection: .automatic(maximumDistance: DeviceTier.shadowDistance),
+                                                          depthBias: 2)
         }
+        debugLog(String(format: "cienie: %@, zasięg %.0f m (klasa %@)", DeviceTier.shadowsOn ? "tak" : "nie",
+                        DeviceTier.shadowDistance, DeviceTier.isLowGPU ? "A" : "M"))
         sun.look(at: .zero, from: sunInfo.direction * 160, relativeTo: nil)
         root.addChild(sun)
         debugLog(String(format: "słońce: kierunek (%.2f, %.2f, %.2f), z panoramy: %@", sunInfo.direction.x, sunInfo.direction.y,
