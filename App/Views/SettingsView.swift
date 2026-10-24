@@ -1,3 +1,4 @@
+import RaceCore
 import SwiftUI
 
 /// Ustawienia: sterowanie i dźwięk oraz autorzy i licencje (wymagane przez licencje CC BY).
@@ -10,6 +11,9 @@ struct SettingsView: View {
         NavigationStack(path: $path) {
             Form {
                 Section("Gra") {
+                    Picker(selection: $model.profile.difficulty) {
+                        ForEach(Difficulty.allCases, id: \.self) { Text($0.name).tag($0) }
+                    } label: { Label("Poziom trudności", systemImage: "flag.checkered") }
                     Toggle(isOn: $model.profile.autoSteer) { Label("Auto-prowadzenie", systemImage: "steeringwheel") }
                     Toggle(isOn: $model.profile.musicOn) { Label("Muzyka", systemImage: "music.note") }
                     Toggle(isOn: $model.profile.soundOn) { Label("Dźwięki", systemImage: "speaker.wave.2.fill") }

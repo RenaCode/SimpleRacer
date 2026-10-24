@@ -124,5 +124,16 @@ private struct PreviewStage: View {
             preview.show(def: model.previewCar, colorHex: model.profile.colorHex)
             preview.setLayout(model.screen == .garage ? .garage : .menu, narrow: narrow)
         }
+        // Wyjście do wyścigu: subskrypcja klatek trzymała przy życiu całą scenę menu (+ ok. 470 MB) i na iPadzie
+        // A16 każdy wyścig po menu jechał ok. 20 kl./s (prosto w wyścig: płynnie). Scenę odpinamy; przy powrocie
+        // RealityView podpina ją od nowa.
+        .onDisappear {
+            preview.subscription?.cancel()
+            preview.subscription = nil
+            preview.root.removeFromParent()
+            #if DEBUG || FAMILY
+            debugLog(String(format: "menu: scena odpięta, pamięć %.0f MB", memoryFootprintMB()))
+            #endif
+        }
     }
 }

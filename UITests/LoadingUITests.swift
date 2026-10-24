@@ -8,7 +8,7 @@ final class LoadingUITests: XCTestCase {
 
     private func launch(_ args: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-mute"] + args
+        app.launchArguments = ["-mute", "-logFile"] + args
         app.launch()
         return app
     }

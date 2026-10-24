@@ -16,7 +16,7 @@ final class GarageColorsUITests: XCTestCase {
 
     func testEveryCarEveryColor() {
         let app = XCUIApplication()
-        app.launchArguments = ["-mute", "-screen", "garage"]
+        app.launchArguments = ["-mute", "-logFile", "-screen", "garage"]
         app.launch()
         XCTAssertTrue(app.buttons["Gotowe"].waitForExistence(timeout: 60), "garaż się nie pokazał")
         // Kafelki aut: nazwa i „moc N” (w pełnej wersji wszystkie auta są kupione).
@@ -33,7 +33,14 @@ final class GarageColorsUITests: XCTestCase {
             let name = tile.label.components(separatedBy: " moc ").first ?? "auto \(i)"
             tile.tap()
             Thread.sleep(forTimeInterval: 2)
-            for hex in ["#3A86FF", "#FFD60A", "#1B1B1E"] {
+            // Auto bez lakieru do zmiany (malowanie w teksturze): zamiast palety napis, kolorów nie ma czego klikać.
+            if app.staticTexts["Oryginalne malowanie"].exists {
+                XCTAssertFalse(app.buttons["Kolor #3A86FF"].exists, "paleta przy aucie bez lakieru")
+                shot(app, "\(i + 1) \(name) oryginalne malowanie")
+                continue
+            }
+            // Cała paleta (CarCatalog.colors) — każdy kolor na każdym aucie.
+            for hex in ["#E63946", "#F77F00", "#FFD60A", "#2A9D8F", "#3A86FF", "#8338EC", "#F1F1F1", "#1B1B1E"] {
                 let swatch = app.buttons["Kolor \(hex)"]
                 XCTAssertTrue(swatch.waitForExistence(timeout: 5), "brak koloru \(hex)")
                 swatch.tap()

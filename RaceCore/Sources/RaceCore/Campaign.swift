@@ -116,9 +116,6 @@ public enum Campaign {
         return levels
     }
 
-    /// O ile rywale są słabsi od mocy wymaganej na trasie (gra dla dzieci).
-    public static let rivalHandicap = 25
-
     /// Wzorzec statystyk rywali: wbudowana „Strzała”, zapisana tu na stałe. Nie z katalogu — aplikacja
     /// podmienia katalog i `starterCar` na modele lokalne, a balans tras nie może zależeć od tego, jakie to auta.
     public static let rivalBase = CarDef(
@@ -128,9 +125,9 @@ public enum Campaign {
 
     /// Rywal na trasie: wygląd (model, nazwa, wymiary) z dowolnego auta, ale statystyki `rivalBase`
     /// ulepszonego tylko do mocy nieco poniżej wymaganej na tej trasie — żeby rywale nie byli za mocni.
-    public static func rival(looking visual: CarDef, on spec: TrackSpec) -> CarDef {
+    public static func rival(looking visual: CarDef, on spec: TrackSpec, difficulty: Difficulty = .easy) -> CarDef {
         let base = rivalBase
-        let stats = upgraded(base, levels: minimalUpgrades(base, toReach: requiredRating(spec) - rivalHandicap))
+        let stats = upgraded(base, levels: minimalUpgrades(base, toReach: requiredRating(spec) - difficulty.rivalHandicap))
         var d = visual
         d.topSpeed = stats.topSpeed
         d.accel = stats.accel
@@ -151,7 +148,9 @@ public enum Campaign {
     public static func requiredRating(_ spec: TrackSpec) -> Int { 650 + Int((170 * spec.difficulty).rounded()) }
 
     /// Umiejętność rywali: wolni na początku, nieco szybsi pod koniec — ale zawsze łatwo.
-    public static func aiSkill(_ spec: TrackSpec) -> Double { 0.8 + 0.1 * spec.difficulty }
+    public static func aiSkill(_ spec: TrackSpec, difficulty: Difficulty = .easy) -> Double {
+        0.8 + 0.1 * spec.difficulty + difficulty.skillOffset
+    }
 
     /// Gwiazdki za miejsce: wygrana 3, podium 2, każde dojechanie 1.
     public static func stars(place: Int) -> Int { place == 1 ? 3 : (place <= 3 ? 2 : 1) }

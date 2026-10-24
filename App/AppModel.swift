@@ -10,6 +10,8 @@ struct Profile: Codable, Equatable {
     var autoSteer: Bool = true
     var musicOn: Bool = true
     var soundOn: Bool = true
+    /// Jak szybcy są rywale (Ustawienia). Domyślnie najłatwiej — grają małe dzieci.
+    var difficulty: Difficulty = .standard
 
     static let `default` = Profile(carId: CarCatalog.all[0].id, colorHex: CarCatalog.colors[0])
 
@@ -27,6 +29,8 @@ struct Profile: Codable, Equatable {
         autoSteer = try c.decodeIfPresent(Bool.self, forKey: .autoSteer) ?? true
         musicOn = try c.decodeIfPresent(Bool.self, forKey: .musicOn) ?? true
         soundOn = try c.decodeIfPresent(Bool.self, forKey: .soundOn) ?? true
+        // Nieznana wartość (np. z nowszej wersji) też nie może skasować profilu.
+        difficulty = (try? c.decodeIfPresent(Difficulty.self, forKey: .difficulty)) ?? .standard
     }
 }
 
@@ -60,6 +64,9 @@ final class AppModel {
     var profile: Profile {
         didSet {
             save()
+            // Długi test na iPadzie: auto-prowadzenie wyłączyło się raz po ~340 wyścigach bez śladu stuknięcia.
+            if profile.autoSteer != oldValue.autoSteer { debugLog("profil: auto-prowadzenie \(profile.autoSteer ? "ON" : "OFF")") }
+            if profile.difficulty != oldValue.difficulty { debugLog("profil: trudność \(profile.difficulty.rawValue)") }
             AudioManager.shared.musicOn = profile.musicOn
             AudioManager.shared.soundOn = profile.soundOn
         }
@@ -80,6 +87,13 @@ final class AppModel {
         debugLog("start: AppModel")
         LocalAssets.shared.registerCars()
         FullVersion.apply()
+        #if DEBUG || FAMILY
+        // `-resetProfile`: profil i kampania od zera (po testach na iPadzie dziecka — MDM blokuje usunięcie aplikacji).
+        if ProcessInfo.processInfo.arguments.contains("-resetProfile") {
+            for k in [Self.key, Self.campaignKey, Self.campaignBackupKey] { UserDefaults.standard.removeObject(forKey: k) }
+            debugLog("profil: skasowany (-resetProfile)")
+        }
+        #endif
         // Auto albo kolor spoza katalogu podmieniamy na domyślne — reszta profilu (dźwięk, auto-prowadzenie) zostaje.
         if let data = UserDefaults.standard.data(forKey: Self.key),
            var p = try? JSONDecoder().decode(Profile.self, from: data) {
@@ -132,6 +146,16 @@ final class AppModel {
             let id = CarCatalog.all[n % CarCatalog.all.count].id
             campaign.ownedCars.insert(id)
             profile.carId = id
+        }
+        // `-colorIndex <n>` — n-ty kolor palety (testy UI: każde auto w różnych kolorach).
+        if let i = args.firstIndex(of: "-colorIndex"), i + 1 < args.count, let n = Int(args[i + 1]) {
+            profile.colorHex = CarCatalog.colors[n % CarCatalog.colors.count]
+        }
+        // `-allUpgrades`: wszystkie auta w pełni ulepszone (długi test UI — każde auto na każdej trasie).
+        if args.contains("-allUpgrades") {
+            for car in CarCatalog.all {
+                campaign.upgrades[car.id] = Dictionary(uniqueKeysWithValues: Upgrade.allCases.map { ($0, Campaign.maxLevel) })
+            }
         }
         // `-rich` daje monety i gwiazdki (podgląd sklepu i odblokowań).
         if args.contains("-rich") {

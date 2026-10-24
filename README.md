@@ -47,6 +47,11 @@ more tracks, tilt steering.
   when far ahead; the starter car, fully upgraded, can finish the whole campaign; one playthrough
   pays for those upgrades; and tests check that auto-steering alone reaches the podium on tracks
   1, 10, 20, 30 and 40.
+- **Difficulty** (Settings → "Poziom trudności"): *Very easy* (default), *Easy* and *Normal* change
+  only the rivals — how far below the track's requirement their cars are, their skill and how
+  strongly they wait for the player. Rewards and track requirements stay the same. On *Very easy*
+  auto-steering alone wins on tracks 1, 10, 20, 30 and 40, and a lower level never gives a worse place
+  (`DifficultyTests`).
 
 ## Gameplay
 
@@ -225,7 +230,20 @@ xcodebuild test -project SimpleRacer.xcodeproj -scheme SimpleRacer \
 
 `GameplayUITests` (about 3 minutes) holds and taps DRIFT, fires NITRO, steers, pauses and goes
 menu → garage → campaign → race. `AllTracksUITests` (about 40 minutes) races on all 40 tracks,
-cycling through the cars, and drives every car to the finish.
+cycling through the cars, and drives every car to the finish. `GarageColorsUITests` paints every car
+in every palette colour (cars whose paint lives in the texture show "Oryginalne malowanie" instead
+of the palette).
+
+`LongSessionUITests` (2–3 hours, meant for the target iPad) never restarts the app: it goes
+menu → garage (car and colour) → campaign → race → pause → menu for every car on every track, with
+the colours rotating so that every car–track, car–colour and track–colour pair is covered. It is
+the only test that catches what builds up over a session (memory, leftovers of a previous race —
+it found a crash on the way from a race back to the garage). `TEST_RUNNER_LONG_ALL_COLORS=1` runs
+the full car × colour × track product (~3000 races); `TEST_RUNNER_LONG_TRACKS` and
+`TEST_RUNNER_LONG_CARS` limit it for a quick check. With `-logFile` (all UI tests pass it) the app
+appends its log to `Documents/perf.log` — frame times every 5 s, memory at every race start and the
+thermal state — which you copy off the device with
+`xcrun devicectl device copy from --domain-type appDataContainer --domain-identifier com.renacode.simpleracer --source Documents/perf.log …`.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs the `RaceCore` tests and builds the app in the
 Family and Release configurations (Release compiles the store-only code paths) for a generic iOS
@@ -435,7 +453,9 @@ credited in the app (Settings → "Autorzy i licencje"), as the licence requires
   going from a white-blue core to orange, flickering, plus a stream of particles.
 - **Nitro canisters:** a modelled N₂O bottle (rounded base, shoulder, valve with handwheel and outlet,
   metal bands, a label) in metallic blue paint with clear coat, brushed metal and a faint glow.
-- **Speed lines:** thin streaks at the screen edges during nitro and above 260 km/h.
+- **Speed lines:** thin streaks at the screen edges during nitro and above 260 km/h — **off** unless
+  started with `-speedLines` (Debug/Family): a full-screen SwiftUI `Canvas` redrawn every frame held an
+  iPad (A16) at ~20 fps for most of a race.
 - **Smooth motion:** physics runs at a fixed 120 Hz; the render interpolates cars between the last
   two physics steps, so motion is even at any refresh rate (no stop-then-jump frames).
 - **Aerial haze:** distant scenery fades towards the panorama's horizon colour. It is computed in the

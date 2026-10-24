@@ -10,7 +10,7 @@ final class GameplayUITests: XCTestCase {
     private func launch(_ args: [String]) -> XCUIApplication {
         let app = XCUIApplication()
         // -mute: symulator gra przez głośniki Maca.
-        app.launchArguments = ["-mute"] + args
+        app.launchArguments = ["-mute", "-logFile"] + args
         app.launch()
         return app
     }
@@ -118,5 +118,55 @@ final class GameplayUITests: XCTestCase {
         XCTAssertTrue(track8.waitForExistence(timeout: 5), "brak karty trasy 8")
         track8.tap()
         raceStarted(app)
+    }
+
+    /// Poziom trudności w ustawieniach: domyślnie „Bardzo łatwy”, wybór zostaje po ponownym uruchomieniu.
+    /// Na końcu wraca do domyślnego — profil przecieka do kolejnych testów na tym urządzeniu.
+    func testDifficultySettingPersists() {
+        func openSettings(_ app: XCUIApplication) -> XCUIElement {
+            XCTAssertTrue(app.buttons["Ustawienia"].waitForExistence(timeout: 60), "menu się nie pokazało")
+            let picker = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Poziom trudności'")).firstMatch
+            // Pierwsze stuknięcie bywa pochłonięte przez wygaszany splash (zielony na iPadzie rano, czerwony wieczorem).
+            for _ in 0..<3 where !picker.exists {
+                app.buttons["Ustawienia"].tap()
+                _ = picker.waitForExistence(timeout: 5)
+            }
+            XCTAssertTrue(picker.exists, "brak wyboru trudności")
+            return picker
+        }
+        func choose(_ name: String, in app: XCUIApplication, picker: XCUIElement) {
+            picker.tap()
+            let item = app.buttons[name]
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "brak poziomu \(name)")
+            item.tap()
+            XCTAssertTrue(picker.label.contains(name), "wybrany \(picker.label), oczekiwano \(name)")
+        }
+        var app = launch([])
+        var picker = openSettings(app)
+        choose("Normalny", in: app, picker: picker)
+        app.buttons["Zamknij"].tap()
+        app.terminate()
+
+        app = launch([])
+        picker = openSettings(app)
+        XCTAssertTrue(picker.label.contains("Normalny"), "po restarcie: \(picker.label)")
+        choose("Bardzo łatwy", in: app, picker: picker)
+        app.buttons["Zamknij"].tap()
+    }
+
+    /// Pigułka „Auto-prowadzenie” w menu podaje stan (ON/OFF) — na nim opiera się kontrola w długiej sesji.
+    func testAutoSteerPillReportsState() {
+        let app = launch([])
+        let pill = app.buttons["Auto-prowadzenie"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 60), "brak pigułki auto-prowadzenia")
+        Thread.sleep(forTimeInterval: 2)  // splash
+        let before = pill.value as? String
+        // iOS podaje stan po swojemu („włączone”/„wyłączone” w polskim systemie), nie „ON”/„OFF” z accessibilityValue.
+        XCTAssertNotNil(before, "pigułka nie podaje stanu")
+        pill.tap()
+        let after = pill.value as? String
+        XCTAssertNotEqual(before, after, "stuknięcie nie zmieniło stanu")
+        pill.tap()
+        XCTAssertEqual(pill.value as? String, before, "stan nie wrócił")
     }
 }
