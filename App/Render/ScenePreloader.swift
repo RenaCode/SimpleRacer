@@ -34,15 +34,23 @@ final class ScenePreloader {
 
     func prepare(_ region: Region) async {
         let group = Self.group(region)
-        // Inne krainy zwalniamy (pamięć iPada); materiały impostorów trzymają ich tekstury.
+        let jobs = Self.jobs(for: region)
+        let keep = Set(jobs.map(\.url.path))
+        // Inne krainy zwalniamy (pamięć iPada); materiały impostorów trzymają ich tekstury. Także krainę, która
+        // jeszcze się wczytuje: wcześniej jej zadanie biegło dalej i obie krainy zostawały w pamięci (miasto ok. 350 MB).
+        // Tekstury wspólne (asfalt, farba, krawężniki) zostają — nowa kraina i tak by je wczytała od nowa.
         for other in groupPaths.keys where other.hasPrefix("region-") && other != group {
-            for path in groupPaths[other] ?? [] { textures[path] = nil; textures[path + "#mask"] = nil }
+            inFlight[other]?.cancel()
+            for path in groupPaths[other] ?? [] where !keep.contains(path) {
+                textures[path] = nil
+                textures[path + "#mask"] = nil
+            }
             groupPaths[other] = nil
             ready.remove(other)
             ImpostorLibrary.shared.purge()
             Buildings.purge()
         }
-        await prepare(group: group, jobs: Self.jobs(for: region))
+        await prepare(group: group, jobs: jobs)
     }
 
     func prepareGarage() async {
@@ -56,9 +64,13 @@ final class ScenePreloader {
         let task = Task { @MainActor in
             progress = 0
             let start = ProcessInfo.processInfo.systemUptime
+            // Ścieżki zapisane od razu: zwolnienie grupy w trakcie wczytywania zna już jej tekstury.
+            groupPaths[group] = jobs.map(\.url.path)
             for (i, job) in jobs.enumerated() where !Task.isCancelled {
                 if textures[job.url.path] == nil {
                     let decoded = await Task.detached(priority: .userInitiated) { Self.decode(job) }.value
+                    // Anulowana w trakcie dekodowania: grupa jest już zwolniona, tekstura zostałaby w pamięci bez właściciela.
+                    if Task.isCancelled { break }
                     if let image = decoded.image {
                         let semantic: TextureResource.Semantic = Self.isRaw(job.url) ? .raw : .color
                         // Synchronicznie, po jednej teksturze na klatkę: asynchroniczne tworzenie tekstur
@@ -73,7 +85,10 @@ final class ScenePreloader {
                 }
                 progress = Double(i + 1) / Double(jobs.count)
             }
-            groupPaths[group] = jobs.map(\.url.path)
+            if Task.isCancelled {
+                debugLog("wczytywanie: \(group) przerwane (inna kraina)")
+                return
+            }
             ready.insert(group)
             debugLog(String(format: "wczytywanie: %@ — %d tekstur w %.2f s", group, jobs.count,
                             ProcessInfo.processInfo.systemUptime - start))

@@ -80,14 +80,19 @@ extension RootView {
         }
         // Modele aut dopiero po podpięciu pierwszego widoku 3D: wczytywanie USDZ przed inicjalizacją
         // RealityKit co kilkanaście startów psuło proces (żaden model się nie wczytywał, potem awaria).
-        while !preview.attached { try? await Task.sleep(for: .milliseconds(20)) }
+        // Limit: gdy widok 3D się nie podpina, splash zostawał na zawsze, a menu było pod nim nieosiągalne.
+        // Po limicie menu i tak się pokazuje (najwyżej bez sceny w tle). Anulowanie `.task` kończy pętlę.
+        while !preview.attached, ProcessInfo.processInfo.systemUptime - start < 10 {
+            do { try await Task.sleep(for: .milliseconds(20)) } catch { return }
+        }
+        if !preview.attached { debugLog("start: scena menu nie podpięła się w 10 s") }
         let carId = model.profile.carId
         Task { await LocalAssets.shared.preload(first: carId) }
         await preview.loadBackdrop()
         while !LocalAssets.shared.isLoaded(model.car), ProcessInfo.processInfo.systemUptime - start < 4 {
-            try? await Task.sleep(for: .milliseconds(50))
+            do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
         }
-        try? await Task.sleep(for: .milliseconds(150)) // klatka z autem zdąży się narysować
+        do { try await Task.sleep(for: .milliseconds(150)) } catch { return } // klatka z autem zdąży się narysować
         debugLog(String(format: "start: menu gotowe po %.2f s", ProcessInfo.processInfo.systemUptime - start))
         withAnimation(.easeOut(duration: 0.4)) { splash = false } completion: { menuReady = true }
         // Wyścig już się ładuje (np. -autostartRace) — on sam przygotuje swoją krainę.
